@@ -6,12 +6,12 @@ RandomQuiz is a reference implementation of the quiz deployment stack described 
 
 ```bash
 cd backend
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -r ../requirements.txt
-python manage.py migrate
-python manage.py createsuperuser  # create an initial admin instructor
-python manage.py runserver
+pip3 install -r ../requirements.txt
+python3 manage.py migrate
+python3 manage.py createsuperuser  # create an initial admin instructor
+python3 manage.py runserver
 ```
 
 Key apps:

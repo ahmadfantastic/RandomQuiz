@@ -41,7 +41,7 @@ const QuizEditorPage = () => {
         End Time
         <input name="end_time" value={quiz.end_time || ''} onChange={handleChange} />
       </label>
-      <p>Public link: {`${window.location.origin}/q/${quiz.public_id}`}</p>
+      <p>Public link: {typeof window !== 'undefined' ? `${window.location.origin}/q/${quiz.public_id}` : 'Loading...'}</p>
       <button onClick={handleSave}>Save</button>
       <Link to={`/quizzes/${quizId}/slots`}>Manage Slots</Link>
       <Link to={`/quizzes/${quizId}/allowed-instructors`}>Allowed Instructors</Link>
