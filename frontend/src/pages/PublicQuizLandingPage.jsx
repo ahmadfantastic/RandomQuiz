@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
+import api from '@/lib/api';
 
 const PublicQuizLandingPage = () => {
   const { publicId } = useParams();
@@ -9,11 +9,11 @@ const PublicQuizLandingPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios.get(`/api/public/quizzes/${publicId}/`).then((res) => setQuiz(res.data));
+    api.get(`/api/public/quizzes/${publicId}/`).then((res) => setQuiz(res.data));
   }, [publicId]);
 
   const handleStart = async () => {
-    const res = await axios.post(`/api/public/quizzes/${publicId}/start/`, { student_identifier: identifier });
+    const res = await api.post(`/api/public/quizzes/${publicId}/start/`, { student_identifier: identifier });
     navigate(`/attempts/${res.data.attempt_id}`, { state: { slots: res.data.slots, attemptId: res.data.attempt_id } });
   };
 

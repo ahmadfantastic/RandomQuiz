@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import api from '@/lib/api';
 
 const QuizAttemptPage = () => {
   const { attemptId } = useParams();
@@ -15,12 +15,12 @@ const QuizAttemptPage = () => {
   }, [slots.length, location.state]);
 
   const handleSave = async (slotId, answerText) => {
-    await axios.post(`/api/public/attempts/${attemptId}/slots/${slotId}/answer/`, { answer_text: answerText });
+    await api.post(`/api/public/attempts/${attemptId}/slots/${slotId}/answer/`, { answer_text: answerText });
     alert('Saved');
   };
 
   const handleComplete = async () => {
-    await axios.post(`/api/public/attempts/${attemptId}/complete/`);
+    await api.post(`/api/public/attempts/${attemptId}/complete/`);
     navigate('/thank-you');
   };
 

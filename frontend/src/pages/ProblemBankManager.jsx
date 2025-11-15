@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '@/lib/api';
 
 const ProblemBankManager = () => {
   const [banks, setBanks] = useState([]);
@@ -10,12 +10,12 @@ const ProblemBankManager = () => {
   const [problemStatement, setProblemStatement] = useState('');
 
   const loadBanks = () => {
-    axios.get('/api/problem-banks/', { withCredentials: true }).then((res) => setBanks(res.data));
+    api.get('/api/problem-banks/').then((res) => setBanks(res.data));
   };
 
   const loadBankDetails = async (bankId) => {
-    const res = await axios.get(`/api/problem-banks/${bankId}/`, { withCredentials: true });
-    const problems = await axios.get(`/api/problem-banks/${bankId}/problems/`, { withCredentials: true });
+    const res = await api.get(`/api/problem-banks/${bankId}/`);
+    const problems = await api.get(`/api/problem-banks/${bankId}/problems/`);
     setSelectedBank({ ...res.data, problems: problems.data });
   };
 
@@ -24,7 +24,7 @@ const ProblemBankManager = () => {
   }, []);
 
   const handleCreateBank = async () => {
-    await axios.post('/api/problem-banks/', { name, description }, { withCredentials: true });
+    await api.post('/api/problem-banks/', { name, description });
     setName('');
     setDescription('');
     loadBanks();
@@ -32,10 +32,9 @@ const ProblemBankManager = () => {
 
   const handleAddProblem = async () => {
     if (!selectedBank) return;
-    await axios.post(
+    await api.post(
       `/api/problem-banks/${selectedBank.id}/problems/`,
       { order_in_bank: problemOrder, statement: problemStatement },
-      { withCredentials: true }
     );
     setProblemOrder('');
     setProblemStatement('');

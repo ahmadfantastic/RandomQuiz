@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import { useParams } from 'react-router-dom';
+import api from '@/lib/api';
 
 const AllowedInstructorsPage = () => {
   const { quizId } = useParams();
@@ -8,7 +8,7 @@ const AllowedInstructorsPage = () => {
   const [instructorId, setInstructorId] = useState('');
 
   const load = () => {
-    axios.get(`/api/quizzes/${quizId}/allowed-instructors/`, { withCredentials: true }).then((res) => setList(res.data));
+    api.get(`/api/quizzes/${quizId}/allowed-instructors/`).then((res) => setList(res.data));
   };
 
   useEffect(() => {
@@ -16,17 +16,16 @@ const AllowedInstructorsPage = () => {
   }, [quizId]);
 
   const handleAdd = async () => {
-    await axios.post(
+    await api.post(
       `/api/quizzes/${quizId}/allowed-instructors/`,
       { instructor_id: instructorId },
-      { withCredentials: true }
     );
     setInstructorId('');
     load();
   };
 
   const handleRemove = async (id) => {
-    await axios.delete(`/api/quizzes/${quizId}/allowed-instructors/${id}/`, { withCredentials: true });
+    await api.delete(`/api/quizzes/${quizId}/allowed-instructors/${id}/`);
     load();
   };
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import { useParams } from 'react-router-dom';
+import api from '@/lib/api';
 
 const SlotsManagerPage = () => {
   const { quizId } = useParams();
@@ -12,19 +12,19 @@ const SlotsManagerPage = () => {
   const [bankProblems, setBankProblems] = useState({});
 
   const loadSlots = () => {
-    axios.get(`/api/quizzes/${quizId}/slots/`, { withCredentials: true }).then((res) => setSlots(res.data));
+    api.get(`/api/quizzes/${quizId}/slots/`).then((res) => setSlots(res.data));
   };
 
   useEffect(() => {
     loadSlots();
-    axios.get('/api/problem-banks/', { withCredentials: true }).then((res) => setBanks(res.data));
+    api.get('/api/problem-banks/').then((res) => setBanks(res.data));
   }, [quizId]);
 
   useEffect(() => {
     slots.forEach((slot) => {
       if (slot.problem_bank && !bankProblems[slot.problem_bank]) {
-        axios
-          .get(`/api/problem-banks/${slot.problem_bank}/problems/`, { withCredentials: true })
+        api
+          .get(`/api/problem-banks/${slot.problem_bank}/problems/`)
           .then((res) =>
             setBankProblems((prev) => ({
               ...prev,
@@ -36,10 +36,9 @@ const SlotsManagerPage = () => {
   }, [slots, bankProblems]);
 
   const handleCreate = async () => {
-    await axios.post(
+    await api.post(
       `/api/quizzes/${quizId}/slots/`,
       { label, order, problem_bank: problemBank },
-      { withCredentials: true }
     );
     setLabel('');
     setOrder('');
@@ -50,12 +49,11 @@ const SlotsManagerPage = () => {
   const toggleProblemSelection = async (slot, problem) => {
     const existing = slot.slot_problems.find((sp) => sp.problem === problem.id);
     if (existing) {
-      await axios.delete(`/api/slot-problems/${existing.id}/`, { withCredentials: true });
+      await api.delete(`/api/slot-problems/${existing.id}/`);
     } else {
-      await axios.post(
+      await api.post(
         `/api/slots/${slot.id}/slot-problems/`,
         { problem_ids: [problem.id] },
-        { withCredentials: true }
       );
     }
     loadSlots();
