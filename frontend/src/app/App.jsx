@@ -1,21 +1,21 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import LoginPage from './components/LoginPage';
-import Dashboard from './components/Dashboard';
-import QuizEditorPage from './components/QuizEditorPage';
-import AllowedInstructorsPage from './components/AllowedInstructorsPage';
-import SlotsManagerPage from './components/SlotsManagerPage';
-import ProblemBankManager from './components/ProblemBankManager';
-import AdminInstructorManager from './components/AdminInstructorManager';
-import PublicQuizLandingPage from './components/PublicQuizLandingPage';
-import QuizAttemptPage from './components/QuizAttemptPage';
-import ThankYouPage from './components/ThankYouPage';
+import LoginPage from '@/features/auth/pages/LoginPage';
+import DashboardPage from '@/features/dashboard/pages/DashboardPage';
+import QuizEditorPage from '@/pages/QuizEditorPage';
+import AllowedInstructorsPage from '@/pages/AllowedInstructorsPage';
+import SlotsManagerPage from '@/pages/SlotsManagerPage';
+import ProblemBankManager from '@/pages/ProblemBankManager';
+import AdminInstructorManager from '@/pages/AdminInstructorManager';
+import PublicQuizLandingPage from '@/pages/PublicQuizLandingPage';
+import QuizAttemptPage from '@/pages/QuizAttemptPage';
+import ThankYouPage from '@/pages/ThankYouPage';
 
 const App = () => (
   <Router>
     <Routes>
       <Route path="/" element={<LoginPage />} />
-      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/quizzes/:quizId" element={<QuizEditorPage />} />
       <Route path="/quizzes/:quizId/slots" element={<SlotsManagerPage />} />
       <Route path="/quizzes/:quizId/allowed-instructors" element={<AllowedInstructorsPage />} />

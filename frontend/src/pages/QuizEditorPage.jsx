@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import api from '@/lib/api';
 
 const QuizEditorPage = () => {
   const { quizId } = useParams();
@@ -8,7 +8,7 @@ const QuizEditorPage = () => {
   const [quiz, setQuiz] = useState(null);
 
   useEffect(() => {
-    axios.get(`/api/quizzes/${quizId}/`, { withCredentials: true }).then((res) => setQuiz(res.data));
+    api.get(`/api/quizzes/${quizId}/`).then((res) => setQuiz(res.data));
   }, [quizId]);
 
   const handleChange = (e) => {
@@ -16,7 +16,7 @@ const QuizEditorPage = () => {
   };
 
   const handleSave = async () => {
-    await axios.patch(`/api/quizzes/${quizId}/`, quiz, { withCredentials: true });
+    await api.patch(`/api/quizzes/${quizId}/`, quiz);
     alert('Saved');
   };
 

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '@/lib/api';
 
 const AdminInstructorManager = () => {
   const [instructors, setInstructors] = useState([]);
   const [form, setForm] = useState({ username: '', email: '', password: '', is_admin_instructor: false });
 
   const load = () => {
-    axios.get('/api/instructors/', { withCredentials: true }).then((res) => setInstructors(res.data));
+    api.get('/api/instructors/').then((res) => setInstructors(res.data));
   };
 
   useEffect(() => {
@@ -19,18 +19,18 @@ const AdminInstructorManager = () => {
   };
 
   const handleCreate = async () => {
-    await axios.post('/api/instructors/', form, { withCredentials: true });
+    await api.post('/api/instructors/', form);
     setForm({ username: '', email: '', password: '', is_admin_instructor: false });
     load();
   };
 
   const toggleAdmin = async (id, value) => {
-    await axios.patch(`/api/instructors/${id}/`, { is_admin_instructor: value }, { withCredentials: true });
+    await api.patch(`/api/instructors/${id}/`, { is_admin_instructor: value });
     load();
   };
 
   const remove = async (id) => {
-    await axios.delete(`/api/instructors/${id}/`, { withCredentials: true });
+    await api.delete(`/api/instructors/${id}/`);
     load();
   };
 
