@@ -33,8 +33,10 @@ Important endpoints (all prefixed by `/api/`):
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
+
+The Vite dev server proxies `/api/*` requests to the Django app so you can run both services locally without configuring CORS manually. Use `npm run build` when you need an optimized production bundle.
 
 Pages include instructor login, dashboard, quiz editor, slot manager, problem bank manager, admin instructor tools, and the student public quiz/attempt/thank-you flow. The SPA consumes the `/api/` endpoints above; enable CORS or run the frontend on the same origin during development.
 
@@ -52,4 +54,4 @@ Pages include instructor login, dashboard, quiz editor, slot manager, problem ba
 - Problems never have titles. Display labels derive from the order within the original bank (e.g., “Problem 3”).
 - The random selection occurs once per attempt and is persisted in `QuizAttemptSlot.assigned_problem`.
 - SQLite is the default database, but the ORM models are portable to other engines.
-- This repo does not ship compiled assets; run `npm start` for the development server and `python manage.py runserver` for the API.
+- This repo does not ship compiled assets; run `npm run dev` for the Vite development server and `python manage.py runserver` for the API.
