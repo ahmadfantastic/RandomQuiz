@@ -622,11 +622,11 @@ const ProblemAnswer = ({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{slot.slot_label}</p>
-          <p className="mt-1 text-foreground">
-            <span className="rounded-full bg-blue-400 px-2 py-1 mr-1 text-xs font-medium text-accent">
+          {instructionText && (
+            <div className="mt-2 rounded-lg border border-dashed border-blue-400/70 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 break-words">
               {instructionText}
-            </span>
-          </p>
+            </div>
+          )}
         </div>
         {isSaved && <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600">Saved</span>}
         {state === 'error' && <span className="rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">Error</span>}

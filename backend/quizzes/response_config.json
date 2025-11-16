@@ -10,7 +10,7 @@
     {
       "id": "SC",
       "name": "Scenario Quality (SC)",
-      "description": "Is the prolem scenario realistic, contextually rich, and helpful for you to transfer project knowledge to a relevant design decision?"
+      "description": "Is the problem scenario realistic, contextually rich, and helpful for you to transfer project knowledge to a relevant design decision?"
     },
     {
       "id": "AL",
