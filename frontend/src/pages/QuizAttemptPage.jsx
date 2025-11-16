@@ -647,9 +647,17 @@ const ProblemAnswer = ({
         <Textarea
           value={answer?.text || ''}
           onChange={(e) => onChange({ response_type: RESPONSE_TYPES.OPEN_TEXT, text: e.target.value })}
-          placeholder="Type your work and final answer here..."
+          placeholder="Type your answer here..."
           className="mt-5 min-h-[150px] resize-y"
           disabled={!quizOpen}
+          onPaste={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
         />
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
