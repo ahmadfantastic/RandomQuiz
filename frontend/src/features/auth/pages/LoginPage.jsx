@@ -14,16 +14,6 @@ const LoginPage = () => {
           <p className="text-lg text-muted-foreground">
             Sign in to orchestrate quizzes, curate problem banks, and keep your students on track.
           </p>
-          <div className="flex items-center justify-center gap-4 text-left text-sm text-muted-foreground lg:justify-start">
-            <div>
-              <p className="text-2xl font-semibold text-foreground">10k+</p>
-              <p>Attempts delivered</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-foreground">24/7</p>
-              <p>Secure access</p>
-            </div>
-          </div>
         </div>
         <div className="flex-1">
           <Card className="mx-auto max-w-md">

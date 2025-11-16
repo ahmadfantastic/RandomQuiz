@@ -42,3 +42,30 @@
 .markup-content p:last-child {
   margin-bottom: 0;
 }
+
+.markup-content ul,
+.markup-content ol,
+.wmde-markdown ul,
+  .wmde-markdown ol {
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding-left: 1.25rem;
+  list-style-position: outside;
+  list-style-type: disc;
+}
+
+.markup-content ol {
+  list-style-type: decimal;
+}
+
+.wmde-markdown ol {
+  list-style-type: decimal;
+}
+
+.markup-content li {
+  margin-bottom: 0.35rem;
+}
+
+.wmde-markdown li {
+  margin-bottom: 0.35rem;
+}

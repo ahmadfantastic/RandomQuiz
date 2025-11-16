@@ -121,8 +121,7 @@ const ProfilePage = () => {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Profile details</CardTitle>
-            <CardDescription>These values appear wherever your name shows up.</CardDescription>
+            <CardTitle>Profile Details</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading || !profile ? (

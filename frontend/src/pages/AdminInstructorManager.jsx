@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Modal } from '@/components/ui/modal';
+import Avatar from '@/components/ui/Avatar';
 import api from '@/lib/api';
 
 const defaultForm = { username: '', email: '', password: '', is_admin_instructor: false };
@@ -78,15 +79,25 @@ const AdminInstructorManager = () => {
             {instructors.length === 0 && <p className="text-sm text-muted-foreground">No instructors yet.</p>}
             {instructors.map((inst) => {
               const isSelf = Boolean(inst.is_self);
+              const fullName = [inst.first_name, inst.last_name].filter(Boolean).join(' ');
               return (
                 <div key={inst.id} className="rounded-xl border px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">
-                        {inst.username}
-                        {isSelf && <span className="ml-2 text-xs font-medium text-muted-foreground">(You)</span>}
-                      </p>
-                      <p className="text-sm text-muted-foreground">{inst.email}</p>
+                    <div className="flex items-center gap-3">
+                      <Avatar
+                        size={40}
+                        name={fullName}
+                        src={inst.profile_picture_url}
+                        className="flex-shrink-0"
+                      />
+                      <div>
+                        <p className="flex flex-wrap items-center gap-2 font-semibold">
+                          {fullName && <span>{fullName}</span>}
+                          <span className="text-xs text-muted-foreground">@{inst.username}</span>
+                          {isSelf && <span className="text-xs font-medium text-muted-foreground">(You)</span>}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{inst.email}</p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-4">
                       <label className="flex items-center gap-2 text-sm font-medium">
