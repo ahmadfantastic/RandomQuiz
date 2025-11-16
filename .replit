@@ -35,5 +35,5 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["bash", "-c", "cd backend && python manage.py migrate && python manage.py runserver 0.0.0.0:5000"]
+run = ["bash", "-c", "cd backend && python manage.py migrate && gunicorn --bind 0.0.0.0:5000 --workers 2 randomquiz.wsgi:application"]
 build = ["bash", "-c", "cd frontend && npm install && npm run build"]
