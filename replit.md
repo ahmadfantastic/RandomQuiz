@@ -48,8 +48,9 @@ RandomQuiz is a quiz delivery platform with a Django REST Framework backend and 
 3. Configured Django to serve built React frontend from `frontend/dist/`
 4. Created custom view to serve React app for client-side routing
 5. Made DEBUG, SECRET_KEY configurable via environment variables
-6. Deployment build command: `(cd frontend && npm install && npm run build)` - uses subshell to ensure directory change persists
-7. Deployment run command: `cd backend && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 randomquiz.wsgi:application`
+6. Created `build.sh` script to handle frontend build process
+7. Deployment build command: `./build.sh` - runs npm install and build in frontend directory
+8. Deployment run command: `cd backend && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 randomquiz.wsgi:application`
 
 ### Environment Variables
 - `DEBUG`: Set to 'False' in production (defaults to 'True' in development)
@@ -90,11 +91,12 @@ python manage.py createsuperuser
 
 ## Key Files
 
-- `start_all.sh` - Combined startup script for both servers
+- `start_all.sh` - Combined startup script for both servers (development)
+- `build.sh` - Frontend build script for production deployment
 - `backend/randomquiz/settings.py` - Django configuration
 - `frontend/vite.config.js` - Vite configuration with port and proxy settings
 - `backend/db.sqlite3` - SQLite database (gitignored)
-- `.gitignore` - Excludes node_modules, __pycache__, db.sqlite3, etc.
+- `.gitignore` - Excludes node_modules, __pycache__, db.sqlite3, staticfiles, etc.
 
 ## API Endpoints
 
