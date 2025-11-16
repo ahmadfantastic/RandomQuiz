@@ -202,7 +202,7 @@ const QuizzesPage = () => {
                 <div className="space-y-3 text-sm">
                   {descriptionMarkup ? (
                     <div
-                      className="prose max-w-none text-sm text-muted-foreground"
+                      className="prose max-w-none text-sm text-muted-foreground markup-content"
                       dangerouslySetInnerHTML={{ __html: descriptionMarkup }}
                     />
                   ) : (

@@ -841,7 +841,7 @@ const QuizEditorPage = () => {
                     <p className="mt-2 text-sm text-destructive">{statementError}</p>
                   ) : statementMarkupHtml ? (
                     <div
-                      className="mt-2 text-sm text-foreground"
+                      className="mt-2 text-sm text-foreground markup-content"
                       dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
                     />
                   ) : (
@@ -1188,7 +1188,7 @@ const QuizEditorPage = () => {
         {previewedProblem ? (
           previewStatementMarkup ? (
             <div
-              className="prose max-w-none text-sm text-foreground"
+              className="prose max-w-none text-sm text-foreground markup-content"
               dangerouslySetInnerHTML={{ __html: previewStatementMarkup }}
             />
           ) : (

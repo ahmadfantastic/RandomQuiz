@@ -206,10 +206,10 @@ const PublicQuizLandingPage = () => {
               <CardTitle>Instruction</CardTitle>
               <CardDescription>Read the below instrcutions:</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 text-muted-foreground">
+            <CardContent className="pt-0 space-y-4 text-muted-foreground">
               {descriptionMarkup ? (
                 <div
-                  className="prose max-w-none text-sm text-muted-foreground"
+                  className="prose max-w-none text-sm text-muted-foreground markup-content"
                   dangerouslySetInnerHTML={{ __html: descriptionMarkup }}
                 />
               ) : (

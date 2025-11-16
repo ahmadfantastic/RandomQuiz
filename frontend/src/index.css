@@ -34,3 +34,11 @@
     @apply bg-background text-foreground min-h-screen antialiased;
   }
 }
+
+.markup-content p {
+  margin-bottom: 0.75rem;
+}
+
+.markup-content p:last-child {
+  margin-bottom: 0;
+}

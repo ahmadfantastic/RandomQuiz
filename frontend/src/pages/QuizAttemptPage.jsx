@@ -401,12 +401,12 @@ const QuizAttemptPage = () => {
           <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">{quizTitle}</h1>
           {quizDescription && (
             quizDescriptionMarkup ? (
-              <div className="mt-3 text-sm leading-relaxed text-primary-foreground/80">
-                <div
-                  className="prose max-w-none text-sm"
-                  dangerouslySetInnerHTML={{ __html: quizDescriptionMarkup }}
-                />
-              </div>
+            <div className="mt-3 text-sm leading-relaxed text-primary-foreground/80">
+              <div
+                className="prose max-w-none text-sm markup-content"
+                dangerouslySetInnerHTML={{ __html: quizDescriptionMarkup }}
+              />
+            </div>
             ) : (
               <p className="mt-3 text-sm text-primary-foreground/80 whitespace-pre-line">{quizDescription}</p>
             )
@@ -633,7 +633,10 @@ const ProblemAnswer = ({
       </div>
       {statementMarkupHtml ? (
         <div className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{ __html: statementMarkupHtml }} />
+          <div
+            className="prose max-w-none text-sm markup-content"
+            dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
+          />
         </div>
       ) : (
         <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{slot.problem_statement}</p>

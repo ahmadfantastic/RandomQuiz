@@ -354,7 +354,10 @@ const ProblemBankManager = () => {
                               ) : statementError ? (
                                 <p className="text-sm text-destructive">{statementError}</p>
                               ) : statementMarkupHtml ? (
-                                <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{ __html: statementMarkupHtml }} />
+                                <div
+                                  className="prose max-w-none text-sm markup-content"
+                                  dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
+                                />
                               ) : (
                                 <p className="text-sm text-muted-foreground">No problem statement provided.</p>
                               )}
