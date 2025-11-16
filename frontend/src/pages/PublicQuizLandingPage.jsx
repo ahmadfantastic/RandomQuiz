@@ -6,12 +6,56 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import api from '@/lib/api';
 import { encodeAttemptToken } from '@/lib/attemptToken';
+import { renderProblemMarkupHtml } from '@/lib/markdown';
 
 const formatDateTime = (value) => {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+const getQuizAvailability = (quiz) => {
+  if (!quiz) {
+    return null;
+  }
+  if (quiz.is_open) {
+    return {
+      key: 'open',
+      label: 'Open for attempts',
+      buttonLabel: 'Start attempt',
+      message: '',
+      errorMessage: '',
+      canAttempt: true,
+    };
+  }
+  const now = Date.now();
+  const start = quiz.start_time ? new Date(quiz.start_time).getTime() : null;
+  const end = quiz.end_time ? new Date(quiz.end_time).getTime() : null;
+
+  if (end && now > end) {
+    const message = 'This quiz window has ended and new attempts are not accepted.';
+    return {
+      key: 'closed',
+      label: 'Closed right now',
+      buttonLabel: 'Quiz closed',
+      message,
+      errorMessage: message,
+      canAttempt: false,
+    };
+  }
+
+  const startMessage = start
+    ? `Opens ${formatDateTime(quiz.start_time)}. Check back then for the invitation.`
+    : 'The instructor has not opened this quiz yet. Check the window information above.';
+  return {
+    key: 'not_open',
+    label: 'Not open yet',
+    buttonLabel: 'Not open yet',
+    message: startMessage,
+    errorMessage: startMessage,
+    canAttempt: false,
+  };
 };
 
 const PublicQuizLandingPage = () => {
@@ -24,6 +68,10 @@ const PublicQuizLandingPage = () => {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   const navigate = useNavigate();
+  const descriptionMarkup = useMemo(() => {
+    const text = quiz?.description?.trim();
+    return text ? renderProblemMarkupHtml(text) : '';
+  }, [quiz?.description]);
 
   useEffect(() => {
     let isMounted = true;
@@ -61,6 +109,8 @@ const PublicQuizLandingPage = () => {
     return `${start} — ${end}`;
   }, [quiz]);
 
+  const quizAvailability = useMemo(() => getQuizAvailability(quiz), [quiz]);
+
   const handleStart = async (event) => {
     event.preventDefault();
     const trimmed = identifier.trim();
@@ -68,8 +118,8 @@ const PublicQuizLandingPage = () => {
       setIdentifierError('Enter the identifier your instructor requested.');
       return;
     }
-    if (!quiz?.is_open) {
-      setStartError('This quiz is currently closed.');
+    if (!quizAvailability?.canAttempt) {
+      setStartError(quizAvailability?.errorMessage || 'This quiz is currently closed.');
       return;
     }
     setIdentifierError('');
@@ -136,7 +186,6 @@ const PublicQuizLandingPage = () => {
         <header className="rounded-3xl bg-primary px-6 py-8 text-primary-foreground shadow-xl">
           <p className="text-xs uppercase tracking-[0.3em] text-primary-foreground/75">Quiz invitation</p>
           <h1 className="mt-4 text-3xl font-semibold sm:text-4xl">{quiz.title}</h1>
-          {quiz.description && <p className="mt-3 text-base text-primary-foreground/80">{quiz.description}</p>}
           <dl className="mt-6 flex flex-wrap gap-6 text-sm text-primary-foreground/80">
             <div>
               <dt className="uppercase tracking-widest text-xs text-primary-foreground/60">Window</dt>
@@ -145,7 +194,7 @@ const PublicQuizLandingPage = () => {
             <div>
               <dt className="uppercase tracking-widest text-xs text-primary-foreground/60">Status</dt>
               <dd className="text-base font-semibold">
-                {quiz.is_open ? 'Open for attempts' : 'Closed right now'}
+                {quizAvailability?.label || 'Checking status...'}
               </dd>
             </div>
           </dl>
@@ -154,13 +203,18 @@ const PublicQuizLandingPage = () => {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <Card className="order-2 border-primary/30 shadow-lg lg:order-1">
             <CardHeader>
-              <CardTitle>How this works</CardTitle>
-              <CardDescription>Enter your identifier to receive a personalized set of problems.</CardDescription>
+              <CardTitle>Instruction</CardTitle>
+              <CardDescription>Read the below instrcutions:</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm text-muted-foreground">
-              <p>• Use the identifier your instructor requested (email, student ID, etc.).</p>
-              <p>• Each quiz attempt is unique. Once you begin, the timer (if any) may start.</p>
-              <p>• All answers must be saved inside the quiz interface before you submit.</p>
+            <CardContent className="space-y-4 text-muted-foreground">
+              {descriptionMarkup ? (
+                <div
+                  className="prose max-w-none text-sm text-muted-foreground"
+                  dangerouslySetInnerHTML={{ __html: descriptionMarkup }}
+                />
+              ) : (
+                <p>{quiz.description}</p>
+              )}
             </CardContent>
           </Card>
 
@@ -187,13 +241,16 @@ const PublicQuizLandingPage = () => {
                   {identifierError && <p className="text-sm text-destructive">{identifierError}</p>}
                 </div>
                 {startError && <p className="text-sm text-destructive">{startError}</p>}
-                <Button className="w-full text-base font-semibold" size="lg" type="submit" disabled={!quiz.is_open || starting}>
-                  {quiz.is_open ? (starting ? 'Starting attempt...' : 'Start attempt') : 'Quiz closed'}
+                <Button
+                  className="w-full text-base font-semibold"
+                  size="lg"
+                  type="submit"
+                  disabled={!quizAvailability?.canAttempt || starting}
+                >
+                  {starting ? 'Starting attempt...' : quizAvailability?.buttonLabel || 'Start attempt'}
                 </Button>
-                {!quiz.is_open && (
-                  <p className="text-sm text-muted-foreground">
-                    The instructor has not opened this quiz yet. Check the window information above.
-                  </p>
+                {quizAvailability && !quizAvailability.canAttempt && quizAvailability.message && (
+                  <p className="text-sm text-muted-foreground">{quizAvailability.message}</p>
                 )}
               </form>
             </CardContent>

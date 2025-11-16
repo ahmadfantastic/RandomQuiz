@@ -20,7 +20,7 @@ from accounts.models import Instructor, ensure_instructor
 from accounts.permissions import IsAdminInstructor, IsInstructor
 from accounts.serializers import InstructorSerializer
 from problems.models import ProblemBank, Problem
-from problems.serializers import ProblemBankSerializer, ProblemSerializer
+from problems.serializers import ProblemBankSerializer, ProblemSerializer, ProblemSummarySerializer
 from quizzes.models import (
     Quiz,
     QuizSlot,
@@ -72,19 +72,46 @@ class CSRFTokenView(APIView):
 class InstructorViewSet(viewsets.ModelViewSet):
     serializer_class = InstructorSerializer
     queryset = Instructor.objects.select_related('user').all()
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
     # Allow anyone to create an instructor (POST) so admins can invite via the UI,
     # but keep list/update/delete restricted to admin instructors.
 
     def _ensure_not_self_modification(self, instructor):
         user = self.request.user
         if user.is_superuser and instructor.user_id == user.id:
+            if self._is_safe_super_admin_update():
+                return
             raise PermissionDenied('Super admins cannot modify their own instructor entry.')
 
+    def _is_safe_super_admin_update(self):
+        allowed_fields = {'first_name', 'last_name', 'profile_picture'}
+        data = getattr(self.request, 'data', {})
+        if not data:
+            return False
+        # QueryDict and dict both support keys()
+        keys = set()
+        try:
+            keys = set(data.keys())
+        except Exception:
+            return False
+        extra = keys - allowed_fields
+        # Allow CSRF token injected by middleware (if present)
+        extra = {key for key in extra if not key.endswith('csrfmiddlewaretoken')}
+        return len(extra) == 0
+
     def get_permissions(self):
-        # `action` is set by DRF viewsets (e.g., 'create', 'list', 'retrieve', 'update', 'destroy')
-        if getattr(self, 'action', None) == 'create':
+        action = getattr(self, 'action', None)
+        if action == 'create':
             return [AllowAny()]
+        if action == 'me':
+            return [IsInstructor()]
         return [IsAdminInstructor()]
+
+    @action(detail=False, methods=['get'], permission_classes=[IsInstructor], url_path='me')
+    def me(self, request):
+        instructor = ensure_instructor(request.user)
+        serializer = self.get_serializer(instructor)
+        return Response(serializer.data)
 
     def perform_update(self, serializer):
         self._ensure_not_self_modification(serializer.instance)
@@ -100,11 +127,24 @@ class ProblemBankViewSet(viewsets.ModelViewSet):
     permission_classes = [IsInstructor]
 
     def get_queryset(self):
-        instructor = ensure_instructor(self.request.user)
-        return ProblemBank.objects.filter(owner=instructor)
+        return ProblemBank.objects.select_related('owner__user').all()
 
     def perform_create(self, serializer):
         serializer.save(owner=ensure_instructor(self.request.user))
+
+    def _ensure_owner(self, bank):
+        instructor = ensure_instructor(self.request.user)
+        if bank.owner != instructor:
+            raise PermissionDenied('Only the owner can modify this problem bank.')
+        return instructor
+
+    def perform_update(self, serializer):
+        self._ensure_owner(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._ensure_owner(instance)
+        super().perform_destroy(instance)
 
     @action(detail=False, methods=['post'], url_path='import', parser_classes=[parsers.MultiPartParser, parsers.FormParser])
     def import_from_csv(self, request, *args, **kwargs):
@@ -198,13 +238,14 @@ class ProblemViewSet(viewsets.ModelViewSet):
     permission_classes = [IsInstructor]
 
     def get_queryset(self):
-        instructor = ensure_instructor(self.request.user)
-        return Problem.objects.filter(problem_bank__owner=instructor)
+        return Problem.objects.select_related('problem_bank', 'problem_bank__owner').all()
 
     def perform_create(self, serializer):
         instructor = ensure_instructor(self.request.user)
         bank_id = self.request.data.get('problem_bank')
-        bank = get_object_or_404(ProblemBank, id=bank_id, owner=instructor)
+        bank = get_object_or_404(ProblemBank, id=bank_id)
+        if bank.owner != instructor:
+            raise PermissionDenied('Only the owner can add problems to this bank.')
         order = serializer.validated_data.get('order_in_bank')
         if order is None:
             last_order = bank.problems.aggregate(max_order=models.Max('order_in_bank'))['max_order'] or 0
@@ -213,28 +254,48 @@ class ProblemViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         instructor = ensure_instructor(self.request.user)
+        problem = serializer.instance
+        if problem.problem_bank.owner != instructor:
+            raise PermissionDenied('Only the bank owner can edit this problem.')
         bank = serializer.validated_data.get('problem_bank')
         if bank and bank.owner != instructor:
             raise PermissionDenied('Cannot move problem to another instructor bank')
         serializer.save()
 
+    def perform_destroy(self, instance):
+        instructor = ensure_instructor(self.request.user)
+        if instance.problem_bank.owner != instructor:
+            raise PermissionDenied('Only the bank owner can delete this problem.')
+        super().perform_destroy(instance)
+
 
 class ProblemBankProblemListCreate(generics.ListCreateAPIView):
-    serializer_class = ProblemSerializer
     permission_classes = [IsInstructor]
 
+    def get_serializer_class(self):
+        if self.request.method == 'GET':
+            return ProblemSummarySerializer
+        return ProblemSerializer
+
     def get_queryset(self):
-        instructor = ensure_instructor(self.request.user)
-        return Problem.objects.filter(problem_bank_id=self.kwargs['bank_id'], problem_bank__owner=instructor)
+        bank = self._get_bank()
+        return Problem.objects.filter(problem_bank=bank)
 
     def perform_create(self, serializer):
         instructor = ensure_instructor(self.request.user)
-        bank = get_object_or_404(ProblemBank, id=self.kwargs['bank_id'], owner=instructor)
+        bank = self._get_bank()
+        if bank.owner != instructor:
+            raise PermissionDenied('Only the owner can add problems to this bank.')
         order = serializer.validated_data.get('order_in_bank')
         if order is None:
             last_order = bank.problems.aggregate(max_order=models.Max('order_in_bank'))['max_order'] or 0
             order = last_order + 1
         serializer.save(problem_bank=bank, order_in_bank=order)
+
+    def _get_bank(self):
+        if not hasattr(self, '_bank_cache'):
+            self._bank_cache = get_object_or_404(ProblemBank, id=self.kwargs['bank_id'])
+        return self._bank_cache
 
 
 class QuizViewSet(viewsets.ModelViewSet):
@@ -415,23 +476,37 @@ class QuizAllowedInstructorList(APIView):
 
     def get_quiz(self, request, quiz_id):
         instructor = ensure_instructor(request.user)
-        return get_object_or_404(
+        quiz = get_object_or_404(
             Quiz.objects.filter(
                 models.Q(owner=instructor) | models.Q(allowed_instructors=instructor)
             ).distinct(),
             id=quiz_id,
         )
+        return quiz, instructor
 
     def get(self, request, quiz_id):
-        quiz = self.get_quiz(request, quiz_id)
-        serializer = InstructorSerializer(quiz.allowed_instructors.all(), many=True)
-        return Response(serializer.data)
+        quiz, instructor = self.get_quiz(request, quiz_id)
+        owner = quiz.owner
+        owner_data = InstructorSerializer(owner, context={'request': request}).data
+        owner_data['is_owner'] = True
+        allowed_qs = quiz.allowed_instructors.exclude(id=owner.id)
+        allowed_data = InstructorSerializer(allowed_qs, many=True, context={'request': request}).data
+        for entry in allowed_data:
+            entry['is_owner'] = False
+        return Response(
+            {
+                'instructors': [owner_data, *allowed_data],
+                'can_manage': quiz.owner_id == instructor.id,
+            }
+        )
 
     def post(self, request, quiz_id):
-        quiz = self.get_quiz(request, quiz_id)
+        quiz, instructor = self.get_quiz(request, quiz_id)
+        if quiz.owner != instructor:
+            raise PermissionDenied('Only the quiz owner can manage collaborators.')
         instructor_username = request.data.get('instructor_username')
-        instructor = get_object_or_404(Instructor, user__username=instructor_username)
-        quiz.allowed_instructors.add(instructor)
+        instructor_to_add = get_object_or_404(Instructor, user__username=instructor_username)
+        quiz.allowed_instructors.add(instructor_to_add)
         return Response({'detail': 'Instructor added'})
 
 
@@ -440,10 +515,9 @@ class QuizAllowedInstructorDelete(APIView):
 
     def delete(self, request, quiz_id, instructor_id):
         instructor = ensure_instructor(request.user)
-        quiz = get_object_or_404(
-            Quiz.objects.filter(models.Q(owner=instructor) | models.Q(allowed_instructors=instructor)).distinct(),
-            id=quiz_id,
-        )
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        if quiz.owner != instructor:
+            raise PermissionDenied('Only the quiz owner can manage collaborators.')
         quiz.allowed_instructors.remove(instructor_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -610,6 +684,12 @@ class PublicAttemptSlotAnswer(APIView):
         attempt_slot = get_object_or_404(QuizAttemptSlot, attempt_id=attempt_id, slot_id=slot_id)
         if attempt_slot.attempt.completed_at:
             return Response({'detail': 'This attempt has already been submitted.'}, status=status.HTTP_400_BAD_REQUEST)
+        quiz = attempt_slot.attempt.quiz
+        if not quiz.is_open():
+            return Response(
+                {'detail': 'This quiz window has closed and new answers are no longer accepted.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         payload = request.data.get('answer_data')
         if not isinstance(payload, dict):
             legacy_answer = request.data.get('answer_text')
@@ -715,7 +795,41 @@ class PublicAttemptComplete(APIView):
         attempt = get_object_or_404(QuizAttempt, id=attempt_id)
         if attempt.completed_at:
             return Response({'detail': 'This attempt has already been submitted.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not attempt.quiz.is_open():
+            return Response(
+                {'detail': 'This quiz window has closed and submissions are no longer accepted.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        pending_slots = request.data.get('slots')
+        if pending_slots is not None:
+            self._save_pending_answers(attempt, pending_slots)
         attempt.completed_at = timezone.now()
         attempt.save()
         serializer = QuizAttemptSerializer(attempt)
         return Response(serializer.data)
+
+    def _save_pending_answers(self, attempt, slots_payload):
+        if not isinstance(slots_payload, list):
+            raise serializers.ValidationError({'detail': 'slots must be a list of answers.'})
+        attempt_slots = list(attempt.attempt_slots.select_related('slot').all())
+        slot_map = {slot.slot_id: slot for slot in attempt_slots}
+        attempt_slot_map = {slot.id: slot for slot in attempt_slots}
+        normalizer = PublicAttemptSlotAnswer()
+        now = timezone.now()
+        updates = []
+        for entry in slots_payload:
+            slot_id = entry.get('slot_id') if isinstance(entry, dict) else None
+            answer_data = entry.get('answer_data') if isinstance(entry, dict) else None
+            if slot_id is None:
+                raise serializers.ValidationError({'detail': 'Each slot answer must include a slot_id.'})
+            if not isinstance(answer_data, dict):
+                raise serializers.ValidationError({'detail': f'Answer data for slot {slot_id} must be an object.'})
+            attempt_slot = slot_map.get(slot_id) or attempt_slot_map.get(slot_id)
+            if attempt_slot is None:
+                raise serializers.ValidationError({'detail': f'Unknown slot id: {slot_id}.'})
+            normalized = normalizer.normalize_answer(attempt_slot.slot, answer_data)
+            attempt_slot.answer_data = normalized
+            attempt_slot.answered_at = now
+            updates.append(attempt_slot)
+        if updates:
+            QuizAttemptSlot.objects.bulk_update(updates, ['answer_data', 'answered_at'])

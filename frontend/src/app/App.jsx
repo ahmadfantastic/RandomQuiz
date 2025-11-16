@@ -9,11 +9,13 @@ import PublicQuizLandingPage from '@/pages/PublicQuizLandingPage';
 import QuizAttemptPage from '@/pages/QuizAttemptPage';
 import ThankYouPage from '@/pages/ThankYouPage';
 import QuizzesPage from '@/pages/QuizzesPage';
+import ProfilePage from '@/pages/ProfilePage';
 
 const App = () => (
   <Router>
     <Routes>
       <Route path="/" element={<LoginPage />} />
+      <Route path="/profile" element={<ProfilePage />} />
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/quizzes" element={<QuizzesPage />} />
       <Route path="/quizzes/new" element={<QuizzesPage />} />

@@ -19,6 +19,7 @@ import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
 import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
+import useProblemStatements from '@/lib/useProblemStatements';
 
 const TABS = {
   OVERVIEW: 'overview',
@@ -27,7 +28,7 @@ const TABS = {
   INSTRUCTORS: 'instructors',
 };
 
-const defaultSlotForm = { label: '', problem_bank: '', response_type: 'open_text' };
+const defaultSlotForm = { label: '', instruction: '', problem_bank: '', response_type: 'open_text' };
 
 const formatDateTime = (value) => {
   if (!value) return 'Not scheduled';
@@ -44,6 +45,7 @@ const normalizeSlot = (slot) => ({
   response_type: slot.response_type || 'open_text',
   order: typeof slot.order === 'number' ? slot.order.toString() : slot.order || '',
   slot_problems: Array.isArray(slot.slot_problems) ? slot.slot_problems : [],
+  instruction: slot.instruction ?? '',
   original_problem_bank: slot.problem_bank ?? null,
   pending_bank_change: false,
 });
@@ -129,6 +131,8 @@ const QuizEditorPage = () => {
   const [slotProblemOptions, setSlotProblemOptions] = useState({});
   const [isSelectingAllProblems, setIsSelectingAllProblems] = useState(false);
   const [expandedSlotProblems, setExpandedSlotProblems] = useState({});
+  const { statements: slotProblemStatements, loadStatement: loadSlotProblemStatement } =
+    useProblemStatements();
   const [attemptError, setAttemptError] = useState('');
   const [attemptToDelete, setAttemptToDelete] = useState(null);
   const [isDeletingAttempt, setIsDeletingAttempt] = useState(false);
@@ -136,7 +140,9 @@ const QuizEditorPage = () => {
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
+  const [previewedProblem, setPreviewedProblem] = useState(null);
   const [allowedInstructors, setAllowedInstructors] = useState([]);
+  const [canManageAllowedInstructors, setCanManageAllowedInstructors] = useState(false);
   const [instructorId, setInstructorId] = useState('');
   const [instructorError, setInstructorError] = useState('');
   const pendingBankRequests = useRef(new Set());
@@ -173,6 +179,11 @@ const QuizEditorPage = () => {
     };
   }, [ratingScaleOptions]);
 
+  const previewStatementMarkup = useMemo(
+    () => (previewedProblem ? renderProblemMarkupHtml(previewedProblem.statement) : ''),
+    [previewedProblem]
+  );
+
   const openSlotModal = () => {
     setSlotForm({ ...defaultSlotForm });
     setSlotFormError('');
@@ -196,10 +207,12 @@ const QuizEditorPage = () => {
 
   const openAttemptModal = (attempt) => {
     setSelectedAttempt(attempt);
+    setPreviewedProblem(null);
   };
 
   const closeAttemptModal = () => {
     setSelectedAttempt(null);
+    setPreviewedProblem(null);
   };
 
   const loadBankProblems = useCallback(
@@ -253,15 +266,22 @@ const QuizEditorPage = () => {
   };
 
   const toggleProblemDetails = (slotId, problemId) => {
+    const isCurrentlyExpanded = expandedSlotProblems[slotId]?.includes(problemId);
     setExpandedSlotProblems((prev) => {
       const current = new Set(prev[slotId] ?? []);
-      if (current.has(problemId)) {
+      if (isCurrentlyExpanded) {
         current.delete(problemId);
       } else {
         current.add(problemId);
       }
       return { ...prev, [slotId]: Array.from(current) };
     });
+    if (!isCurrentlyExpanded) {
+      const entry = slotProblemStatements[problemId];
+      if (!entry?.statement && !entry?.loading) {
+        loadSlotProblemStatement(problemId);
+      }
+    }
   };
 
   const requestAttemptDeletion = (attempt) => {
@@ -304,14 +324,29 @@ const QuizEditorPage = () => {
     api
       .get(`/api/quizzes/${quizId}/allowed-instructors/`)
       .then((res) => {
-        setAllowedInstructors(res.data);
+        const responseData = res.data;
+        const instructors = Array.isArray(responseData)
+          ? responseData
+          : responseData?.instructors ?? [];
+        const canManage = Array.isArray(responseData)
+          ? false
+          : Boolean(responseData?.can_manage);
+        setAllowedInstructors(instructors);
+        setCanManageAllowedInstructors(canManage);
         setInstructorError('');
       })
-      .catch(() => setInstructorError('Unable to load allowed instructors.'));
+      .catch(() => {
+        setInstructorError('Unable to load allowed instructors.');
+        setCanManageAllowedInstructors(false);
+      });
   };
 
   const handleAddInstructor = async () => {
     if (!instructorId.trim()) return;
+    if (!canManageAllowedInstructors) {
+      setInstructorError('Only the quiz owner can add instructors.');
+      return;
+    }
     try {
       await api.post(`/api/quizzes/${quizId}/allowed-instructors/`, { instructor_username: instructorId });
       setInstructorId('');
@@ -324,6 +359,10 @@ const QuizEditorPage = () => {
   };
 
   const handleRemoveInstructor = async (id) => {
+    if (!canManageAllowedInstructors) {
+      setInstructorError('Only the quiz owner can remove instructors.');
+      return;
+    }
     try {
       await api.delete(`/api/quizzes/${quizId}/allowed-instructors/${id}/`);
       setInstructorError('');
@@ -526,6 +565,7 @@ const QuizEditorPage = () => {
     try {
       const payload = {
         label: slotForm.label.trim(),
+        instruction: slotForm.instruction.trim(),
         problem_bank: Number(slotForm.problem_bank),
         response_type: slotForm.response_type,
       };
@@ -587,14 +627,16 @@ const QuizEditorPage = () => {
       setSlotError('Each slot must have a problem bank.');
       return;
     }
-    setSavingSlotId(slot.id);
-    setSlotError('');
-    try {
-      await api.patch(`/api/slots/${slot.id}/`, {
-        label: slot.label.trim(),
-        problem_bank: selectedBankId,
-        response_type: slot.response_type,
-      });
+  setSavingSlotId(slot.id);
+  setSlotError('');
+  try {
+    const trimmedInstruction = (slot.instruction || '').trim();
+    await api.patch(`/api/slots/${slot.id}/`, {
+      label: slot.label.trim(),
+      problem_bank: selectedBankId,
+      response_type: slot.response_type,
+      instruction: trimmedInstruction,
+    });
       loadSlots();
     } catch (error) {
       const detail = error.response?.data?.detail || error.response?.data?.label?.[0] || 'Unable to update the slot.';
@@ -748,8 +790,13 @@ const QuizEditorPage = () => {
           const displayLabel = `Problem ${displayIndex}`;
           const expandedIds = new Set(expandedSlotProblems[slot.id] ?? []);
           const isExpanded = expandedIds.has(problem.id);
-          const statementMarkupHtml = renderProblemMarkupHtml(problem.statement);
-          const markupText = problem.statement?.trim() ? problem.statement : 'No markup available.';
+          const entry = slotProblemStatements[problem.id];
+          const hasStatementEntry = entry && 'statement' in entry;
+          const rawStatement = hasStatementEntry ? entry.statement : '';
+          const statementText = rawStatement?.trim();
+          const statementMarkupHtml = statementText ? renderProblemMarkupHtml(rawStatement) : '';
+          const isStatementLoading = !entry || Boolean(entry.loading);
+          const statementError = entry?.error;
           return (
             <div key={problem.id} className="space-y-2 rounded-lg border border-muted/40 bg-background/60 p-3">
               <div className="flex items-center gap-3">
@@ -788,7 +835,11 @@ const QuizEditorPage = () => {
               {isExpanded && (
                 <div className="rounded-md border border-muted/30 bg-muted/10 p-3 text-sm">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Description</p>
-                  {statementMarkupHtml ? (
+                  {isStatementLoading ? (
+                    <p className="mt-2 text-sm text-muted-foreground">Loading problem markup…</p>
+                  ) : statementError ? (
+                    <p className="mt-2 text-sm text-destructive">{statementError}</p>
+                  ) : statementMarkupHtml ? (
                     <div
                       className="mt-2 text-sm text-foreground"
                       dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
@@ -849,7 +900,6 @@ const QuizEditorPage = () => {
               >
                 <div className="flex-1 space-y-1">
                   <p className="font-semibold text-foreground">{row.name}</p>
-                  {row.description && <p className="text-xs text-muted-foreground">{row.description}</p>}
                   {helperLabel && <p className="text-xs text-muted-foreground">{helperLabel}</p>}
                 </div>
                 <div className="flex flex-col items-end justify-center gap-1">
@@ -1009,6 +1059,7 @@ const QuizEditorPage = () => {
                 setInstructorId={setInstructorId}
                 handleAddInstructor={handleAddInstructor}
                 handleRemoveInstructor={handleRemoveInstructor}
+                canManageCollaborators={canManageAllowedInstructors}
                 loadInstructors={loadAllowedInstructors}
                 instructorError={instructorError}
               />
@@ -1069,17 +1120,40 @@ const QuizEditorPage = () => {
               </p>
             </div>
             <div className="space-y-4">
-              {(selectedAttempt.attempt_slots || []).map((slot) => (
-                <div key={slot.id} className="rounded-md border bg-background p-3">
-                  <p className="text-sm font-semibold">
-                    {slot.slot_label} · {slot.problem_display_label}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{slot.problem_statement}</p>
-                  <div className="mt-2 rounded-md bg-muted/50 p-3 text-sm">
-                    {renderAttemptAnswer(slot)}
+              {(selectedAttempt.attempt_slots || []).map((slot) => {
+                const slotLabel = slot.slot_label || 'Slot';
+                const problemLabel = slot.problem_display_label || 'Problem';
+                return (
+                  <div key={slot.id} className="rounded-md border bg-background p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-muted-foreground">
+                          {slotLabel}
+                        </p>
+                        <p className="text-sm font-semibold text-foreground">{problemLabel}</p>
+                      </div>
+                      {slot.problem_statement && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setPreviewedProblem({
+                              slotLabel,
+                              problemLabel,
+                              statement: slot.problem_statement,
+                            })
+                          }
+                        >
+                          Show problem
+                        </Button>
+                      )}
+                    </div>
+                    <div className="mt-3 rounded-md bg-muted/50 p-3 text-sm text-foreground">
+                      {renderAttemptAnswer(slot)}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={closeAttemptModal}>
@@ -1100,6 +1174,28 @@ const QuizEditorPage = () => {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Loading attempt details…</p>
+        )}
+      </Modal>
+      <Modal
+        open={Boolean(previewedProblem)}
+        onOpenChange={() => setPreviewedProblem(null)}
+        title={previewedProblem?.problemLabel || 'Problem statement'}
+        description={
+          previewedProblem?.slotLabel ? `Slot ${previewedProblem.slotLabel}` : undefined
+        }
+        className="max-w-3xl"
+      >
+        {previewedProblem ? (
+          previewStatementMarkup ? (
+            <div
+              className="prose max-w-none text-sm text-foreground"
+              dangerouslySetInnerHTML={{ __html: previewStatementMarkup }}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">No statement is available for this problem.</p>
+          )
+        ) : (
+          <p className="text-sm text-muted-foreground">Preparing problem details…</p>
         )}
       </Modal>
       <Modal
@@ -1165,6 +1261,19 @@ const QuizEditorPage = () => {
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">Choose how students will respond in this slot.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="detail-slot-instruction">Instructions for students</Label>
+              <Textarea
+                id="detail-slot-instruction"
+                value={activeSlot.instruction ?? ''}
+                onChange={(event) => handleSlotChange(activeSlot.id, 'instruction', event.target.value)}
+                placeholder="Explain what students should include in their answer."
+                className="min-h-[100px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                This guidance appears above the problem when students respond to the slot.
+              </p>
             </div>
             {slotError && <p className="text-sm text-destructive">{slotError}</p>}
             <div className="space-y-2">
@@ -1283,6 +1392,20 @@ const QuizEditorPage = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="modal-slot-instruction">Instructions for students</Label>
+                <Textarea
+                  id="modal-slot-instruction"
+                  name="instruction"
+                  value={slotForm.instruction}
+                  onChange={handleSlotFormChange}
+                  placeholder="Explain how you expect students to approach this slot."
+                  className="min-h-[100px]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional guidance that students see while answering this slot.
+                </p>
               </div>
               {slotFormError && <p className="text-sm text-destructive">{slotFormError}</p>}
               <div className="flex justify-end gap-3">

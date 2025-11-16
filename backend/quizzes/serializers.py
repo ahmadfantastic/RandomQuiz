@@ -29,7 +29,7 @@ class QuizSlotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QuizSlot
-        fields = ['id', 'quiz', 'label', 'order', 'problem_bank', 'problem_bank_name', 'response_type', 'slot_problems']
+        fields = ['id', 'quiz', 'label', 'instruction', 'order', 'problem_bank', 'problem_bank_name', 'response_type', 'slot_problems']
         read_only_fields = ['quiz', 'order']
 
     def validate_problem_bank(self, value):
@@ -79,6 +79,7 @@ class QuizSerializer(serializers.ModelSerializer):
 
 class QuizAttemptSlotSerializer(serializers.ModelSerializer):
     slot_label = serializers.CharField(source='slot.label', read_only=True)
+    slot_instruction = serializers.CharField(source='slot.instruction', read_only=True)
     problem_statement = serializers.CharField(source='assigned_problem.statement', read_only=True)
     problem_display_label = serializers.CharField(source='assigned_problem.display_label', read_only=True)
     response_type = serializers.CharField(source='slot.response_type', read_only=True)
@@ -90,6 +91,7 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
             'attempt',
             'slot',
             'slot_label',
+            'slot_instruction',
             'assigned_problem',
             'problem_statement',
             'problem_display_label',
@@ -102,8 +104,13 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
 
 class QuizAttemptSerializer(serializers.ModelSerializer):
     attempt_slots = QuizAttemptSlotSerializer(many=True, read_only=True)
+    quiz_is_open = serializers.SerializerMethodField()
+    quiz = QuizSerializer(read_only=True)
 
     class Meta:
         model = QuizAttempt
-        fields = ['id', 'quiz', 'student_identifier', 'started_at', 'completed_at', 'extra_info', 'attempt_slots']
+        fields = ['id', 'quiz', 'student_identifier', 'started_at', 'completed_at', 'extra_info', 'attempt_slots', 'quiz_is_open']
         read_only_fields = ['quiz', 'student_identifier', 'started_at', 'completed_at']
+
+    def get_quiz_is_open(self, obj):
+        return obj.quiz.is_open()

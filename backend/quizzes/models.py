@@ -21,8 +21,10 @@ class Quiz(models.Model):
         return self.title
 
     def is_open(self) -> bool:
+        if self.start_time is None:
+            return False
         now = timezone.now()
-        if self.start_time and now < self.start_time:
+        if now < self.start_time:
             return False
         if self.end_time and now > self.end_time:
             return False
@@ -36,6 +38,11 @@ class QuizSlot(models.Model):
 
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='slots')
     label = models.CharField(max_length=255)
+    instruction = models.TextField(
+        blank=True,
+        default='',
+        help_text='Guidance shown to students when they respond to this slot',
+    )
     order = models.IntegerField()
     problem_bank = models.ForeignKey(
         ProblemBank,

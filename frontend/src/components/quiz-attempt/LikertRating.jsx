@@ -7,6 +7,7 @@ const LikertRating = ({
   selectedRatings,
   onRatingSelect,
   slotId,
+  disabled = false,
 }) => {
   return (
     <div className="mt-5">
@@ -31,8 +32,7 @@ const LikertRating = ({
             <div key={criterion.id} className="rounded-2xl border bg-card/70 p-4 shadow-sm">
               {/* Criterion Description */}
               <div className="mb-4">
-                <p className="text-sm font-semibold text-foreground">{criterion.name}</p>
-                <p className="text-xs text-muted-foreground">{criterion.description}</p>
+                <p className="text-sm text-foreground">{criterion.description}</p>
               </div>
 
               {/* Rating Options - Vertical Grid */}
@@ -45,8 +45,9 @@ const LikertRating = ({
                     <label
                       key={`${criterion.id}-${optionKey}`}
                       className={cn(
-                        'flex flex-col items-center gap-2 cursor-pointer rounded-lg p-2 transition-colors sm:p-3',
-                        isSelected ? 'bg-primary/10' : 'hover:bg-muted/50'
+                        'flex flex-col items-center gap-2 rounded-lg p-2 transition-colors sm:p-3',
+                        isSelected ? 'bg-primary/10' : disabled ? '' : 'hover:bg-muted/50',
+                        disabled ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
                       )}
                     >
                       <input
@@ -55,14 +56,20 @@ const LikertRating = ({
                         value={option.value}
                         className="sr-only"
                         checked={isSelected}
-                        onChange={() => onRatingSelect(criterion.id, option.value)}
+                        disabled={disabled}
+                        onChange={() => {
+                          if (disabled) return;
+                          onRatingSelect(criterion.id, option.value);
+                        }}
                       />
-                      <div className={cn(
-                        'flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors sm:h-10 sm:w-10 sm:text-base',
-                        isSelected
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-muted-foreground/30 text-muted-foreground hover:border-primary/50'
-                      )}>
+                      <div
+                        className={cn(
+                          'flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors sm:h-10 sm:w-10 sm:text-base',
+                          isSelected
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-muted-foreground/30 text-muted-foreground hover:border-primary/50'
+                        )}
+                      >
                         {option.value}
                       </div>
                       <span className="hidden text-center text-xs text-muted-foreground sm:block">{option.label}</span>

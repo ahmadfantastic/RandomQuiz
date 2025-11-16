@@ -8,10 +8,24 @@ import { cn } from '@/lib/utils';
 import { decodeAttemptToken } from '@/lib/attemptToken';
 import { useResponseConfig } from '@/lib/useResponseConfig';
 import LikertRating from '@/components/quiz-attempt/LikertRating';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const RESPONSE_TYPES = {
   OPEN_TEXT: 'open_text',
   RATING: 'rating',
+};
+
+const QUIZ_CLOSED_MESSAGE = 'This quiz window has closed and new answers are no longer accepted.';
+const QUIZ_CLOSED_PREFIX = 'This quiz window has closed';
+
+marked.setOptions({ mangle: false });
+
+const renderProblemMarkupHtml = (statement) => {
+  if (!statement) {
+    return '';
+  }
+  return DOMPurify.sanitize(marked.parse(statement));
 };
 
 const createEmptyAnswer = (slot) => {
@@ -72,7 +86,8 @@ const QuizAttemptPage = () => {
   const location = useLocation();
   const locationAttemptId = location.state?.attemptId;
   const initialSlots = location.state?.slots || [];
-  const quizTitle = location.state?.quizTitle || location.state?.quiz?.title || 'Quiz attempt';
+  const initialQuizInfo = location.state?.quiz || null;
+  const quizTitle = location.state?.quizTitle || initialQuizInfo?.title || 'Quiz attempt';
   const initialStudentIdentifier = location.state?.studentIdentifier;
   const attemptId = useMemo(() => decodeAttemptToken(attemptToken) || locationAttemptId || null, [attemptToken, locationAttemptId]);
   const attemptReference = useMemo(() => {
@@ -88,7 +103,10 @@ const QuizAttemptPage = () => {
 
   const [slots, setSlots] = useState(initialSlots);
   const [resolvedStudentIdentifier, setResolvedStudentIdentifier] = useState(initialStudentIdentifier);
+  const [quizInfo, setQuizInfo] = useState(initialQuizInfo);
   const [answers, setAnswers] = useState(buildAnswerMap(initialSlots));
+  const quizDescription = quizInfo?.description?.trim();
+  const quizDescriptionMarkup = quizDescription ? renderProblemMarkupHtml(quizDescription) : '';
   const [banner, setBanner] = useState(null);
   const [savingState, setSavingState] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -96,6 +114,8 @@ const QuizAttemptPage = () => {
   const [attemptLoading, setAttemptLoading] = useState(false);
   const [attemptLoadError, setAttemptLoadError] = useState('');
   const [attemptCompleted, setAttemptCompleted] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(true);
+  const [quizClosedMessage, setQuizClosedMessage] = useState('');
 
   useEffect(() => {
     if (Array.isArray(location.state?.slots) && location.state.slots.length) {
@@ -125,13 +145,22 @@ const QuizAttemptPage = () => {
     setAttemptCompleted(false);
     api
       .get(`/api/public/attempts/${attemptId}/`)
-      .then((response) => {
-        if (!isActive) return;
-        const attempt = response.data;
-        setAttemptCompleted(Boolean(attempt.completed_at));
-        setSlots(attempt.attempt_slots || []);
-        setResolvedStudentIdentifier((current) => current || attempt.student_identifier);
-      })
+    .then((response) => {
+      if (!isActive) return;
+      const attempt = response.data;
+      setAttemptCompleted(Boolean(attempt.completed_at));
+      const attemptQuizIsOpen = attempt.quiz_is_open ?? true;
+      setQuizOpen(attemptQuizIsOpen);
+      if (attemptQuizIsOpen) {
+        setQuizClosedMessage('');
+      } else {
+        setQuizClosedMessage(QUIZ_CLOSED_MESSAGE);
+        setBanner({ type: 'error', message: QUIZ_CLOSED_MESSAGE });
+      }
+      setSlots(attempt.attempt_slots || []);
+      setResolvedStudentIdentifier((current) => current || attempt.student_identifier);
+      setQuizInfo(attempt.quiz || initialQuizInfo);
+    })
       .catch((error) => {
         if (!isActive) return;
         const detail = error.response?.data?.detail;
@@ -179,6 +208,13 @@ const QuizAttemptPage = () => {
   };
 
   const handleSave = async (slot) => {
+    if (!quizOpen) {
+      setBanner({
+        type: 'error',
+        message: quizClosedMessage || QUIZ_CLOSED_MESSAGE,
+      });
+      return;
+    }
     const slotId = slot.slot;
     const slotLabel = slot.slot_label;
     const answer = answers[slotId];
@@ -194,12 +230,24 @@ const QuizAttemptPage = () => {
       setBanner({ type: 'success', message: `${slotLabel} saved successfully.` });
     } catch (error) {
       setSlotSaveState(slotId, 'error');
-      const message = error.response?.data?.detail || `Unable to save ${slotLabel}. Please try again.`;
+      const detail = error.response?.data?.detail;
+      if (detail?.startsWith(QUIZ_CLOSED_PREFIX)) {
+        setQuizOpen(false);
+        setQuizClosedMessage(detail);
+      }
+      const message = detail || `Unable to save ${slotLabel}. Please try again.`;
       setBanner({ type: 'error', message });
     }
   };
 
   const handleComplete = async () => {
+    if (!quizOpen) {
+      setBanner({
+        type: 'error',
+        message: quizClosedMessage || QUIZ_CLOSED_MESSAGE,
+      });
+      return;
+    }
     setShowValidation(true);
     if (!allAnswered) {
       setBanner({ type: 'error', message: 'Answer every question before submitting the quiz.' });
@@ -207,11 +255,20 @@ const QuizAttemptPage = () => {
     }
     setSubmitting(true);
     try {
-      await api.post(`/api/public/attempts/${attemptId}/complete/`);
+      const payloadSlots = slots.map((slot) => ({
+        slot_id: slot.slot,
+        answer_data: answers[slot.slot] || createEmptyAnswer(slot),
+      }));
+      await api.post(`/api/public/attempts/${attemptId}/complete/`, { slots: payloadSlots });
       navigate('/thank-you', { state: { quizTitle, attemptReference, studentIdentifier: resolvedStudentIdentifier } });
     } catch (error) {
+      const detail = error.response?.data?.detail;
+      if (detail?.startsWith(QUIZ_CLOSED_PREFIX)) {
+        setQuizOpen(false);
+        setQuizClosedMessage(detail);
+      }
       const message =
-        error.response?.data?.detail ||
+        detail ||
         'We were unable to submit your quiz. Your answers are safe - please try again.';
       setBanner({
         type: 'error',
@@ -338,10 +395,22 @@ const QuizAttemptPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
-      <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
-        <section className="rounded-3xl bg-primary px-6 py-8 text-primary-foreground shadow-xl">
-          <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/75">In progress</p>
+        <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
+          <section className="rounded-3xl bg-primary px-6 py-8 text-primary-foreground shadow-xl">
+            <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/75">In progress</p>
           <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">{quizTitle}</h1>
+          {quizDescription && (
+            quizDescriptionMarkup ? (
+              <div className="mt-3 text-sm leading-relaxed text-primary-foreground/80">
+                <div
+                  className="prose max-w-none text-sm"
+                  dangerouslySetInnerHTML={{ __html: quizDescriptionMarkup }}
+                />
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-primary-foreground/80 whitespace-pre-line">{quizDescription}</p>
+            )
+          )}
           <p className="mt-2 text-sm text-primary-foreground/80">
             Reference {attemptReference}
             {resolvedStudentIdentifier ? ` · ${resolvedStudentIdentifier}` : ''} · {totalCount} question{totalCount === 1 ? '' : 's'}
@@ -382,6 +451,8 @@ const QuizAttemptPage = () => {
                   ratingCriteriaCount={ratingCriteriaCount}
                   ratingConfigError={responseConfigError}
                   isRatingConfigLoading={isConfigLoading}
+                  quizOpen={quizOpen}
+                  quizClosedMessage={quizClosedMessage}
                 />
               ))}
             </section>
@@ -413,12 +484,17 @@ const QuizAttemptPage = () => {
                     className="w-full text-base font-semibold"
                     size="lg"
                     onClick={handleComplete}
-                    disabled={!allAnswered || submitting}
+                    disabled={!allAnswered || submitting || !quizOpen}
                   >
                     {submitting ? 'Submitting...' : 'Submit quiz'}
                   </Button>
                   {!allAnswered && showValidation && (
                     <p className="text-sm font-medium text-destructive">All questions are required before submitting.</p>
+                  )}
+                  {!quizOpen && (
+                    <p className="text-sm font-medium text-destructive">
+                      {quizClosedMessage || QUIZ_CLOSED_MESSAGE}
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -477,17 +553,35 @@ const ProblemAnswer = ({
   ratingCriteriaCount,
   ratingConfigError,
   isRatingConfigLoading,
+  quizOpen,
+  quizClosedMessage,
 }) => {
   const isRating = slot.response_type === RESPONSE_TYPES.RATING;
   const state = saveState || (hasAnyInput(slot, answer) ? 'dirty' : null);
   const isSaving = state === 'saving';
   const isSaved = state === 'saved';
   const isComplete = isAnswerComplete(slot, answer, ratingCriteriaCount);
-  const hasError = showValidation && !isComplete;
+  const isLocked = !quizOpen;
+  const hasError = !isLocked && showValidation && !isComplete;
   const problemLabel = slot.problem_display_label || 'Problem';
+  const instructionText = slot.slot_instruction?.trim();
+  const statementMarkupHtml = slot.problem_statement ? renderProblemMarkupHtml(slot.problem_statement) : '';
   const criteria = Array.isArray(ratingConfig?.criteria) ? ratingConfig.criteria : [];
   const scale = Array.isArray(ratingConfig?.scale) ? ratingConfig.scale : [];
   const isRatingConfigReady = !isRating || (criteria.length > 0 && scale.length > 0);
+  const closureMessage = quizClosedMessage || QUIZ_CLOSED_MESSAGE;
+  let statusMessage = '';
+  if (isLocked) {
+    statusMessage = closureMessage;
+  } else if (hasError) {
+    statusMessage = isRating ? 'Provide a rating for each criterion.' : 'This question needs an answer.';
+  } else if (state === 'dirty') {
+    statusMessage = 'Unsaved changes - save before you leave this page.';
+  } else if (isSaved) {
+    statusMessage = 'Saved just now.';
+  } else if (!state && !isSaved) {
+    statusMessage = 'Answer is required before submitting.';
+  }
 
   const handleRatingSelection = (criterionId, optionValue) => {
     const nextRatings = { ...(answer?.ratings || {}) };
@@ -513,6 +607,7 @@ const ProblemAnswer = ({
         selectedRatings={answer?.ratings || {}}
         onRatingSelect={handleRatingSelection}
         slotId={slot.id}
+        disabled={!quizOpen}
       />
     );
   };
@@ -523,16 +618,26 @@ const ProblemAnswer = ({
         'rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur-sm transition-colors',
         hasError ? 'border-destructive/60 bg-destructive/5' : 'border-border'
       )}
-    >
+    > 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{slot.slot_label}</p>
-          <h2 className="mt-1 text-xl font-semibold text-foreground">{problemLabel}</h2>
+          <p className="mt-1 text-foreground">
+            <span className="rounded-full bg-blue-400 px-2 py-1 mr-1 text-xs font-medium text-accent">
+              {instructionText}
+            </span>
+          </p>
         </div>
         {isSaved && <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600">Saved</span>}
         {state === 'error' && <span className="rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">Error</span>}
       </div>
-      <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{slot.problem_statement}</p>
+      {statementMarkupHtml ? (
+        <div className="mt-4 text-sm leading-relaxed text-muted-foreground">
+          <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{ __html: statementMarkupHtml }} />
+        </div>
+      ) : (
+        <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{slot.problem_statement}</p>
+      )}
       {isRating ? (
         renderRatingFields()
       ) : (
@@ -541,19 +646,22 @@ const ProblemAnswer = ({
           onChange={(e) => onChange({ response_type: RESPONSE_TYPES.OPEN_TEXT, text: e.target.value })}
           placeholder="Type your work and final answer here..."
           className="mt-5 min-h-[150px] resize-y"
+          disabled={!quizOpen}
         />
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-        <p className={cn(hasError ? 'text-destructive' : 'text-muted-foreground')}>
-          {hasError && (isRating ? 'Provide a rating for each criterion.' : 'This question needs an answer.')}
-          {!hasError && state === 'dirty' && 'Unsaved changes - save before you leave this page.'}
-          {!hasError && isSaved && 'Saved just now.'}
-          {!hasError && !state && !isSaved && 'Answer is required before submitting.'}
+        <p className={cn(isLocked || hasError ? 'text-destructive' : 'text-muted-foreground')}>
+          {statusMessage}
         </p>
         <Button
           size="sm"
           onClick={onSave}
-          disabled={isSaving || !isComplete || (isRating && !isRatingConfigReady)}
+          disabled={
+            isSaving ||
+            !isComplete ||
+            (isRating && !isRatingConfigReady) ||
+            !quizOpen
+          }
         >
           {isSaving ? 'Saving...' : 'Save answer'}
         </Button>

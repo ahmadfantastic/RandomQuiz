@@ -8,12 +8,27 @@ from .models import Instructor
 class InstructorSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username')
     email = serializers.EmailField(source='user.email', allow_blank=True, required=False)
+    first_name = serializers.CharField(source='user.first_name', allow_blank=True, required=False)
+    last_name = serializers.CharField(source='user.last_name', allow_blank=True, required=False)
+    profile_picture = serializers.ImageField(required=False, allow_null=True)
+    profile_picture_url = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, source='user.password', required=False)
     is_self = serializers.SerializerMethodField()
 
     class Meta:
         model = Instructor
-        fields = ['id', 'username', 'email', 'is_admin_instructor', 'password', 'is_self']
+        fields = [
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'profile_picture',
+            'profile_picture_url',
+            'is_admin_instructor',
+            'password',
+            'is_self',
+        ]
 
     def get_is_self(self, obj):
         request = self.context.get('request')
@@ -46,7 +61,19 @@ class InstructorSerializer(serializers.ModelSerializer):
         for attr, value in user_data.items():
             if attr == 'password' and value:
                 instance.user.set_password(value)
-            elif attr in ['username', 'email']:
+            elif attr in ['username', 'email', 'first_name', 'last_name']:
                 setattr(instance.user, attr, value)
         instance.user.save()
         return super().update(instance, validated_data)
+
+    def get_profile_picture_url(self, obj):
+        if not obj.profile_picture:
+            return None
+        request = self.context.get('request')
+        try:
+            url = obj.profile_picture.url
+        except ValueError:
+            return None
+        if request:
+            return request.build_absolute_uri(url)
+        return url

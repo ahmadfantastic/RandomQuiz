@@ -6,8 +6,19 @@ import QuizStatusIcon from '@/components/quiz/QuizStatusIcon';
 import { getQuizStatus } from '@/lib/quizStatus';
 import api from '@/lib/api';
 import { clearAuthFlag, hasAuthFlag } from '@/lib/auth';
+import Avatar from '@/components/ui/Avatar';
 
 const navItems = [
+  {
+    label: 'Profile',
+    to: '/profile',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 20c0-3 3.5-5 8-5s8 2 8 5" />
+      </svg>
+    ),
+  },
   {
     label: 'Dashboard',
     to: '/dashboard',
@@ -41,6 +52,13 @@ const navItems = [
 
 const Sidebar = ({ isOpen, onClose }) => {
   const [isQuizMenuOpen, setIsQuizMenuOpen] = useState(true);
+  const [profile, setProfile] = useState({
+    username: 'Instructor',
+    email: '',
+    first_name: '',
+    last_name: '',
+    profile_picture_url: '',
+  });
   const [quizzes, setQuizzes] = useState([]);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
   const [quizError, setQuizError] = useState('');
@@ -72,6 +90,42 @@ const Sidebar = ({ isOpen, onClose }) => {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    if (!hasAuthFlag()) return;
+    let isMounted = true;
+    api
+      .get('/api/instructors/me/')
+      .then((res) => {
+        if (!isMounted) return;
+        setProfile({
+          username: res.data.username || 'Instructor',
+          email: res.data.email || '',
+          first_name: res.data.first_name || '',
+          last_name: res.data.last_name || '',
+          profile_picture_url: res.data.profile_picture_url || '',
+        });
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (!event?.detail) return;
+      setProfile({
+        username: event.detail.username || 'Instructor',
+        email: event.detail.email || '',
+        first_name: event.detail.first_name || '',
+        last_name: event.detail.last_name || '',
+        profile_picture_url: event.detail.profile_picture_url || '',
+      });
+    };
+    window.addEventListener('profileUpdated', handler);
+    return () => window.removeEventListener('profileUpdated', handler);
   }, []);
 
   useEffect(() => {
@@ -178,9 +232,19 @@ const Sidebar = ({ isOpen, onClose }) => {
       )}
     >
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground">Random Quiz</p>
-          <p className="text-lg font-semibold">Instructor</p>
+        <div className="flex items-center gap-3">
+          <Avatar
+            size={48}
+            name={[profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.username}
+            src={profile.profile_picture_url}
+          />
+          <div>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">Random Quiz</p>
+            <p className="text-lg font-semibold">
+              {[profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.username}
+            </p>
+            {profile.email && <p className="text-xs text-muted-foreground">{profile.email}</p>}
+          </div>
         </div>
         <button className="rounded-md border p-2 lg:hidden" onClick={onClose} aria-label="Close navigation">
           <span className="sr-only">Close sidebar</span>

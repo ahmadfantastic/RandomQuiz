@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import AppShell from '@/components/layout/AppShell';
@@ -9,6 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Modal } from '@/components/ui/modal';
 import api from '@/lib/api';
+import useProblemStatements from '@/lib/useProblemStatements';
+import MDEditor from '@uiw/react-md-editor';
+import '@uiw/react-markdown-preview/markdown.css';
+import '@uiw/react-md-editor/markdown-editor.css';
 import { cn } from '@/lib/utils';
 
 const ProblemBankManager = () => {
@@ -25,20 +29,66 @@ const ProblemBankManager = () => {
   const [importError, setImportError] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [openProblemId, setOpenProblemId] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingProblemId, setEditingProblemId] = useState(null);
+  const [editingStatement, setEditingStatement] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+  const editStatementSyncedRef = useRef(false);
+  const { statements: problemStatements, loadStatement: loadProblemStatement, resetStatements } =
+    useProblemStatements();
+  const [problemActionError, setProblemActionError] = useState('');
+  const [deletingProblems, setDeletingProblems] = useState({});
+  const canEditSelectedBank = Boolean(selectedBank?.is_owner);
+  const selectedBankOwnerLabel = selectedBank?.owner_username || 'the owner';
 
   const loadBanks = () => {
     api.get('/api/problem-banks/').then((res) => setBanks(res.data));
   };
 
   const loadBankDetails = async (bankId) => {
+    setProblemActionError('');
+    resetStatements();
+    setOpenProblemId(null);
     const res = await api.get(`/api/problem-banks/${bankId}/`);
     const problems = await api.get(`/api/problem-banks/${bankId}/problems/`);
     setSelectedBank({ ...res.data, problems: problems.data });
   };
 
+  const handleProblemToggle = (problemId) => {
+    const nextId = openProblemId === problemId ? null : problemId;
+    setOpenProblemId(nextId);
+    if (
+      nextId &&
+      !problemStatements[nextId]?.statement &&
+      !problemStatements[nextId]?.loading
+    ) {
+      loadProblemStatement(nextId);
+    }
+  };
+
   useEffect(() => {
     loadBanks();
   }, []);
+
+  useEffect(() => {
+    if (!editingProblemId) {
+      editStatementSyncedRef.current = false;
+      return;
+    }
+    if (editStatementSyncedRef.current) {
+      return;
+    }
+    const entry = problemStatements[editingProblemId];
+    if (!entry || entry.loading) {
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(entry, 'statement')) {
+      return;
+    }
+    setEditingStatement(entry.statement ?? '');
+    editStatementSyncedRef.current = true;
+  }, [editingProblemId, problemStatements]);
 
   const handleCreateBank = async (event) => {
     event.preventDefault();
@@ -53,11 +103,84 @@ const ProblemBankManager = () => {
   const handleAddProblem = async (event) => {
     event.preventDefault();
     if (!selectedBank) return;
+    if (!selectedBank.is_owner) {
+      setProblemActionError(`Only ${selectedBankOwnerLabel} can add problems to this bank.`);
+      return;
+    }
     await api.post(`/api/problem-banks/${selectedBank.id}/problems/`, {
       statement: problemStatement,
     });
     setProblemStatement('');
     loadBankDetails(selectedBank.id);
+  };
+
+  const closeEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingProblemId(null);
+    setEditingStatement('');
+    setEditError('');
+    editStatementSyncedRef.current = false;
+  };
+
+  const handleOpenEditModal = (problemId) => {
+    setEditingProblemId(problemId);
+    setIsEditModalOpen(true);
+    setEditError('');
+    setEditingStatement('');
+    editStatementSyncedRef.current = false;
+    const entry = problemStatements[problemId];
+    const hasStatementLoaded = entry && Object.prototype.hasOwnProperty.call(entry, 'statement');
+    if (!hasStatementLoaded && !entry?.loading) {
+      loadProblemStatement(problemId);
+    }
+  };
+
+  const handleSaveEdit = async (event) => {
+    event.preventDefault();
+    if (!editingProblemId) return;
+    setIsSavingEdit(true);
+    setEditError('');
+    try {
+      await api.patch(`/api/problems/${editingProblemId}/`, { statement: editingStatement });
+      await loadProblemStatement(editingProblemId);
+      setOpenProblemId(editingProblemId);
+      closeEditModal();
+    } catch (error) {
+      const detail = error.response?.data?.detail || 'Unable to update this problem right now.';
+      setEditError(detail);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteProblem = async (problemId) => {
+    if (
+      !window.confirm(
+        'Are you sure you want to delete this problem? This action cannot be undone.'
+      )
+    ) {
+      return;
+    }
+    if (editingProblemId === problemId) {
+      closeEditModal();
+    }
+    setProblemActionError('');
+    setDeletingProblems((prev) => ({ ...prev, [problemId]: true }));
+    try {
+      await api.delete(`/api/problems/${problemId}/`);
+      if (selectedBank) {
+        await loadBankDetails(selectedBank.id);
+      }
+    } catch (error) {
+      const detail = error.response?.data?.detail || 'Unable to delete this problem right now.';
+      setProblemActionError(detail);
+    } finally {
+      setDeletingProblems((prev) => {
+        const next = { ...prev };
+        delete next[problemId];
+        return next;
+      });
+    }
   };
 
   const resetImportForm = () => {
@@ -106,10 +229,16 @@ const ProblemBankManager = () => {
     }
   };
 
+  const editingProblemEntry = editingProblemId ? problemStatements[editingProblemId] : null;
+  const isEditingStatementLoading = Boolean(
+    editingProblemId && (!editingProblemEntry || editingProblemEntry.loading)
+  );
+  const editingStatementLoadError = editingProblemEntry?.error;
+
   return (
     <AppShell
       title="Problem banks"
-      description="Organize reusable questions and keep your quizzes consistent by working from the same source."
+      description="Organize reusable questions while browsing every instructor's bank; only owners can edit their content."
     >
       <div className="sticky top-0 z-20 bg-background/50 backdrop-blur-sm px-4 lg:px-0 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -125,32 +254,46 @@ const ProblemBankManager = () => {
       <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
         <Card className="lg:min-h-[320px] lg:sticky lg:top-16 lg:self-start lg:max-h-[calc(100vh-4rem)] lg:overflow-auto">
           <CardHeader>
-            <CardTitle>Your banks</CardTitle>
-            <CardDescription>Select one to view or add problems.</CardDescription>
+            <CardTitle>Problem banks</CardTitle>
+            <CardDescription>Browse every bank in your workspace; only the owner can edit its problems.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {banks.length === 0 && <p className="text-sm text-muted-foreground">You have not created any banks yet.</p>}
-            {banks.map((bank) => (
-              <button
-                key={bank.id}
-                type="button"
-                onClick={() => loadBankDetails(bank.id)}
-                className={cn(
-                  'flex w-full flex-col rounded-lg border px-4 py-3 text-left transition hover:border-primary hover:text-primary',
-                  selectedBank?.id === bank.id && 'border-primary bg-primary/5 text-primary'
-                )}
-              >
-                <span className="font-medium">{bank.name}</span>
-                {bank.description && <span className="text-sm text-muted-foreground">{bank.description}</span>}
-              </button>
-            ))}
+            {banks.length === 0 && (
+              <p className="text-sm text-muted-foreground">No problem banks yet. Create one to get started.</p>
+            )}
+            {banks.map((bank) => {
+              const ownerLabel = bank.is_owner
+                ? 'You own this bank'
+                : `Owned by ${bank.owner_username || 'another instructor'}`;
+              return (
+                <button
+                  key={bank.id}
+                  type="button"
+                  onClick={() => loadBankDetails(bank.id)}
+                  className={cn(
+                    'flex w-full flex-col rounded-lg border px-4 py-3 text-left transition hover:border-primary hover:text-primary',
+                    selectedBank?.id === bank.id && 'border-primary bg-primary/5 text-primary'
+                  )}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">{bank.name}</span>
+                    {bank.description && <span className="text-sm text-muted-foreground">{bank.description}</span>}
+                    <span className="text-xs text-muted-foreground">{ownerLabel}</span>
+                  </div>
+                </button>
+              );
+            })}
           </CardContent>
         </Card>
         <Card className="min-h-[400px] mt-6">
           <CardHeader>
             <CardTitle>{selectedBank ? selectedBank.name : 'Select a bank'}</CardTitle>
             <CardDescription>
-              {selectedBank ? 'Review questions and add new problems below.' : 'Pick a bank from the list to review it here.'}
+              {selectedBank
+                ? canEditSelectedBank
+                  ? 'Review questions and add new problems below.'
+                  : `Only ${selectedBankOwnerLabel} can edit this bank. You can review the problems here.`
+                : 'Pick a bank from the list to review it here.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -160,7 +303,15 @@ const ProblemBankManager = () => {
                   <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">{selectedBank.description}</div>
                 )}
                 <div className="space-y-2">
+                  {problemActionError && (
+                    <p className="text-sm text-destructive">{problemActionError}</p>
+                  )}
                   <p className="text-sm font-medium text-muted-foreground">Problems</p>
+                  {!canEditSelectedBank && (
+                    <p className="text-xs text-muted-foreground">
+                      This bank is read-only. Only {selectedBankOwnerLabel} can manage its problems.
+                    </p>
+                  )}
                   <div className="space-y-3">
                     {selectedBank.problems.length === 0 && (
                       <p className="text-sm text-muted-foreground">No problems yet. Add one using the form below.</p>
@@ -168,13 +319,22 @@ const ProblemBankManager = () => {
                     {selectedBank.problems.map((problem, idx) => {
                       const label = problem.display_label || `Problem ${idx + 1}`;
                       const isOpen = openProblemId === problem.id;
-                      const html = DOMPurify.sanitize(marked.parse(problem.statement || ''));
+                      const entry = problemStatements[problem.id];
+                      const hasStatementEntry = entry && 'statement' in entry;
+                      const rawStatement = hasStatementEntry ? entry.statement : '';
+                      const hasStatementText = rawStatement?.trim();
+                      const statementMarkupHtml = hasStatementText
+                        ? DOMPurify.sanitize(marked.parse(rawStatement))
+                        : '';
+                      const isLoadingStatement = !entry || Boolean(entry.loading);
+                      const statementError = entry?.error;
+                      const isDeletingProblem = Boolean(deletingProblems[problem.id]);
                       return (
                         <div key={problem.id} className="rounded-lg border">
                           <button
                             type="button"
                             className="w-full flex items-center justify-between px-4 py-3 text-left"
-                            onClick={() => setOpenProblemId(isOpen ? null : problem.id)}
+                            onClick={() => handleProblemToggle(problem.id)}
                             aria-expanded={isOpen}
                           >
                             <span className="text-sm font-semibold">{label}</span>
@@ -188,8 +348,38 @@ const ProblemBankManager = () => {
                             </svg>
                           </button>
                           {isOpen && (
-                            <div className="px-4 pb-4">
-                              <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{ __html: html }} />
+                            <div className="px-4 pb-4 space-y-3">
+                              {isLoadingStatement ? (
+                                <p className="text-sm text-muted-foreground">Loading problem markup…</p>
+                              ) : statementError ? (
+                                <p className="text-sm text-destructive">{statementError}</p>
+                              ) : statementMarkupHtml ? (
+                                <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{ __html: statementMarkupHtml }} />
+                              ) : (
+                                <p className="text-sm text-muted-foreground">No problem statement provided.</p>
+                              )}
+                              {canEditSelectedBank && (
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isLoadingStatement}
+                                    onClick={() => handleOpenEditModal(problem.id)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    disabled={isLoadingStatement || isDeletingProblem}
+                                    onClick={() => handleDeleteProblem(problem.id)}
+                                  >
+                                    {isDeletingProblem ? 'Deleting…' : 'Delete'}
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -197,23 +387,34 @@ const ProblemBankManager = () => {
                     })}
                   </div>
                 </div>
-                <div className="space-y-4 rounded-lg border p-4">
-                  <p className="text-sm font-medium">Add a new problem</p>
-                  <form className="space-y-4" onSubmit={handleAddProblem}>
-                    <div className="space-y-2">
-                      <Label htmlFor="problem-statement">Statement</Label>
-                      <Textarea
-                        id="problem-statement"
-                        value={problemStatement}
-                        onChange={(e) => setProblemStatement(e.target.value)}
-                        placeholder="Describe the problem to students..."
-                      />
-                    </div>
-                    <Button type="submit" disabled={!problemStatement.trim()}>
-                      Add problem
-                    </Button>
-                  </form>
-                </div>
+                {canEditSelectedBank ? (
+                  <div className="space-y-4 rounded-lg border p-4">
+                    <p className="text-sm font-medium">Add a new problem</p>
+                    <form className="space-y-4" onSubmit={handleAddProblem}>
+                      <div className="space-y-2">
+                        <Label htmlFor="problem-statement">Statement (Markdown)</Label>
+                        <div id="problem-statement">
+                          <MDEditor
+                            value={problemStatement}
+                            onChange={(value) => setProblemStatement(value ?? '')}
+                            height={240}
+                            preview="edit"
+                          />
+                        </div>
+                      </div>
+                      <Button type="submit" disabled={!problemStatement.trim()}>
+                        Add problem
+                      </Button>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-lg border p-4">
+                    <p className="text-sm font-medium">Read-only bank</p>
+                    <p className="text-sm text-muted-foreground">
+                      Only {selectedBankOwnerLabel} can add or edit problems in this bank.
+                    </p>
+                  </div>
+                )}
               </>
             ) : (
               <p className="text-sm text-muted-foreground">Choose a problem bank from the left to start managing its questions.</p>
@@ -292,6 +493,46 @@ const ProblemBankManager = () => {
             </Button>
             <Button type="submit" disabled={isImporting || !importName.trim() || !importFile}>
               {isImporting ? 'Importing…' : 'Import bank'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        open={isEditModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeEditModal();
+          }
+        }}
+        title="Edit problem"
+        description="Update the Markdown statement for this problem."
+      >
+        <form className="space-y-4" onSubmit={handleSaveEdit}>
+          {editError && <p className="text-sm text-destructive">{editError}</p>}
+          {editingStatementLoadError && (
+            <p className="text-sm text-destructive">{editingStatementLoadError}</p>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="edit-problem-statement">Statement (Markdown)</Label>
+            <div id="edit-problem-statement">
+              {isEditingStatementLoading ? (
+                <p className="text-sm text-muted-foreground">Loading current statement…</p>
+              ) : (
+                <MDEditor
+                  value={editingStatement}
+                  onChange={(value) => setEditingStatement(value ?? '')}
+                  height={240}
+                  preview="edit"
+                />
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={closeEditModal}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSavingEdit || isEditingStatementLoading}>
+              {isSavingEdit ? 'Saving…' : 'Save changes'}
             </Button>
           </div>
         </form>

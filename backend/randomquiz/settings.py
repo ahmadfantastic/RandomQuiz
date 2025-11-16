@@ -99,6 +99,8 @@ STATIC_ROOT = BASE_DIR.parent / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR.parent / 'frontend' / 'dist' / 'assets',
 ]
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR.parent / 'mediafiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 WHITENOISE_ROOT = BASE_DIR.parent / 'frontend' / 'dist'
@@ -110,6 +112,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173', 
     'http://127.0.0.1:5173',
     'http://localhost:5000',
+    'http://localhost:3000',
     'http://127.0.0.1:5000',
 ]
 

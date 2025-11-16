@@ -6,11 +6,14 @@ import AppShell from '@/components/layout/AppShell';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Modal } from '@/components/ui/modal';
-import { Textarea } from '@/components/ui/textarea';
 import QuizStatusIcon from '@/components/quiz/QuizStatusIcon';
 import api from '@/lib/api';
 import { hasAuthFlag } from '@/lib/auth';
 import { getQuizStatus } from '@/lib/quizStatus';
+import { renderProblemMarkupHtml } from '@/lib/markdown';
+import MDEditor from '@uiw/react-md-editor';
+import '@uiw/react-markdown-preview/markdown.css';
+import '@uiw/react-md-editor/markdown-editor.css';
 
 const defaultCreateForm = {
   title: '',
@@ -89,6 +92,11 @@ const QuizzesPage = () => {
     setCreateError('');
   };
 
+  const handleCreateDescriptionChange = (value) => {
+    setCreateForm((prev) => ({ ...prev, description: value ?? '' }));
+    setCreateError('');
+  };
+
   const isCreateFormValid = Boolean(createForm.title.trim());
 
   const handleCreateSubmit = async (event) => {
@@ -162,15 +170,25 @@ const QuizzesPage = () => {
         {sortedQuizzes.map((quiz) => {
           const status = getQuizStatus(quiz);
           const description = quiz.description?.trim();
+          const descriptionMarkup = description ? renderProblemMarkupHtml(description) : '';
           return (
             <Card key={quiz.id} className="flex flex-col border border-border/80 bg-card/70 shadow-sm">
               <CardHeader className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <CardTitle className="truncate">{quiz.title}</CardTitle>
-                    {description && (
-                      <CardDescription className="text-sm text-muted-foreground">{description}</CardDescription>
-                    )}
+                    <CardDescription className="text-sm mt-4 text-muted-foreground">
+                      {quiz.public_id && (
+                        <a
+                          href={`/q/${quiz.public_id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 font-semibold text-blue-500 hover:underline"
+                        >
+                          <span className="font-mono text-xs tracking-tight">/q/{quiz.public_id}</span>
+                        </a>
+                      )}
+                    </CardDescription>
                   </div>
                   <span
                     className={`flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${status.tone}`}
@@ -182,20 +200,13 @@ const QuizzesPage = () => {
               </CardHeader>
               <CardContent className="flex flex-1 flex-col justify-between gap-4 pt-1">
                 <div className="space-y-3 text-sm">
-                  {quiz.public_id && (
-                    <a
-                      href={`/q/${quiz.public_id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 font-semibold text-primary hover:underline"
-                    >
-                      <span className="font-mono text-xs tracking-tight">/q/{quiz.public_id}</span>
-                      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor">
-                        <path d="M3 13h10V3" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-                        <path d="M11 3h4v4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-                        <path d="M5 11l6-6" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-                      </svg>
-                    </a>
+                  {descriptionMarkup ? (
+                    <div
+                      className="prose max-w-none text-sm text-muted-foreground"
+                      dangerouslySetInnerHTML={{ __html: descriptionMarkup }}
+                    />
+                  ) : (
+                    description
                   )}
                   <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                     {quiz.allowed_instructors?.length > 0 && (
@@ -242,15 +253,20 @@ const QuizzesPage = () => {
           </div>
           <div className="space-y-2">
             <Label htmlFor="quiz-description">Description</Label>
-            <Textarea
-              id="quiz-description"
-              name="description"
-              value={createForm.description}
-              onChange={handleCreateChange}
-              placeholder="Outline instructions, allowed materials, or grading weight."
-              maxLength={500}
-              rows={5}
+            <MDEditor
+              value={createForm.description ?? ''}
+              onChange={(value) => handleCreateDescriptionChange(value)}
+              height={200}
+              preview="edit"
+              textareaProps={{
+                id: 'quiz-description',
+                name: 'description',
+                placeholder: 'Outline instructions, allowed materials, or grading weight.',
+              }}
             />
+            <p className="text-xs text-muted-foreground">
+              Format instructions with Markdown; preview updates live as you type.
+            </p>
           </div>
           {createError && (
             <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">

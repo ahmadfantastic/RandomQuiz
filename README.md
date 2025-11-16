@@ -40,7 +40,8 @@ python3 manage.py runserver
 ```bash
 cd frontend
 npm install
-npx vite          # or `npm run dev`
+npm run build
+npm run dev
 ```
 
 ## Environment configuration
