@@ -1,9 +1,14 @@
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'dev-secret-key'
-DEBUG = True
+load_dotenv(BASE_DIR / '.env')
+
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key')
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').strip().lower() in {'1', 'true', 'yes'}
 ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
@@ -52,12 +57,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'randomquiz.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+db_engine_env = os.getenv('DJANGO_DB_ENGINE', 'sqlite').strip().lower()
+if db_engine_env in {'postgresql', 'postgres'}:
+    db_backend = 'django.db.backends.postgresql'
+elif db_engine_env == 'mysql':
+    db_backend = 'django.db.backends.mysql'
+else:
+    db_backend = 'django.db.backends.sqlite3'
+
+if db_backend == 'django.db.backends.sqlite3':
+    db_name = os.getenv('DJANGO_DB_NAME')
+    database = {
+        'ENGINE': db_backend,
+        'NAME': db_name if db_name else BASE_DIR / 'db.sqlite3',
     }
-}
+else:
+    database = {
+        'ENGINE': db_backend,
+        'NAME': os.getenv('DJANGO_DB_NAME', 'randomquiz'),
+        'USER': os.getenv('DJANGO_DB_USER', ''),
+        'PASSWORD': os.getenv('DJANGO_DB_PASSWORD', ''),
+        'HOST': os.getenv('DJANGO_DB_HOST', 'localhost'),
+        'PORT': os.getenv('DJANGO_DB_PORT', ''),
+    }
+
+DATABASES = {'default': database}
 
 AUTH_PASSWORD_VALIDATORS = [
     {

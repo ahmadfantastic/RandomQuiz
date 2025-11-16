@@ -43,6 +43,11 @@ npm install
 npx vite          # or `npm run dev`
 ```
 
+## Environment configuration
+
+- Copy `.env.example` to `.env` at the project root and update any values you need. The backend loads this file with `python-dotenv`, falling back to sqlite if no database engine credentials are supplied.
+- Use `DJANGO_DB_ENGINE=mysql` or `postgresql` plus the accompanying `DJANGO_DB_NAME`, `DJANGO_DB_USER`, `DJANGO_DB_PASSWORD`, `DJANGO_DB_HOST`, and `DJANGO_DB_PORT` values to switch the backend to those engines; otherwise it continues to use the default sqlite store.
+
 Notes about running locally
 
 - The frontend dev server (Vite) is configured to proxy `/api/*` requests to the Django backend so you can run both services concurrently without extra CORS configuration. The Django settings in `backend/randomquiz/settings.py` also enable CORS for development (`CORS_ALLOW_ALL_ORIGINS = True`) and list `http://localhost:5173` in `CSRF_TRUSTED_ORIGINS`.
