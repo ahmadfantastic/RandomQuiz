@@ -48,7 +48,7 @@ RandomQuiz is a quiz delivery platform with a Django REST Framework backend and 
 3. Configured Django to serve built React frontend from `frontend/dist/`
 4. Created custom view to serve React app for client-side routing
 5. Made DEBUG, SECRET_KEY configurable via environment variables
-6. Deployment build command: `cd frontend && npm install && npm run build`
+6. Deployment build command: `(cd frontend && npm install && npm run build)` - uses subshell to ensure directory change persists
 7. Deployment run command: `cd backend && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 randomquiz.wsgi:application`
 
 ### Environment Variables
