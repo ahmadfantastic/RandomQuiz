@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -83,14 +84,26 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = True
+
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173', 
     'http://127.0.0.1:5173',
     'http://localhost:5000',
     'http://127.0.0.1:5000',
-    'https://*.replit.dev',
-    'https://*.repl.co',
 ]
+
+repl_slug = os.environ.get('REPL_SLUG')
+repl_owner = os.environ.get('REPL_OWNER')
+if repl_slug and repl_owner:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f'https://{repl_slug}.{repl_owner}.repl.co',
+        f'https://{repl_slug}.{repl_owner}.replit.dev',
+        f'https://{repl_slug}-{repl_owner}.replit.app',
+    ])
+
+replit_dev_domain = os.environ.get('REPLIT_DEV_DOMAIN')
+if replit_dev_domain:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{replit_dev_domain}')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
