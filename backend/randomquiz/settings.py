@@ -1,14 +1,11 @@
 import os
 from pathlib import Path
-
-from dotenv import load_dotenv
+import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / '.env')
-
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key')
-DEBUG = os.getenv('DJANGO_DEBUG', 'True').strip().lower() in {'1', 'true', 'yes'}
+SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
@@ -29,6 +26,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -57,31 +55,24 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'randomquiz.wsgi.application'
 
-db_engine_env = os.getenv('DJANGO_DB_ENGINE', 'sqlite').strip().lower()
-if db_engine_env in {'postgresql', 'postgres'}:
-    db_backend = 'django.db.backends.postgresql'
-elif db_engine_env == 'mysql':
-    db_backend = 'django.db.backends.mysql'
-else:
-    db_backend = 'django.db.backends.sqlite3'
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-if db_backend == 'django.db.backends.sqlite3':
-    db_name = os.getenv('DJANGO_DB_NAME')
-    database = {
-        'ENGINE': db_backend,
-        'NAME': db_name if db_name else BASE_DIR / 'db.sqlite3',
+if DATABASE_URL:
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
 else:
-    database = {
-        'ENGINE': db_backend,
-        'NAME': os.getenv('DJANGO_DB_NAME', 'randomquiz'),
-        'USER': os.getenv('DJANGO_DB_USER', ''),
-        'PASSWORD': os.getenv('DJANGO_DB_PASSWORD', ''),
-        'HOST': os.getenv('DJANGO_DB_HOST', 'localhost'),
-        'PORT': os.getenv('DJANGO_DB_PORT', ''),
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-
-DATABASES = {'default': database}
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -104,10 +95,36 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR.parent / 'staticfiles'
+STATICFILES_DIRS = [
+    BASE_DIR.parent / 'frontend' / 'dist' / 'assets',
+]
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+WHITENOISE_ROOT = BASE_DIR.parent / 'frontend' / 'dist'
+WHITENOISE_INDEX_FILE = True
+
 CORS_ALLOW_ALL_ORIGINS = True
-CSRF_TRUSTED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173', 
+    'http://127.0.0.1:5173',
+    'http://localhost:5000',
+    'http://127.0.0.1:5000',
+]
+
+repl_slug = os.environ.get('REPL_SLUG')
+repl_owner = os.environ.get('REPL_OWNER')
+if repl_slug and repl_owner:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f'https://{repl_slug}.{repl_owner}.repl.co',
+        f'https://{repl_slug}.{repl_owner}.replit.dev',
+        f'https://{repl_slug}-{repl_owner}.replit.app',
+    ])
+
+replit_dev_domain = os.environ.get('REPLIT_DEV_DOMAIN')
+if replit_dev_domain:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{replit_dev_domain}')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
