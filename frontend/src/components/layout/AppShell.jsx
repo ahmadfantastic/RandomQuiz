@@ -6,10 +6,10 @@ const AppShell = ({ title, description, children, actions }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-muted/20">
+    <div className="flex h-screen bg-muted/20">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b bg-background px-4 py-4 lg:px-10">
+      <div className="flex flex-1 flex-col ml-0 lg:ml-64">
+        <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-4 lg:px-10">
           <div className="flex items-center">
             <button
               className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-md border lg:hidden"
@@ -27,7 +27,7 @@ const AppShell = ({ title, description, children, actions }) => {
           </div>
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </header>
-        <main className={cn('flex-1 px-4 py-6 lg:px-10', actions ? 'space-y-8' : '')}>{children}</main>
+        <main className={cn('flex-1 overflow-auto px-4 py-6 lg:px-10', actions ? 'space-y-8' : '')}>{children}</main>
       </div>
     </div>
   );

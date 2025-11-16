@@ -1,8 +1,29 @@
 # RandomQuiz
 
-RandomQuiz is a reference implementation of the quiz deployment stack described in the prompt. The backend is built with Django + Django REST Framework + SQLite and the frontend is a React SPA. Students start quizzes via public links and instructors manage problem banks, quizzes, slots, and assignments.
+RandomQuiz is a reference implementation of a quiz delivery platform. The backend is a Django + Django REST Framework API using SQLite by default. The frontend is a React single-page app built with Vite and TailwindCSS. Instructors manage problem banks, quizzes, slots, and assignments; students start quizzes via public links and submit answers.
 
-## Backend setup
+**Repository layout (top-level)**
+
+- `backend/` — Django project and apps (`accounts`, `problems`, `quizzes`, `api`).
+- `frontend/` — React SPA (Vite + TailwindCSS).
+- `requirements.txt` — Python dependencies for the backend.
+- `package.json` — frontend dependencies and dev scripts.
+
+**Key backend apps**
+
+- `accounts`: Instructor profile wrapper around Django users with `is_admin_instructor`.
+- `problems`: Problem banks and ordered problems (problems do not have titles; display labels are positional).
+- `quizzes`: Quiz, slot, slot-problem join records, quiz attempts and assigned problems.
+- `api`: DRF viewsets and public endpoints used by the frontend and by anonymous quiz takers.
+
+Requirements
+
+- Backend (from `requirements.txt`): `Django==4.2.7`, `djangorestframework==3.14.0`, `django-cors-headers==4.3.1`.
+- Frontend (selected `package.json` deps): `react`, `react-dom`, `react-router-dom`, `axios`, `marked`, `dompurify`, `tailwindcss`, `vite`.
+
+Quick start (development)
+
+1) Backend (run in one terminal)
 
 ```bash
 cd backend
@@ -14,44 +35,49 @@ python3 manage.py createsuperuser  # create an initial admin instructor
 python3 manage.py runserver
 ```
 
-Key apps:
-
-- `accounts`: wraps Django users in Instructor profiles with an `is_admin_instructor` flag.
-- `problems`: stores problem banks and ordered problems without titles.
-- `quizzes`: models quizzes, slots, allowed problems (via `QuizSlotProblemBank`), and student attempts.
-- `api`: DRF viewsets and public endpoints, including student quiz start/answer/complete flows.
-
-Important endpoints (all prefixed by `/api/`):
-
-- `auth/login/`, `auth/logout/`
-- CRUD for `problem-banks/`, `problems/`, nested `problem-banks/<id>/problems/`
-- `quizzes/` plus `quizzes/<id>/slots/`, `slots/<id>/slot-problems/`, `quizzes/<id>/allowed-instructors/`
-- Public: `public/quizzes/<public_id>/`, `public/quizzes/<public_id>/start/`, `public/attempts/<attempt_id>/slots/<slot_id>/answer/`, `public/attempts/<attempt_id>/complete/`
-
-## Frontend setup
+2) Frontend (run in another terminal)
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npx vite          # or `npm run dev`
 ```
 
-The Vite dev server proxies `/api/*` requests to the Django app so you can run both services locally without configuring CORS manually. Use `npm run build` when you need an optimized production bundle.
+Notes about running locally
 
-Pages include instructor login, dashboard, quiz editor, slot manager, problem bank manager, admin instructor tools, and the student public quiz/attempt/thank-you flow. The SPA consumes the `/api/` endpoints above; enable CORS or run the frontend on the same origin during development.
+- The frontend dev server (Vite) is configured to proxy `/api/*` requests to the Django backend so you can run both services concurrently without extra CORS configuration. The Django settings in `backend/randomquiz/settings.py` also enable CORS for development (`CORS_ALLOW_ALL_ORIGINS = True`) and list `http://localhost:5173` in `CSRF_TRUSTED_ORIGINS`.
+- Backend REST framework defaults to session/basic authentication and `IsAuthenticated` by default; the `api` app exposes both authenticated instructor endpoints and public endpoints (prefixed with `/api/public/`) used by students.
+- When building for production, run `npm run build` in `frontend/` and serve the built assets from a suitable static host or integrate them with a production Django static setup.
 
-## Example workflow
+Important API endpoints (prefix: `/api/`)
 
-1. Create an admin instructor via `createsuperuser`, log into `/admin/`, ensure the Instructor profile has `is_admin_instructor=True`.
-2. Call `/api/auth/login/` or use the React login page, then create problem banks such as PAP and PBP.
-3. Populate each bank with ordered problems (`order_in_bank` = 1..20).
-4. Create the “Fall 2025 Quiz” with `public_id` (e.g., `fall-2025`), start/end times, and description.
-5. Add three slots, each pointing to the appropriate problem bank. Use the slot manager to attach allowed problems per slot via the `QuizSlotProblemBank` join records.
-6. Share the public link `/q/fall-2025`. Students enter identifiers and receive randomized problems per slot. Answers and completion timestamps are stored in `QuizAttempt`/`QuizAttemptSlot`.
+- Auth: `auth/login/`, `auth/logout/` (backend session login used by the SPA).
+- Problem banks and problems: `problem-banks/`, `problems/`, nested `problem-banks/<id>/problems/`.
+- Quizzes: `quizzes/`, `quizzes/<id>/slots/`, `slots/<id>/slot-problems/`, `quizzes/<id>/allowed-instructors/`.
+- Public student flow: `public/quizzes/<public_id>/` (quiz landing), `public/quizzes/<public_id>/start/` (create attempt/assign problems), `public/attempts/<attempt_id>/slots/<slot_id>/answer/` (submit slot answer), `public/attempts/<attempt_id>/complete/` (finish attempt).
 
-## Notes
+Frontend overview
 
-- Problems never have titles. Display labels derive from the order within the original bank (e.g., “Problem 3”).
-- The random selection occurs once per attempt and is persisted in `QuizAttemptSlot.assigned_problem`.
-- SQLite is the default database, but the ORM models are portable to other engines.
-- This repo does not ship compiled assets; run `npm run dev` for the Vite development server and `python manage.py runserver` for the API.
+- Built with React + Vite. TailwindCSS for styling.
+- Main pages/components (in `frontend/src/pages`):
+	- `LoginPage` — instructor login.
+	- `DashboardPage` — overview and quiz list.
+	- `QuizEditorPage` — create/edit quiz metadata and slots.
+	- `ProblemBankManager` — manage banks and problems.
+	- `AdminInstructorManager` — create/manage instructor accounts.
+	- Public flow pages: `PublicQuizLandingPage`, `QuizAttemptPage`, `ThankYouPage`.
+
+Development tips
+
+- If the frontend dev server cannot reach the API, verify the backend is running at `http://127.0.0.1:8000` and that the Vite proxy is enabled (check `frontend/vite.config.js`).
+- CSRF: the SPA uses session authentication for instructor flows. `CSRF_TRUSTED_ORIGINS` includes `http://localhost:5173` in `backend/randomquiz/settings.py`.
+- To reset the database quickly: stop the server, delete `backend/db.sqlite3`, then run `python3 manage.py migrate` and recreate a superuser.
+
+Testing and further work
+
+- There are no automated test runners included in this repo by default. You can add Django unit tests in the `backend/` apps and run them with `python3 manage.py test`.
+- To prepare this project for production, add a production-ready `SECRET_KEY`, set `DEBUG=False`, and configure a production database and static-file hosting.
+
+Contact / Next steps
+
+- If you'd like, I can: run the dev servers and verify the public quiz flow, add example data fixtures, or add a CONTRIBUTING or deployment guide. Tell me which you prefer.

@@ -3,12 +3,14 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     InstructorViewSet,
+    CSRFTokenView,
     LoginView,
     LogoutView,
     ProblemBankProblemListCreate,
     ProblemBankViewSet,
     ProblemViewSet,
     PublicAttemptComplete,
+    PublicAttemptDetail,
     PublicAttemptSlotAnswer,
     PublicQuizDetail,
     PublicQuizStart,
@@ -16,9 +18,15 @@ from .views import (
     QuizAllowedInstructorList,
     QuizSlotListCreate,
     QuizSlotViewSet,
+    QuizAttemptDetail,
+    QuizAttemptList,
+    ResponseConfigView,
+    SlotProblemDeleteView,
+    SlotProblemListCreate,
     SlotProblemDeleteView,
     SlotProblemListCreate,
     QuizViewSet,
+    DashboardStatsView,
 )
 
 router = DefaultRouter()
@@ -29,6 +37,7 @@ router.register('quizzes', QuizViewSet, basename='quiz')
 router.register('slots', QuizSlotViewSet, basename='slot')
 
 urlpatterns = [
+    path('auth/csrf/', CSRFTokenView.as_view(), name='api-csrf'),
     path('auth/login/', LoginView.as_view(), name='api-login'),
     path('auth/logout/', LogoutView.as_view(), name='api-logout'),
     path('', include(router.urls)),
@@ -40,10 +49,19 @@ urlpatterns = [
         QuizAllowedInstructorDelete.as_view(),
         name='quiz-allowed-delete',
     ),
+    path('quizzes/<int:quiz_id>/attempts/', QuizAttemptList.as_view(), name='quiz-attempts'),
+    path(
+        'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/',
+        QuizAttemptDetail.as_view(),
+        name='quiz-attempt-detail',
+    ),
+    path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('slots/<int:slot_id>/slot-problems/', SlotProblemListCreate.as_view(), name='slot-problem-list'),
     path('slot-problems/<int:pk>/', SlotProblemDeleteView.as_view(), name='slot-problem-delete'),
     path('public/quizzes/<slug:public_id>/', PublicQuizDetail.as_view(), name='public-quiz-detail'),
     path('public/quizzes/<slug:public_id>/start/', PublicQuizStart.as_view(), name='public-quiz-start'),
+    path('public/attempts/<int:attempt_id>/', PublicAttemptDetail.as_view(), name='public-attempt-detail'),
     path('public/attempts/<int:attempt_id>/slots/<int:slot_id>/answer/', PublicAttemptSlotAnswer.as_view(), name='attempt-answer'),
     path('public/attempts/<int:attempt_id>/complete/', PublicAttemptComplete.as_view(), name='attempt-complete'),
+    path('response-config/', ResponseConfigView.as_view(), name='response-config'),
 ]

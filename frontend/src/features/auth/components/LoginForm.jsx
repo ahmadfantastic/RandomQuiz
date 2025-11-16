@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
+import { markAuthenticated } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +22,7 @@ const LoginForm = ({ onSuccess }) => {
     setIsSubmitting(true);
     try {
       await api.post('/api/auth/login/', form);
+      markAuthenticated();
       if (onSuccess) onSuccess();
       navigate('/dashboard');
     } catch (err) {

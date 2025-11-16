@@ -1,3 +1,5 @@
+import uuid
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
@@ -8,11 +10,11 @@ from problems.models import ProblemBank, Problem
 
 class Quiz(models.Model):
     title = models.CharField(max_length=255)
-    description = models.TextField()
+    description = models.TextField(blank=True)
     owner = models.ForeignKey(Instructor, on_delete=models.CASCADE, related_name='owned_quizzes')
-    start_time = models.DateTimeField()
+    start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
-    public_id = models.SlugField(unique=True)
+    public_id = models.SlugField(unique=True, default=uuid.uuid4, editable=False)
     allowed_instructors = models.ManyToManyField(Instructor, related_name='shared_quizzes', blank=True)
 
     def __str__(self) -> str:
@@ -28,16 +30,36 @@ class Quiz(models.Model):
 
 
 class QuizSlot(models.Model):
+    class ResponseType(models.TextChoices):
+        OPEN_TEXT = 'open_text', 'Open-ended answer'
+        RATING = 'rating', 'Problem rating'
+
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='slots')
     label = models.CharField(max_length=255)
     order = models.IntegerField()
-    problem_bank = models.ForeignKey(ProblemBank, on_delete=models.PROTECT, related_name='slots')
+    problem_bank = models.ForeignKey(
+        ProblemBank,
+        on_delete=models.PROTECT,
+        related_name='slots',
+    )
+    response_type = models.CharField(max_length=32, choices=ResponseType.choices, default=ResponseType.OPEN_TEXT)
 
     class Meta:
         ordering = ['order']
+        constraints = [
+            models.UniqueConstraint(fields=['quiz', 'order'], name='unique_quiz_slot_order')
+        ]
 
     def __str__(self) -> str:
         return f"{self.quiz.title}: {self.label}"
+
+    def save(self, *args, **kwargs):
+        if self.order is None:
+            last_order = (
+                self.__class__.objects.filter(quiz=self.quiz).aggregate(models.Max('order'))['order__max'] or 0
+            )
+            self.order = last_order + 1
+        return super().save(*args, **kwargs)
 
 
 class QuizSlotProblemBank(models.Model):
@@ -73,7 +95,7 @@ class QuizAttemptSlot(models.Model):
     attempt = models.ForeignKey(QuizAttempt, on_delete=models.CASCADE, related_name='attempt_slots')
     slot = models.ForeignKey(QuizSlot, on_delete=models.CASCADE, related_name='attempt_slots')
     assigned_problem = models.ForeignKey(Problem, on_delete=models.PROTECT)
-    answer_text = models.TextField(null=True, blank=True)
+    answer_data = models.JSONField(null=True, blank=True)
     answered_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

@@ -1,0 +1,36 @@
+{
+  "scale": [
+    { "value": 1, "label": "Strongly disagree" },
+    { "value": 2, "label": "Disagree" },
+    { "value": 3, "label": "Neutral" },
+    { "value": 4, "label": "Agree" },
+    { "value": 5, "label": "Strongly agree" }
+  ],
+  "criteria": [
+    {
+      "id": "SC",
+      "name": "Scenario Quality (SC)",
+      "description": "Evaluates whether the scenario is realistic, contextually rich, and useful for helping students transfer project knowledge to a relevant design decision."
+    },
+    {
+      "id": "AL",
+      "name": "Alignment (AL)",
+      "description": "Measures how closely the design problem reflects the intended learning objectives, without introducing unrelated skills or omitting core outcomes."
+    },
+    {
+      "id": "CC",
+      "name": "Cognitive Complexity (CC)",
+      "description": "Assesses whether the design problem engages students in higher-order thinking (analyzing, evaluating, and designing) rather than only recalling facts."
+    },
+    {
+      "id": "CS",
+      "name": "Clarity & Specificity (CS)",
+      "description": "Checks if the design problem is clearly stated, self-contained, and free of ambiguities that could confuse or mislead students."
+    },
+    {
+      "id": "FS",
+      "name": "Feasibility (FS)",
+      "description": "Determines whether the design problem is appropriately scoped and solvable within 30 minutes by students with expected prior knowledge."
+    }
+  ]
+}

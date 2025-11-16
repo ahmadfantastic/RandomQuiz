@@ -1,3 +1,4 @@
+from django.db import models
 from rest_framework import serializers
 
 from accounts.models import Instructor
@@ -28,8 +29,28 @@ class QuizSlotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QuizSlot
-        fields = ['id', 'quiz', 'label', 'order', 'problem_bank', 'problem_bank_name', 'slot_problems']
-        read_only_fields = ['quiz']
+        fields = ['id', 'quiz', 'label', 'order', 'problem_bank', 'problem_bank_name', 'response_type', 'slot_problems']
+        read_only_fields = ['quiz', 'order']
+
+    def validate_problem_bank(self, value):
+        if not value.problems.exists():
+            raise serializers.ValidationError('Add at least one problem to this bank before assigning it to a slot.')
+        return value
+
+    def create(self, validated_data):
+        quiz = validated_data['quiz']
+        next_order = (
+            QuizSlot.objects.filter(quiz=quiz).aggregate(models.Max('order'))['order__max'] or 0
+        ) + 1
+        validated_data['order'] = next_order
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if 'problem_bank' in validated_data:
+            new_bank = validated_data.get('problem_bank')
+            if instance.problem_bank_id != new_bank.id:
+                instance.slot_problems.all().delete()
+        return super().update(instance, validated_data)
 
 
 class QuizSerializer(serializers.ModelSerializer):
@@ -60,10 +81,22 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
     slot_label = serializers.CharField(source='slot.label', read_only=True)
     problem_statement = serializers.CharField(source='assigned_problem.statement', read_only=True)
     problem_display_label = serializers.CharField(source='assigned_problem.display_label', read_only=True)
+    response_type = serializers.CharField(source='slot.response_type', read_only=True)
 
     class Meta:
         model = QuizAttemptSlot
-        fields = ['id', 'attempt', 'slot', 'slot_label', 'assigned_problem', 'problem_statement', 'problem_display_label', 'answer_text', 'answered_at']
+        fields = [
+            'id',
+            'attempt',
+            'slot',
+            'slot_label',
+            'assigned_problem',
+            'problem_statement',
+            'problem_display_label',
+            'response_type',
+            'answer_data',
+            'answered_at',
+        ]
         read_only_fields = ['attempt', 'slot', 'assigned_problem', 'answered_at']
 
 

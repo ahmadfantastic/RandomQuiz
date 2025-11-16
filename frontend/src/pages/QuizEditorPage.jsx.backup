@@ -9,7 +9,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Modal } from '@/components/ui/modal';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { getQuizStatus } from '@/lib/quizStatus';
 import { useResponseConfig } from '@/lib/useResponseConfig';
 import { RESPONSE_TYPE_OPTIONS, getResponseTypeLabel } from '@/lib/responseTypes';
 import QuizStatusBanner from '@/components/quiz-editor/QuizStatusBanner';
@@ -17,8 +16,6 @@ import QuizOverviewTab from '@/components/quiz-editor/QuizOverviewTab';
 import QuizSlotsTab from '@/components/quiz-editor/QuizSlotsTab';
 import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
 import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
-import DOMPurify from 'dompurify';
-import { marked } from 'marked';
 
 const TABS = {
   OVERVIEW: 'overview',
@@ -27,7 +24,23 @@ const TABS = {
   INSTRUCTORS: 'instructors',
 };
 
+const padTime = (value) => String(value).padStart(2, '0');
+
 const defaultSlotForm = { label: '', problem_bank: '', response_type: 'open_text' };
+
+const toInputValue = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())}T${padTime(date.getHours())}:${padTime(date.getMinutes())}`;
+};
+
+const toIsoString = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
 
 const formatDateTime = (value) => {
   if (!value) return 'Not scheduled';
@@ -48,60 +61,6 @@ const normalizeSlot = (slot) => ({
   pending_bank_change: false,
 });
 
-const renderProblemMarkupHtml = (statement) => {
-  if (!statement) {
-    return '';
-  }
-  try {
-    const dirty = marked.parse(statement);
-    return DOMPurify.sanitize(dirty);
-  } catch {
-    return '';
-  }
-};
-
-const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-
-const mixChannel = (start, end, ratio) => Math.round(start + (end - start) * ratio);
-
-const toHexChannel = (value) => value.toString(16).padStart(2, '0');
-
-const RATING_COLOR_STOPS = {
-  low: [239, 68, 68],
-  mid: [249, 115, 22],
-  high: [34, 197, 94],
-};
-
-const getGradientColor = (normalized) => {
-  const normalizedValue = clamp(normalized ?? 0.5, 0, 1);
-  const isLowHalf = normalizedValue <= 0.5;
-  const startColor = isLowHalf ? RATING_COLOR_STOPS.low : RATING_COLOR_STOPS.mid;
-  const endColor = isLowHalf ? RATING_COLOR_STOPS.mid : RATING_COLOR_STOPS.high;
-  const ratio = isLowHalf ? normalizedValue / 0.5 : (normalizedValue - 0.5) / 0.5;
-  const [r, g, b] = startColor.map((channel, index) => mixChannel(channel, endColor[index], ratio));
-  return `#${toHexChannel(r)}${toHexChannel(g)}${toHexChannel(b)}`;
-};
-
-const getRatingIndicatorStyles = (value, range) => {
-  if (value === undefined || value === null) {
-    return { backgroundColor: '#e2e8f0', color: '#0f172a' };
-  }
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return { backgroundColor: '#e2e8f0', color: '#0f172a' };
-  }
-  const { min, max } = range || {};
-  const hasRange = Number.isFinite(min) && Number.isFinite(max);
-  const normalized = hasRange
-    ? max === min
-      ? 0.5
-      : clamp((numericValue - min) / (max - min), 0, 1)
-    : 0.5;
-  const backgroundColor = getGradientColor(normalized);
-  const color = normalized <= 0.55 ? '#ffffff' : '#0f172a';
-  return { backgroundColor, color };
-};
-
 const QuizEditorPage = () => {
   const { quizId } = useParams();
   const quizIdNumber = Number(quizId);
@@ -115,11 +74,10 @@ const QuizEditorPage = () => {
   const [isLoadingBanks, setIsLoadingBanks] = useState(true);
   const [slots, setSlots] = useState([]);
   const [attempts, setAttempts] = useState([]);
-  const [details, setDetails] = useState({ title: '', description: '' });
+  const [details, setDetails] = useState({ title: '', description: '', start_time: '', end_time: '' });
+  const [isSchedulingEnabled, setIsSchedulingEnabled] = useState(false);
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsError, setDetailsError] = useState('');
-  const [scheduleActionLoading, setScheduleActionLoading] = useState(false);
-  const [scheduleActionError, setScheduleActionError] = useState('');
   const [pageError, setPageError] = useState('');
   const [slotForm, setSlotForm] = useState(() => ({ ...defaultSlotForm }));
   const [slotFormError, setSlotFormError] = useState('');
@@ -127,8 +85,6 @@ const QuizEditorPage = () => {
   const [slotError, setSlotError] = useState('');
   const [savingSlotId, setSavingSlotId] = useState(null);
   const [slotProblemOptions, setSlotProblemOptions] = useState({});
-  const [isSelectingAllProblems, setIsSelectingAllProblems] = useState(false);
-  const [expandedSlotProblems, setExpandedSlotProblems] = useState({});
   const [attemptError, setAttemptError] = useState('');
   const [attemptToDelete, setAttemptToDelete] = useState(null);
   const [isDeletingAttempt, setIsDeletingAttempt] = useState(false);
@@ -146,32 +102,15 @@ const QuizEditorPage = () => {
     return Array.isArray(responseConfig?.criteria) ? responseConfig.criteria : [];
   }, [responseConfig]);
 
-  const ratingScaleOptions = useMemo(() => {
-    return Array.isArray(responseConfig?.scale) ? responseConfig.scale : [];
-  }, [responseConfig]);
-
   const ratingScaleLabelMap = useMemo(() => {
-    if (!ratingScaleOptions.length) {
+    if (!Array.isArray(responseConfig?.scale)) {
       return {};
     }
-    return ratingScaleOptions.reduce((acc, option) => {
+    return responseConfig.scale.reduce((acc, option) => {
       acc[`${option.value}`] = option.label;
       return acc;
     }, {});
-  }, [ratingScaleOptions]);
-
-  const ratingScaleRange = useMemo(() => {
-    const numericValues = ratingScaleOptions
-      .map((option) => Number(option.value))
-      .filter((value) => Number.isFinite(value));
-    if (!numericValues.length) {
-      return { min: null, max: null };
-    }
-    return {
-      min: Math.min(...numericValues),
-      max: Math.max(...numericValues),
-    };
-  }, [ratingScaleOptions]);
+  }, [responseConfig]);
 
   const openSlotModal = () => {
     setSlotForm({ ...defaultSlotForm });
@@ -252,18 +191,6 @@ const QuizEditorPage = () => {
       .catch(() => setAttemptError('Unable to load student responses.'));
   };
 
-  const toggleProblemDetails = (slotId, problemId) => {
-    setExpandedSlotProblems((prev) => {
-      const current = new Set(prev[slotId] ?? []);
-      if (current.has(problemId)) {
-        current.delete(problemId);
-      } else {
-        current.add(problemId);
-      }
-      return { ...prev, [slotId]: Array.from(current) };
-    });
-  };
-
   const requestAttemptDeletion = (attempt) => {
     setAttemptToDelete(attempt);
     setAttemptError('');
@@ -291,7 +218,7 @@ const QuizEditorPage = () => {
   };
 
   const loadSlots = () => {
-    return api
+    api
       .get(`/api/quizzes/${quizId}/slots/`)
       .then((res) => {
         setSlots(res.data.map(normalizeSlot));
@@ -313,7 +240,7 @@ const QuizEditorPage = () => {
   const handleAddInstructor = async () => {
     if (!instructorId.trim()) return;
     try {
-      await api.post(`/api/quizzes/${quizId}/allowed-instructors/`, { instructor_username: instructorId });
+      await api.post(`/api/quizzes/${quizId}/allowed-instructors/`, { instructor_id: instructorId });
       setInstructorId('');
       setInstructorError('');
       loadAllowedInstructors();
@@ -346,7 +273,10 @@ const QuizEditorPage = () => {
         setDetails({
           title: quizRes.data.title || '',
           description: quizRes.data.description || '',
+          start_time: toInputValue(quizRes.data.start_time),
+          end_time: toInputValue(quizRes.data.end_time),
         });
+        setIsSchedulingEnabled(Boolean(quizRes.data.start_time));
         setSlots(slotsRes.data.map(normalizeSlot));
         setAttempts(attemptsRes.data);
         setPageError('');
@@ -393,6 +323,14 @@ const QuizEditorPage = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSlotModalOpen]);
 
+  const endBeforeStart = useMemo(() => {
+    if (!isSchedulingEnabled || !details.start_time || !details.end_time) return false;
+    const start = new Date(details.start_time);
+    const end = new Date(details.end_time);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+    return end <= start;
+  }, [isSchedulingEnabled, details.start_time, details.end_time]);
+
   const slotReadiness = useMemo(() => {
     const total = slots.length;
     const ready = slots.filter((slot) => slot.slot_problems?.length).length;
@@ -416,24 +354,6 @@ const QuizEditorPage = () => {
     return { status: 'Draft', description: 'Share the public link whenever you are ready.' };
   }, [quiz]);
 
-  const quizStatusKey = useMemo(() => {
-    if (!quiz) return null;
-    return getQuizStatus(quiz).key;
-  }, [quiz]);
-
-  const scheduleState = useMemo(() => {
-    if (!quiz) return null;
-    const startLabel = quiz.start_time ? formatDateTime(quiz.start_time) : 'Not opened yet';
-    let endLabel = 'Not closed yet';
-    if (quiz.end_time) {
-      endLabel = formatDateTime(quiz.end_time);
-    } else if (quiz.start_time) {
-      endLabel = 'Still open';
-    }
-    const isOpen = Boolean(quiz.start_time && !quiz.end_time);
-    return { startLabel, endLabel, isOpen };
-  }, [quiz]);
-
   const handleDetailChange = (event) => {
     const { name, value } = event.target;
     setDetails((prev) => ({ ...prev, [name]: value }));
@@ -447,62 +367,38 @@ const QuizEditorPage = () => {
       setDetailsError('Quiz title is required.');
       return;
     }
+    if (isSchedulingEnabled && !details.start_time) {
+      setDetailsError('Select a start time to enable scheduling.');
+      return;
+    }
+    if (endBeforeStart) {
+      setDetailsError('The end time must be after the start time.');
+      return;
+    }
     setDetailsSaving(true);
     try {
       const payload = {
         title: details.title.trim(),
         description: details.description.trim(),
       };
+      if (isSchedulingEnabled) {
+        const startIso = toIsoString(details.start_time);
+        const endIso = toIsoString(details.end_time);
+        if (startIso) payload.start_time = startIso;
+        payload.end_time = endIso;
+      } else {
+        payload.start_time = null;
+        payload.end_time = null;
+      }
       const response = await api.patch(`/api/quizzes/${quiz.id}/`, payload);
       setQuiz(response.data);
       setDetailsError('');
     } catch (error) {
       const data = error.response?.data;
-      const detail = data?.detail || data?.title?.[0] || 'Could not save the quiz details.';
+      const detail = data?.detail || data?.title?.[0] || data?.start_time?.[0] || 'Could not save the quiz details.';
       setDetailsError(detail);
     } finally {
       setDetailsSaving(false);
-    }
-  };
-
-  const notifyQuizStatusChange = (updatedQuiz) => {
-    if (typeof window === 'undefined') return;
-    window.dispatchEvent(new CustomEvent('quizStatusChanged', { detail: updatedQuiz }));
-  };
-
-  const handleOpenQuiz = async () => {
-    if (!quiz) return;
-    setScheduleActionError('');
-    if (!readyForStudents) {
-      setScheduleActionError('Add at least one slot with problems before publishing this quiz.');
-      return;
-    }
-    setScheduleActionLoading(true);
-    try {
-      const response = await api.post(`/api/quizzes/${quiz.id}/open/`);
-      setQuiz(response.data);
-      notifyQuizStatusChange(response.data);
-    } catch (error) {
-      const detail = error.response?.data?.detail || 'Unable to open the quiz right now.';
-      setScheduleActionError(detail);
-    } finally {
-      setScheduleActionLoading(false);
-    }
-  };
-
-  const handleCloseQuiz = async () => {
-    if (!quiz) return;
-    setScheduleActionError('');
-    setScheduleActionLoading(true);
-    try {
-      const response = await api.post(`/api/quizzes/${quiz.id}/close/`);
-      setQuiz(response.data);
-      notifyQuizStatusChange(response.data);
-    } catch (error) {
-      const detail = error.response?.data?.detail || 'Unable to close the quiz right now.';
-      setScheduleActionError(detail);
-    } finally {
-      setScheduleActionLoading(false);
     }
   };
 
@@ -626,38 +522,6 @@ const QuizEditorPage = () => {
     }
   };
 
-  const selectAllSlotProblems = async (slot) => {
-    if (!slot.problem_bank) {
-      setSlotError('Assign a problem bank to the slot before choosing problems.');
-      return;
-    }
-    if (slot.pending_bank_change) {
-      setSlotError('Save the slot after changing its bank before selecting problems.');
-      return;
-    }
-    const problems = slotProblemOptions[slot.problem_bank];
-    if (!problems?.length) {
-      return;
-    }
-    const existingProblemIds = new Set(slot.slot_problems.map((sp) => sp.problem));
-    const missingProblemIds = problems
-      .filter((problem) => !existingProblemIds.has(problem.id))
-      .map((problem) => problem.id);
-    if (!missingProblemIds.length) {
-      return;
-    }
-    setIsSelectingAllProblems(true);
-    try {
-      await api.post(`/api/slots/${slot.id}/slot-problems/`, { problem_ids: missingProblemIds });
-      await loadSlots();
-      setSlotError('');
-    } catch {
-      setSlotError('Unable to add all problems right now.');
-    } finally {
-      setIsSelectingAllProblems(false);
-    }
-  };
-
   const handleCopyLink = async () => {
     if (!quiz) return;
     const base = typeof window !== 'undefined' ? window.location.origin : '';
@@ -687,118 +551,42 @@ const QuizEditorPage = () => {
   }, [activeSlotId, slots]);
 
   const renderSlotProblems = (slot) => {
-    const renderHeader = (action = null) => (
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold">Eligible problems</p>
-        {action}
-      </div>
-    );
-
     if (!slot.problem_bank) {
-      return (
-        <div className="space-y-3">
-          {renderHeader()}
-          <p className="text-sm text-muted-foreground">Select a problem bank above to enable this slot.</p>
-        </div>
-      );
+      return <p className="text-sm text-muted-foreground">Select a problem bank above to enable this slot.</p>;
     }
     const problems = slotProblemOptions[slot.problem_bank];
     if (!problems) {
-      return (
-        <div className="space-y-3">
-          {renderHeader()}
-          <p className="text-sm text-muted-foreground">Loading the problems for this bank…</p>
-        </div>
-      );
+      return <p className="text-sm text-muted-foreground">Loading the problems for this bank…</p>;
     }
     if (!problems.length) {
-      return (
-        <div className="space-y-3">
-          {renderHeader()}
-          <p className="text-sm text-muted-foreground">No problems in this bank yet. Add them from the problem bank manager.</p>
-        </div>
-      );
+      return <p className="text-sm text-muted-foreground">No problems in this bank yet. Add them from the problem bank manager.</p>;
     }
     const disableChanges = Boolean(slot.pending_bank_change);
-    const existingProblemIds = new Set(slot.slot_problems.map((sp) => sp.problem));
-    const missingProblemIds = problems
-      .filter((problem) => !existingProblemIds.has(problem.id))
-      .map((problem) => problem.id);
-    const canSelectAll = missingProblemIds.length > 0;
-    const selectAllAction = canSelectAll ? (
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={disableChanges || isSelectingAllProblems}
-        onClick={() => selectAllSlotProblems(slot)}
-      >
-        {isSelectingAllProblems ? 'Selecting…' : 'Select all'}
-      </Button>
-    ) : null;
     return (
       <div className="space-y-3">
-        {renderHeader(selectAllAction)}
         {disableChanges && (
           <p className="text-sm text-muted-foreground">Save this slot to confirm the bank before selecting problems.</p>
         )}
-        {problems.map((problem, index) => {
+        {problems.map((problem) => {
           const linked = slot.slot_problems.find((sp) => sp.problem === problem.id);
-          const displayIndex = problem.order_in_bank ?? index + 1;
-          const displayLabel = `Problem ${displayIndex}`;
-          const expandedIds = new Set(expandedSlotProblems[slot.id] ?? []);
-          const isExpanded = expandedIds.has(problem.id);
-          const statementMarkupHtml = renderProblemMarkupHtml(problem.statement);
-          const markupText = problem.statement?.trim() ? problem.statement : 'No markup available.';
           return (
-            <div key={problem.id} className="space-y-2 rounded-lg border border-muted/40 bg-background/60 p-3">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={Boolean(linked)}
-                  className={cn(
-                    'flex h-6 w-6 items-center justify-center rounded-md border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                    linked
-                      ? 'border-primary/70 bg-primary text-background'
-                      : 'border-border bg-transparent text-muted-foreground',
-                    disableChanges && 'pointer-events-none opacity-50'
-                  )}
-                  onClick={() => toggleSlotProblem(slot, problem)}
-                  disabled={disableChanges}
-                >
-                  {linked && (
-                    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M3.75 8.75l3.25 3.25 5.25-5.5" />
-                    </svg>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 text-left text-sm font-semibold text-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  onClick={() => toggleProblemDetails(slot.id, problem.id)}
-                  aria-expanded={isExpanded}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span>{displayLabel}</span>
-                    <span className="text-xs text-muted-foreground">{isExpanded ? 'Hide details' : 'Show details'}</span>
-                  </div>
-                </button>
+            <label key={problem.id} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={Boolean(linked)}
+                disabled={disableChanges}
+                onChange={() => toggleSlotProblem(slot, problem)}
+              />
+              <div>
+                <p className="text-sm font-medium">
+                  {problem.display_label}
+                  <span className="text-muted-foreground"> · </span>
+                  <span className="text-muted-foreground">Order {problem.order_in_bank}</span>
+                </p>
+                <p className="text-sm text-muted-foreground">{problem.statement}</p>
               </div>
-              {isExpanded && (
-                <div className="rounded-md border border-muted/30 bg-muted/10 p-3 text-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Description</p>
-                  {statementMarkupHtml ? (
-                    <div
-                      className="mt-2 text-sm text-foreground"
-                      dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
-                    />
-                  ) : (
-                    <p className="mt-2 text-sm text-muted-foreground">No description provided.</p>
-                  )}
-                </div>
-              )}
-            </div>
+            </label>
           );
         })}
       </div>
@@ -830,41 +618,23 @@ const QuizEditorPage = () => {
         return <span className="text-muted-foreground">No rating submitted.</span>;
       }
       return (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {rows.map((row) => {
             const valueKey = `${row.value}`;
-            const scaleLabel =
-              valueKey && ratingScaleLabelMap[valueKey] ? ratingScaleLabelMap[valueKey] : null;
-            const indicatorStyles = getRatingIndicatorStyles(row.value, ratingScaleRange);
-            const bubbleValue = row.value === undefined || row.value === null ? '—' : `${row.value}`;
-            const helperLabel = scaleLabel
-              ? row.value === undefined || row.value === null
-                ? scaleLabel
-                : `${scaleLabel} (${row.value})`
-              : null;
+            const scaleLabel = valueKey && ratingScaleLabelMap[valueKey] ? ratingScaleLabelMap[valueKey] : null;
+            const displayValue =
+              row.value === undefined || row.value === null
+                ? '—'
+                : scaleLabel
+                ? `${scaleLabel} (${row.value})`
+                : row.value;
             return (
-              <div
-                key={row.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-muted/40 bg-card/80 px-3 py-3 text-sm"
-              >
-                <div className="flex-1 space-y-1">
-                  <p className="font-semibold text-foreground">{row.name}</p>
+              <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
+                <div>
+                  <p className="font-semibold">{row.name}</p>
                   {row.description && <p className="text-xs text-muted-foreground">{row.description}</p>}
-                  {helperLabel && <p className="text-xs text-muted-foreground">{helperLabel}</p>}
                 </div>
-                <div className="flex flex-col items-end justify-center gap-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">Rating</span>
-                  <div
-                    className="flex h-12 min-w-[3.25rem] items-center justify-center rounded-full border px-3 text-sm font-semibold tracking-tight"
-                    style={{
-                      backgroundColor: indicatorStyles.backgroundColor,
-                      borderColor: indicatorStyles.backgroundColor,
-                      color: indicatorStyles.color,
-                    }}
-                  >
-                    {bubbleValue}
-                  </div>
-                </div>
+                <p className="font-medium text-foreground">{displayValue}</p>
               </div>
             );
           })}
@@ -924,7 +694,6 @@ const QuizEditorPage = () => {
             attemptsSummary={attemptsSummary}
             handleCopyLink={handleCopyLink}
             copyMessage={copyMessage}
-            statusKey={quizStatusKey}
           />
 
           {/* Tab Navigation */}
@@ -961,57 +730,310 @@ const QuizEditorPage = () => {
           {/* Tab Content */}
           <div className="min-h-[400px]">
             {activeTab === TABS.OVERVIEW && (
-              <QuizOverviewTab
-                quiz={quiz}
-                details={details}
-                onDetailChange={handleDetailChange}
-                onSaveDetails={handleSaveDetails}
-                detailsSaving={detailsSaving}
-                detailsError={detailsError}
-                quizLink={quizLink}
-                handleCopyLink={handleCopyLink}
-                copyMessage={copyMessage}
-                readyForStudents={readyForStudents}
-                scheduleState={scheduleState}
-                onOpenQuiz={handleOpenQuiz}
-                onCloseQuiz={handleCloseQuiz}
-                scheduleActionLoading={scheduleActionLoading}
-                scheduleActionError={scheduleActionError}
-              />
+              <div className="grid gap-6 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Quiz Details</CardTitle>
+                    <CardDescription>Basic information displayed to students and instructors</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form className="space-y-4" onSubmit={handleSaveDetails}>
+                      <div className="space-y-2">
+                        <Label htmlFor="quiz-title">Title</Label>
+                        <Input 
+                          id="quiz-title" 
+                          name="title" 
+                          value={details.title} 
+                          onChange={handleDetailChange} 
+                          maxLength={120} 
+                          required 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="quiz-description">Description</Label>
+                        <Textarea
+                          id="quiz-description"
+                          name="description"
+                          value={details.description}
+                          onChange={handleDetailChange}
+                          rows={3}
+                          maxLength={500}
+                        />
+                      </div>
+                      {detailsError && <p className="text-sm text-destructive">{detailsError}</p>}
+                      <Button type="submit" disabled={detailsSaving} className="w-full">
+                        {detailsSaving ? 'Saving...' : 'Save Changes'}
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Schedule</CardTitle>
+                    <CardDescription>Control when students can access this quiz</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <label className="flex items-center justify-between rounded-lg border p-3">
+                      <span className="text-sm font-medium">Enable scheduling</span>
+                      <button
+                        type="button"
+                        className={cn(
+                          'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                          isSchedulingEnabled ? 'bg-primary' : 'bg-muted'
+                        )}
+                        role="switch"
+                        aria-checked={isSchedulingEnabled}
+                        onClick={() => {
+                          setIsSchedulingEnabled((value) => !value);
+                          if (isSchedulingEnabled) {
+                            setDetails((prev) => ({ ...prev, start_time: '', end_time: '' }));
+                          }
+                        }}
+                      >
+                        <span
+                          className={cn(
+                            'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
+                            isSchedulingEnabled ? 'translate-x-5' : 'translate-x-1'
+                          )}
+                        />
+                      </button>
+                    </label>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="quiz-start">Start time</Label>
+                        <Input
+                          id="quiz-start"
+                          type="datetime-local"
+                          name="start_time"
+                          value={details.start_time}
+                          onChange={handleDetailChange}
+                          disabled={!isSchedulingEnabled}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="quiz-end">End time</Label>
+                        <Input
+                          id="quiz-end"
+                          type="datetime-local"
+                          name="end_time"
+                          value={details.end_time}
+                          onChange={handleDetailChange}
+                          disabled={!isSchedulingEnabled}
+                        />
+                      </div>
+                    </div>
+                    {endBeforeStart && (
+                      <p className="text-sm text-destructive">End time must be after start time</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="lg:col-span-2">
+                  <CardHeader>
+                    <CardTitle>Public Access Link</CardTitle>
+                    <CardDescription>Share this link with students to start collecting responses</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-3">
+                      <Input value={quizLink} readOnly className="font-mono text-sm" />
+                      <Button onClick={handleCopyLink}>Copy</Button>
+                      <Button variant="outline" to={quizLink} target="_blank" rel="noreferrer">
+                        Open
+                      </Button>
+                    </div>
+                    {!readyForStudents && (
+                      <p className="mt-3 text-sm text-amber-600">
+                        ⚠️ Configure at least one slot with problems before sharing
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
             {activeTab === TABS.SLOTS && (
-              <QuizSlotsTab
-                slots={slots}
-                banks={banks}
-                isLoadingBanks={isLoadingBanks}
-                slotError={slotError}
-                openSlotModal={openSlotModal}
-                openSlotDetailModal={openSlotDetailModal}
-                loadSlots={loadSlots}
-              />
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Problem Slots</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Each slot draws random problems from a bank
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={loadSlots}>Refresh</Button>
+                    <Button variant="outline" to="/problem-banks">Manage Banks</Button>
+                    <Button onClick={openSlotModal} disabled={isLoadingBanks || !banks.length}>
+                      Add Slot
+                    </Button>
+                  </div>
+                </div>
+
+                {slotError && (
+                  <Card className="border-destructive/30 bg-destructive/5">
+                    <CardContent className="py-3 text-sm text-destructive">{slotError}</CardContent>
+                  </Card>
+                )}
+
+                {!slots.length ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+                        <svg className="h-8 w-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                      </div>
+                      <p className="text-lg font-semibold">No slots yet</p>
+                      <p className="text-sm text-muted-foreground">Create your first slot to start building the quiz</p>
+                      <Button onClick={openSlotModal} className="mt-4" disabled={isLoadingBanks || !banks.length}>
+                        Add Your First Slot
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {slots.map((slot) => {
+                      const problemCount = slot.slot_problems?.length ?? 0;
+                      const isReady = problemCount > 0;
+                      return (
+                        <Card key={slot.id} className={cn(
+                          'transition-all hover:shadow-md',
+                          isReady ? 'border-emerald-500/20' : 'border-amber-500/20'
+                        )}>
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <CardTitle className="text-base">{slot.label || 'Untitled'}</CardTitle>
+                                <p className="text-xs text-muted-foreground">Order {slot.order || '—'}</p>
+                              </div>
+                              <span
+                                className={cn(
+                                  'rounded-full px-2 py-1 text-xs font-semibold',
+                                  isReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                )}
+                              >
+                                {isReady ? 'Ready' : 'Setup'}
+                              </span>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="space-y-1 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Bank:</span>
+                                <span className="font-medium">{slot.problem_bank_name || 'None'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Response:</span>
+                                <span className="font-medium">{getResponseTypeLabel(slot.response_type)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Problems:</span>
+                                <span className="font-medium">{problemCount}</span>
+                              </div>
+                            </div>
+                            <Button 
+                              onClick={() => openSlotDetailModal(slot.id)} 
+                              size="sm" 
+                              className="w-full"
+                              variant={isReady ? 'outline' : 'default'}
+                            >
+                              {isReady ? 'Edit Slot' : 'Configure Slot'}
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
 
             {activeTab === TABS.RESPONSES && (
-              <QuizResponsesTab
-                attempts={attempts}
-                attemptError={attemptError}
-                loadAttempts={loadAttempts}
-                openAttemptModal={openAttemptModal}
-                requestAttemptDeletion={requestAttemptDeletion}
-              />
-            )}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Student Responses</h3>
+                    <p className="text-sm text-muted-foreground">
+                      View and manage all student attempts
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={loadAttempts}>Refresh</Button>
+                </div>
 
-            {activeTab === TABS.INSTRUCTORS && (
-              <QuizAllowedInstructorsTab
-                allowedInstructors={allowedInstructors}
-                instructorId={instructorId}
-                setInstructorId={setInstructorId}
-                handleAddInstructor={handleAddInstructor}
-                handleRemoveInstructor={handleRemoveInstructor}
-                loadInstructors={loadAllowedInstructors}
-                instructorError={instructorError}
-              />
+                {attemptError && (
+                  <Card className="border-destructive/30 bg-destructive/5">
+                    <CardContent className="py-3 text-sm text-destructive">{attemptError}</CardContent>
+                  </Card>
+                )}
+
+                {!attempts.length ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+                        <svg className="h-8 w-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <p className="text-lg font-semibold">No responses yet</p>
+                      <p className="text-sm text-muted-foreground">Responses will appear here once students start the quiz</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    {attempts.map((attempt) => {
+                      const isCompleted = Boolean(attempt.completed_at);
+                      const answerCount = attempt.attempt_slots?.length || 0;
+                      return (
+                        <Card key={attempt.id} className="hover:shadow-md transition-shadow">
+                          <CardContent className="p-2">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-4">
+                                <div className={cn(
+                                  'flex h-10 w-10 items-center justify-center rounded-full',
+                                  isCompleted ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-600'
+                                )}>
+                                  {isCompleted ? (
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="font-semibold">{attempt.student_identifier || 'Unknown'}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    Started {formatDateTime(attempt.started_at)}
+                                    {isCompleted && ` • Completed ${formatDateTime(attempt.completed_at)}`}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-muted-foreground">{answerCount} answers</span>
+                                <Button size="sm" onClick={() => openAttemptModal(attempt)}>
+                                  View
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => requestAttemptDeletion(attempt)}
+                                >
+                                  <svg className="h-4 w-4 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -1168,6 +1190,7 @@ const QuizEditorPage = () => {
             </div>
             {slotError && <p className="text-sm text-destructive">{slotError}</p>}
             <div className="space-y-2">
+              <p className="font-semibold">Eligible problems</p>
               {renderSlotProblems(activeSlot)}
             </div>
             <div className="flex justify-end gap-3">
