@@ -11,7 +11,7 @@ RandomQuiz is a quiz delivery platform with a Django REST Framework backend and 
 ### Backend (Django)
 - **Location**: `backend/`
 - **Framework**: Django 4.2.7 + Django REST Framework
-- **Database**: SQLite (development) - `backend/db.sqlite3`
+- **Database**: PostgreSQL (Replit-managed, configured via DATABASE_URL)
 - **Port**: localhost:8000
 - **Apps**:
   - `accounts`: Instructor profiles with admin permissions
@@ -41,6 +41,8 @@ RandomQuiz is a quiz delivery platform with a Django REST Framework backend and 
 4. Created combined startup script (`start_all.sh`) that runs both backend and frontend for development
 5. Set up workflow to run the application in development mode
 6. Configured deployment for autoscale target with production servers
+7. Switched from SQLite to PostgreSQL using Replit's built-in database
+8. Installed psycopg2-binary and dj-database-url for PostgreSQL support
 
 ### Production Deployment Setup (Nov 16, 2025)
 1. Added WhiteNoise for efficient static file serving
@@ -67,7 +69,7 @@ RandomQuiz is a quiz delivery platform with a Django REST Framework backend and 
   - WhiteNoise middleware configured for static file serving in production
   - STATICFILES_DIRS points to `frontend/dist/assets/` for CSS/JS files
   - WHITENOISE_ROOT points to `frontend/dist/` for serving the React app
-- **Database**: Migrations run, ready for use (superuser needs to be created)
+- **Database**: PostgreSQL configured via DATABASE_URL environment variable, all migrations run successfully
 
 ## Running the Application
 
@@ -123,6 +125,10 @@ python manage.py createsuperuser
 - Django==4.2.7
 - djangorestframework==3.14.0
 - django-cors-headers==4.3.1
+- whitenoise==6.6.0
+- gunicorn==21.2.0
+- psycopg2-binary==2.9.11
+- dj-database-url==3.0.1
 
 ### Node.js (frontend/package.json)
 - react, react-dom, react-router-dom
