@@ -35,5 +35,5 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["bash", "-c", "cd backend && python manage.py migrate && cd .. && ./start_all.sh"]
-build = ["bash", "-c", "cd frontend && npm run build"]
+run = ["bash", "-c", "cd backend && python manage.py migrate && python manage.py runserver 0.0.0.0:5000"]
+build = ["bash", "-c", "cd frontend && npm install && npm run build"]
