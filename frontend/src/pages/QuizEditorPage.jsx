@@ -10,13 +10,14 @@ import { Modal } from '@/components/ui/modal';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { getQuizStatus } from '@/lib/quizStatus';
-import { useResponseConfig } from '@/lib/useResponseConfig';
 import { RESPONSE_TYPE_OPTIONS, getResponseTypeLabel } from '@/lib/responseTypes';
 import QuizStatusBanner from '@/components/quiz-editor/QuizStatusBanner';
 import QuizOverviewTab from '@/components/quiz-editor/QuizOverviewTab';
 import QuizSlotsTab from '@/components/quiz-editor/QuizSlotsTab';
+import AttemptTimelineModal from '@/components/quiz-editor/AttemptTimelineModal';
 import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
 import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
+import QuizRubricTab from '@/components/quiz-editor/QuizRubricTab';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import useProblemStatements from '@/lib/useProblemStatements';
@@ -26,6 +27,7 @@ const TABS = {
   SLOTS: 'slots',
   RESPONSES: 'responses',
   INSTRUCTORS: 'instructors',
+  RUBRIC: 'rubric',
 };
 
 const defaultSlotForm = { label: '', instruction: '', problem_bank: '', response_type: 'open_text' };
@@ -104,6 +106,21 @@ const getRatingIndicatorStyles = (value, range) => {
   return { backgroundColor, color };
 };
 
+const createRubricFormState = (source) => ({
+  scale: (Array.isArray(source?.scale) ? source.scale : []).map((option) => ({
+    value:
+      option?.value !== undefined && option?.value !== null
+        ? String(option.value)
+        : '',
+    label: option?.label ?? '',
+  })),
+  criteria: (Array.isArray(source?.criteria) ? source.criteria : []).map((criterion) => ({
+    id: criterion?.id ?? '',
+    name: criterion?.name ?? '',
+    description: criterion?.description ?? '',
+  })),
+});
+
 const QuizEditorPage = () => {
   const { quizId } = useParams();
   const quizIdNumber = Number(quizId);
@@ -117,7 +134,7 @@ const QuizEditorPage = () => {
   const [isLoadingBanks, setIsLoadingBanks] = useState(true);
   const [slots, setSlots] = useState([]);
   const [attempts, setAttempts] = useState([]);
-  const [details, setDetails] = useState({ title: '', description: '' });
+  const [details, setDetails] = useState({ title: '', description: '', identity_instruction: '' });
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsError, setDetailsError] = useState('');
   const [scheduleActionLoading, setScheduleActionLoading] = useState(false);
@@ -143,18 +160,24 @@ const QuizEditorPage = () => {
   const [previewedProblem, setPreviewedProblem] = useState(null);
   const [allowedInstructors, setAllowedInstructors] = useState([]);
   const [canManageAllowedInstructors, setCanManageAllowedInstructors] = useState(false);
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [instructorId, setInstructorId] = useState('');
   const [instructorError, setInstructorError] = useState('');
+  const [rubric, setRubric] = useState({ scale: [], criteria: [] });
+  const [rubricForm, setRubricForm] = useState(createRubricFormState({ scale: [], criteria: [] }));
+  const [isRubricLoading, setIsRubricLoading] = useState(true);
+  const [rubricError, setRubricError] = useState('');
+  const [isRubricSaving, setIsRubricSaving] = useState(false);
+  const [rubricSaveError, setRubricSaveError] = useState('');
+  const [rubricSaveSuccess, setRubricSaveSuccess] = useState('');
   const pendingBankRequests = useRef(new Set());
-  const { config: responseConfig } = useResponseConfig();
-
   const ratingCriteria = useMemo(() => {
-    return Array.isArray(responseConfig?.criteria) ? responseConfig.criteria : [];
-  }, [responseConfig]);
+    return Array.isArray(rubric?.criteria) ? rubric.criteria : [];
+  }, [rubric]);
 
   const ratingScaleOptions = useMemo(() => {
-    return Array.isArray(responseConfig?.scale) ? responseConfig.scale : [];
-  }, [responseConfig]);
+    return Array.isArray(rubric?.scale) ? rubric.scale : [];
+  }, [rubric]);
 
   const ratingScaleLabelMap = useMemo(() => {
     if (!ratingScaleOptions.length) {
@@ -178,6 +201,155 @@ const QuizEditorPage = () => {
       max: Math.max(...numericValues),
     };
   }, [ratingScaleOptions]);
+
+  useEffect(() => {
+    if (!selectedAttempt) {
+      setIsTimelineOpen(false);
+    }
+  }, [selectedAttempt]);
+
+  const loadRubric = useCallback(() => {
+    if (!Number.isFinite(quizIdNumber)) {
+      return;
+    }
+    setIsRubricLoading(true);
+    setRubricError('');
+    api
+      .get(`/api/quizzes/${quizIdNumber}/rubric/`)
+      .then((res) => {
+        const normalized = res.data || { scale: [], criteria: [] };
+        setRubric(normalized);
+        setRubricForm(createRubricFormState(normalized));
+        setRubricSaveSuccess('');
+      })
+      .catch(() => {
+        setRubricError('Unable to load the rating rubric.');
+      })
+      .finally(() => {
+        setIsRubricLoading(false);
+      });
+  }, [quizIdNumber]);
+
+  const handleRubricFieldChange = useCallback((section, index, field, value) => {
+    setRubricForm((prev) => {
+      if (!prev || !Array.isArray(prev[section])) {
+        return prev;
+      }
+      const updatedSection = [...prev[section]];
+      if (index < 0 || index >= updatedSection.length) {
+        return prev;
+      }
+      updatedSection[index] = { ...updatedSection[index], [field]: value };
+      return { ...prev, [section]: updatedSection };
+    });
+    setRubricSaveSuccess('');
+  }, []);
+
+  const handleAddScaleOption = useCallback(() => {
+    setRubricForm((prev) => ({
+      ...prev,
+      scale: [...(prev?.scale ?? []), { value: '', label: '' }],
+    }));
+    setRubricSaveSuccess('');
+  }, []);
+
+  const handleRemoveScaleOption = useCallback((index) => {
+    setRubricForm((prev) => {
+      if (!prev || !Array.isArray(prev.scale) || prev.scale.length <= 1) {
+        return prev;
+      }
+      const nextScale = [...prev.scale];
+      nextScale.splice(index, 1);
+      return { ...prev, scale: nextScale };
+    });
+    setRubricSaveSuccess('');
+  }, []);
+
+  const handleAddCriterion = useCallback(() => {
+    setRubricForm((prev) => ({
+      ...prev,
+      criteria: [...(prev?.criteria ?? []), { id: '', name: '', description: '' }],
+    }));
+    setRubricSaveSuccess('');
+  }, []);
+
+  const handleRemoveCriterion = useCallback((index) => {
+    setRubricForm((prev) => {
+      if (!prev || !Array.isArray(prev.criteria) || prev.criteria.length <= 1) {
+        return prev;
+      }
+      const nextCriteria = [...prev.criteria];
+      nextCriteria.splice(index, 1);
+      return { ...prev, criteria: nextCriteria };
+    });
+    setRubricSaveSuccess('');
+  }, []);
+
+  const handleSaveRubric = useCallback(async () => {
+    if (!Number.isFinite(quizIdNumber) || !rubricForm) {
+      return;
+    }
+    const preparedScale = [];
+    for (const option of rubricForm.scale || []) {
+      const rawValue = String(option?.value ?? '').trim();
+      if (!rawValue) {
+        setRubricSaveError('Each scale option needs a numeric value and label.');
+        return;
+      }
+      const parsedValue = Number(rawValue);
+      if (!Number.isFinite(parsedValue)) {
+        setRubricSaveError('Each scale option needs a numeric value.');
+        return;
+      }
+      const label = (option?.label ?? '').trim();
+      if (!label) {
+        setRubricSaveError('Each scale option needs a label.');
+        return;
+      }
+      preparedScale.push({ value: parsedValue, label });
+    }
+    if (!preparedScale.length) {
+      setRubricSaveError('Define at least one scale option.');
+      return;
+    }
+    const preparedCriteria = [];
+    for (const criterion of rubricForm.criteria || []) {
+      const id = (criterion?.id ?? '').trim();
+      const name = (criterion?.name ?? '').trim();
+      if (!id) {
+        setRubricSaveError('Every criterion needs an id.');
+        return;
+      }
+      if (!name) {
+        setRubricSaveError('Every criterion needs a name.');
+        return;
+      }
+      const description = (criterion?.description ?? '').trim();
+      preparedCriteria.push({ id, name, description });
+    }
+    if (!preparedCriteria.length) {
+      setRubricSaveError('Define at least one criterion.');
+      return;
+    }
+    setIsRubricSaving(true);
+    setRubricSaveError('');
+    setRubricSaveSuccess('');
+    try {
+      const response = await api.put(`/api/quizzes/${quizIdNumber}/rubric/`, {
+        scale: preparedScale,
+        criteria: preparedCriteria,
+      });
+      const normalized = response.data || { scale: [], criteria: [] };
+      setRubric(normalized);
+      setRubricForm(createRubricFormState(normalized));
+      setRubricSaveSuccess('Rubric saved.');
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      setRubricSaveError(detail || 'Unable to save the rubric right now.');
+    } finally {
+      setIsRubricSaving(false);
+    }
+  }, [quizIdNumber, rubricForm]);
 
   const previewStatementMarkup = useMemo(
     () => (previewedProblem ? renderProblemMarkupHtml(previewedProblem.statement) : ''),
@@ -385,6 +557,7 @@ const QuizEditorPage = () => {
         setDetails({
           title: quizRes.data.title || '',
           description: quizRes.data.description || '',
+          identity_instruction: quizRes.data.identity_instruction || '',
         });
         setSlots(slotsRes.data.map(normalizeSlot));
         setAttempts(attemptsRes.data);
@@ -414,6 +587,10 @@ const QuizEditorPage = () => {
     loadQuizData();
     loadAllowedInstructors();
   }, [quizId]);
+
+  useEffect(() => {
+    loadRubric();
+  }, [loadRubric]);
 
   useEffect(() => {
     slots.forEach((slot) => {
@@ -491,6 +668,7 @@ const QuizEditorPage = () => {
       const payload = {
         title: details.title.trim(),
         description: details.description.trim(),
+        identity_instruction: details.identity_instruction.trim(),
       };
       const response = await api.patch(`/api/quizzes/${quiz.id}/`, payload);
       setQuiz(response.data);
@@ -982,10 +1160,11 @@ const QuizEditorPage = () => {
             <nav className="flex gap-6">
               {[
                 { id: TABS.OVERVIEW, label: 'Overview', icon: '📋' },
-                { id: TABS.SLOTS, label: 'Problem Slots', icon: '🎲', badge: slotReadiness.total },
-                { id: TABS.RESPONSES, label: 'Responses', icon: '📝', badge: attempts.length },
-                { id: TABS.INSTRUCTORS, label: 'Instructors', icon: '👥', badge: allowedInstructors.length },
-              ].map((tab) => (
+              { id: TABS.SLOTS, label: 'Problem Slots', icon: '🎲', badge: slotReadiness.total },
+              { id: TABS.RESPONSES, label: 'Responses', icon: '📝', badge: attempts.length },
+              { id: TABS.INSTRUCTORS, label: 'Instructors', icon: '👥', badge: allowedInstructors.length },
+              { id: TABS.RUBRIC, label: 'Rubric', icon: '🧾' },
+            ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
@@ -1064,6 +1243,23 @@ const QuizEditorPage = () => {
                 instructorError={instructorError}
               />
             )}
+            {activeTab === TABS.RUBRIC && (
+              <QuizRubricTab
+                rubricForm={rubricForm}
+                isLoading={isRubricLoading}
+                loadError={rubricError}
+                onReload={loadRubric}
+                onFieldChange={handleRubricFieldChange}
+                onAddScaleOption={handleAddScaleOption}
+                onRemoveScaleOption={handleRemoveScaleOption}
+                onAddCriterion={handleAddCriterion}
+                onRemoveCriterion={handleRemoveCriterion}
+                onSave={handleSaveRubric}
+                isSaving={isRubricSaving}
+                saveError={rubricSaveError}
+                saveSuccess={rubricSaveSuccess}
+              />
+            )}
           </div>
 
           {/* Quick Switch Sidebar */}
@@ -1108,16 +1304,25 @@ const QuizEditorPage = () => {
         {selectedAttempt ? (
           <div className="space-y-4">
             <div className="rounded-md bg-muted/50 p-3 text-sm">
-              <p>
-                Attempt:{' '}
-                <span className="font-semibold">
-                  {selectedAttempt.student_identifier || 'Unknown student'}
-                </span>
-              </p>
-              <p className="text-muted-foreground">
-                Started {formatDateTime(selectedAttempt.started_at)}
-                {selectedAttempt.completed_at ? ` · Completed ${formatDateTime(selectedAttempt.completed_at)}` : ' · In progress'}
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p>
+                    Attempt:{' '}
+                    <span className="font-semibold">
+                      {selectedAttempt.student_identifier || 'Unknown student'}
+                    </span>
+                  </p>
+                  <p className="text-muted-foreground">
+                    Started {formatDateTime(selectedAttempt.started_at)}
+                    {selectedAttempt.completed_at
+                      ? ` · Completed ${formatDateTime(selectedAttempt.completed_at)}`
+                      : ' · In progress'}
+                  </p>
+                </div>
+                <Button size="lg" variant="default" onClick={() => setIsTimelineOpen(true)}>
+                  View Timeline
+                </Button>
+              </div>
             </div>
             <div className="space-y-4">
               {(selectedAttempt.attempt_slots || []).map((slot) => {
@@ -1176,6 +1381,13 @@ const QuizEditorPage = () => {
           <p className="text-sm text-muted-foreground">Loading attempt details…</p>
         )}
       </Modal>
+      <AttemptTimelineModal
+        open={isTimelineOpen && Boolean(selectedAttempt)}
+        onOpenChange={(open) => setIsTimelineOpen(open)}
+        attempt={selectedAttempt}
+        quizId={quizIdNumber}
+        ratingRange={ratingScaleRange}
+      />
       <Modal
         open={Boolean(previewedProblem)}
         onOpenChange={() => setPreviewedProblem(null)}

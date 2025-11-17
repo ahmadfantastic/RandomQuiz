@@ -10,6 +10,8 @@ from .models import (
     QuizSlotProblemBank,
     QuizAttempt,
     QuizAttemptSlot,
+    QuizAttemptInteraction,
+    create_default_quiz_rubric,
 )
 
 
@@ -59,12 +61,24 @@ class QuizSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Quiz
-        fields = ['id', 'title', 'description', 'owner', 'owner_username', 'start_time', 'end_time', 'public_id', 'allowed_instructors']
+        fields = [
+            'id',
+            'title',
+            'description',
+            'identity_instruction',
+            'owner',
+            'owner_username',
+            'start_time',
+            'end_time',
+            'public_id',
+            'allowed_instructors',
+        ]
         read_only_fields = ['owner']
 
     def create(self, validated_data):
         allowed_instructors = validated_data.pop('allowed_instructors', [])
         quiz = Quiz.objects.create(**validated_data)
+        create_default_quiz_rubric(quiz)
         if allowed_instructors:
             quiz.allowed_instructors.set(allowed_instructors)
         return quiz
@@ -106,11 +120,37 @@ class QuizAttemptSerializer(serializers.ModelSerializer):
     attempt_slots = QuizAttemptSlotSerializer(many=True, read_only=True)
     quiz_is_open = serializers.SerializerMethodField()
     quiz = QuizSerializer(read_only=True)
+    rubric = serializers.SerializerMethodField()
 
     class Meta:
         model = QuizAttempt
-        fields = ['id', 'quiz', 'student_identifier', 'started_at', 'completed_at', 'extra_info', 'attempt_slots', 'quiz_is_open']
+        fields = [
+            'id',
+            'quiz',
+            'student_identifier',
+            'started_at',
+            'completed_at',
+            'extra_info',
+            'attempt_slots',
+            'quiz_is_open',
+            'rubric',
+        ]
         read_only_fields = ['quiz', 'student_identifier', 'started_at', 'completed_at']
 
     def get_quiz_is_open(self, obj):
         return obj.quiz.is_open()
+
+    def get_rubric(self, obj):
+        return obj.quiz.get_rubric()
+
+
+class QuizAttemptInteractionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuizAttemptInteraction
+        fields = ['event_type', 'metadata']
+
+    def create(self, validated_data):
+        attempt_slot = self.context.get('attempt_slot')
+        if attempt_slot is None:
+            raise serializers.ValidationError({'detail': 'Unable to associate interaction with a slot.'})
+        return QuizAttemptInteraction.objects.create(attempt_slot=attempt_slot, **validated_data)

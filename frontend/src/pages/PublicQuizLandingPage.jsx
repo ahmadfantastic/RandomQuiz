@@ -8,6 +8,8 @@ import api from '@/lib/api';
 import { encodeAttemptToken } from '@/lib/attemptToken';
 import { renderProblemMarkupHtml } from '@/lib/markdown';
 
+const DEFAULT_IDENTITY_INSTRUCTION = 'Required so your instructor can match your submission.';
+
 const formatDateTime = (value) => {
   if (!value) return null;
   const date = new Date(value);
@@ -72,6 +74,11 @@ const PublicQuizLandingPage = () => {
     const text = quiz?.description?.trim();
     return text ? renderProblemMarkupHtml(text) : '';
   }, [quiz?.description]);
+
+  const identityInstructionMarkup = useMemo(() => {
+    const text = (quiz?.identity_instruction || DEFAULT_IDENTITY_INSTRUCTION).trim();
+    return text ? renderProblemMarkupHtml(text) : '';
+  }, [quiz?.identity_instruction]);
 
   useEffect(() => {
     let isMounted = true;
@@ -153,7 +160,7 @@ const PublicQuizLandingPage = () => {
       <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
         <Card className="w-full max-w-xl">
           <CardHeader>
-            <CardTitle>Loading quiz</CardTitle>
+            <CardTitle>Loading Quiz</CardTitle>
             <CardDescription>Hang tight, we are verifying the quiz link.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -169,7 +176,7 @@ const PublicQuizLandingPage = () => {
       <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 text-center">
         <Card className="w-full max-w-xl">
           <CardHeader>
-            <CardTitle>Quiz unavailable</CardTitle>
+            <CardTitle>Quiz Unavailable</CardTitle>
             <CardDescription>{loadingError}</CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
@@ -184,7 +191,7 @@ const PublicQuizLandingPage = () => {
     <div className="min-h-screen bg-gradient-to-b from-primary/10 via-background to-background py-10">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-4 sm:px-6 lg:px-8">
         <header className="rounded-3xl bg-primary px-6 py-8 text-primary-foreground shadow-xl">
-          <p className="text-xs uppercase tracking-[0.3em] text-primary-foreground/75">Quiz invitation</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-primary-foreground/75">Quiz Invitation</p>
           <h1 className="mt-4 text-3xl font-semibold sm:text-4xl">{quiz.title}</h1>
           <dl className="mt-6 flex flex-wrap gap-6 text-sm text-primary-foreground/80">
             <div>
@@ -204,7 +211,6 @@ const PublicQuizLandingPage = () => {
           <Card className="order-2 border-primary/30 shadow-lg lg:order-1">
             <CardHeader>
               <CardTitle>Instruction</CardTitle>
-              <CardDescription>Read the below instrcutions:</CardDescription>
             </CardHeader>
             <CardContent className="pt-0 space-y-4 text-muted-foreground">
               {descriptionMarkup ? (
@@ -220,8 +226,17 @@ const PublicQuizLandingPage = () => {
 
           <Card className="order-1 shadow-lg lg:order-2">
             <CardHeader>
-              <CardTitle>Confirm your identity</CardTitle>
-              <CardDescription>Required so your instructor can match your submission.</CardDescription>
+              <CardTitle>Confirm your Identity</CardTitle>
+              <CardDescription className="pt-4 text-sm text-muted-foreground">
+                {identityInstructionMarkup ? (
+                  <div
+                    className="prose max-w-none text-sm text-muted-foreground markup-content"
+                    dangerouslySetInnerHTML={{ __html: identityInstructionMarkup }}
+                  />
+                ) : (
+                  DEFAULT_IDENTITY_INSTRUCTION
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <form className="space-y-5" onSubmit={handleStart}>

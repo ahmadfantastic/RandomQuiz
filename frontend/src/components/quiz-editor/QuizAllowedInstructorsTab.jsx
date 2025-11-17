@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Avatar from '@/components/ui/Avatar';
 
 const QuizAllowedInstructorsTab = ({
   allowedInstructors,
@@ -76,40 +77,52 @@ const QuizAllowedInstructorsTab = ({
       </Card>
     ) : (
       <div className="space-y-3">
-        {allowedInstructors.map((inst) => (
-          <Card key={inst.id}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold">{inst.username}</p>
-                    {inst.is_owner && (
-                      <span className="rounded-full border border-primary/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-                        Owner
-                      </span>
-                    )}
+        {allowedInstructors.map((inst) => {
+          const fullName = [inst.first_name, inst.last_name].filter(Boolean).join(' ');
+          return (
+            <Card key={inst.id}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <Avatar
+                      size={40}
+                      name={fullName || inst.username}
+                      src={inst.profile_picture_url}
+                      className="flex-shrink-0"
+                    />
+                    <div>
+                      <p className="flex flex-wrap items-center gap-2 font-semibold">
+                        {fullName ? <span>{fullName}</span> : <span>{inst.username}</span>}
+                        <span className="text-xs text-muted-foreground">@{inst.username}</span>
+                        {inst.is_owner && (
+                          <span className="rounded-full border border-primary/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+                            Owner
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{inst.email}</p>
+                    </div>
                   </div>
-                  <p className="text-sm text-muted-foreground">{inst.email}</p>
+                  {inst.is_owner ? (
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">Owner</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleRemoveInstructor(inst.id)}
+                      className="text-destructive hover:text-destructive"
+                      disabled={!canManageCollaborators}
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </Button>
+                  )}
                 </div>
-                {inst.is_owner ? (
-                  <span className="text-xs font-semibold uppercase text-muted-foreground">Owner</span>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleRemoveInstructor(inst.id)}
-                    className="text-destructive hover:text-destructive"
-                    disabled={!canManageCollaborators}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     )}
   </div>

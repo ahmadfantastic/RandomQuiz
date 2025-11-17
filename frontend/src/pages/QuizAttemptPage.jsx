@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +6,6 @@ import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { decodeAttemptToken } from '@/lib/attemptToken';
-import { useResponseConfig } from '@/lib/useResponseConfig';
 import LikertRating from '@/components/quiz-attempt/LikertRating';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -14,6 +13,43 @@ import DOMPurify from 'dompurify';
 const RESPONSE_TYPES = {
   OPEN_TEXT: 'open_text',
   RATING: 'rating',
+};
+
+const MAX_DIFF_TEXT = 1024;
+
+const trimDiffString = (value) => {
+  if (typeof value !== 'string') return '';
+  return value.length > MAX_DIFF_TEXT ? value.slice(0, MAX_DIFF_TEXT) : value;
+};
+
+const computeTextDiff = (previous = '', current = '') => {
+  if (previous === current) {
+    return null;
+  }
+  let startIndex = 0;
+  const prevLen = previous.length;
+  const currLen = current.length;
+  while (startIndex < prevLen && startIndex < currLen && previous[startIndex] === current[startIndex]) {
+    startIndex += 1;
+  }
+  let prevEnd = prevLen - 1;
+  let currEnd = currLen - 1;
+  while (prevEnd >= startIndex && currEnd >= startIndex && previous[prevEnd] === current[currEnd]) {
+    prevEnd -= 1;
+    currEnd -= 1;
+  }
+  const removedSegment = previous.slice(startIndex, prevEnd + 1);
+  const addedSegment = current.slice(startIndex, currEnd + 1);
+  const trimmedRemoved = trimDiffString(removedSegment);
+  const trimmedAdded = trimDiffString(addedSegment);
+  if (!trimmedAdded && !trimmedRemoved) {
+    return null;
+  }
+  return {
+    start_index: startIndex,
+    removed: trimmedRemoved,
+    added: trimmedAdded,
+  };
 };
 
 const QUIZ_CLOSED_MESSAGE = 'This quiz window has closed and new answers are no longer accepted.';
@@ -98,9 +134,6 @@ const QuizAttemptPage = () => {
   }, [attemptToken]);
   const hasAttemptReference = attemptReference !== 'Not available';
 
-  const { config: responseConfig, error: responseConfigError, isLoading: isConfigLoading } = useResponseConfig();
-  const ratingCriteriaCount = getRatingCriteriaCount(responseConfig);
-
   const [slots, setSlots] = useState(initialSlots);
   const [resolvedStudentIdentifier, setResolvedStudentIdentifier] = useState(initialStudentIdentifier);
   const [quizInfo, setQuizInfo] = useState(initialQuizInfo);
@@ -116,6 +149,37 @@ const QuizAttemptPage = () => {
   const [attemptCompleted, setAttemptCompleted] = useState(false);
   const [quizOpen, setQuizOpen] = useState(true);
   const [quizClosedMessage, setQuizClosedMessage] = useState('');
+  const [ratingRubric, setRatingRubric] = useState(null);
+
+  const ratingCriteriaCount = useMemo(() => getRatingCriteriaCount(ratingRubric), [ratingRubric]);
+  const ratingRubricError =
+    !ratingRubric && !attemptLoading && !attemptLoadError ? 'Rating rubric is unavailable right now.' : '';
+
+  const typingTimersRef = useRef({});
+  const typingStatsRef = useRef({});
+  const lastRecordedTextRef = useRef({});
+  const slotsRef = useRef(slots);
+
+  useEffect(() => {
+    slotsRef.current = slots;
+  }, [slots]);
+
+  useEffect(() => {
+    lastRecordedTextRef.current = {};
+  }, [attemptId]);
+
+  useEffect(() => {
+    slots.forEach((slot) => {
+      if (slot.response_type !== RESPONSE_TYPES.OPEN_TEXT) {
+        return;
+      }
+      if (typeof lastRecordedTextRef.current[slot.slot] !== 'undefined') {
+        return;
+      }
+      const existingText = slot.answer_data?.text || '';
+      lastRecordedTextRef.current[slot.slot] = existingText;
+    });
+  }, [slots]);
 
   useEffect(() => {
     if (Array.isArray(location.state?.slots) && location.state.slots.length) {
@@ -143,6 +207,7 @@ const QuizAttemptPage = () => {
     setAttemptLoading(true);
     setAttemptLoadError('');
     setAttemptCompleted(false);
+    setRatingRubric(null);
     api
       .get(`/api/public/attempts/${attemptId}/`)
     .then((response) => {
@@ -160,6 +225,7 @@ const QuizAttemptPage = () => {
       setSlots(attempt.attempt_slots || []);
       setResolvedStudentIdentifier((current) => current || attempt.student_identifier);
       setQuizInfo(attempt.quiz || initialQuizInfo);
+      setRatingRubric(attempt.rubric || attempt.quiz?.rubric || null);
     })
       .catch((error) => {
         if (!isActive) return;
@@ -177,6 +243,82 @@ const QuizAttemptPage = () => {
       isActive = false;
     };
   }, [attemptId]);
+
+  const recordSlotInteraction = (slot, payload) => {
+    if (!attemptId || !quizOpen) {
+      return;
+    }
+    const interactionPayload = {
+      ...payload,
+      metadata: payload.metadata ?? null,
+    };
+    api.post(`/api/public/attempts/${attemptId}/slots/${slot.slot}/interactions/`, interactionPayload).catch(() => {});
+  };
+
+  const flushTypingInteraction = (slot) => {
+    const slotKey = slot.slot;
+    const stats = typingStatsRef.current[slotKey];
+    if (!stats) {
+      return;
+    }
+    delete typingStatsRef.current[slotKey];
+    const timer = typingTimersRef.current[slotKey];
+    if (timer) {
+      clearTimeout(timer);
+      delete typingTimersRef.current[slotKey];
+    }
+    const { diff, currentText, recordedAt } = stats;
+    lastRecordedTextRef.current[slotKey] = currentText || lastRecordedTextRef.current[slotKey] || '';
+    if (!diff) {
+      return;
+    }
+    recordSlotInteraction(slot, {
+      event_type: 'typing',
+      metadata: {
+        recorded_at: recordedAt,
+        text_length: (currentText || '').length,
+        diff,
+      },
+    });
+  };
+
+  const scheduleTypingInteraction = (slot, text) => {
+    if (!quizOpen) {
+      return;
+    }
+    const slotKey = slot.slot;
+    const lastText = lastRecordedTextRef.current[slotKey] || '';
+    const diff = computeTextDiff(lastText, text || '');
+    if (!diff) {
+      return;
+    }
+    typingStatsRef.current[slotKey] = {
+      diff,
+      currentText: text || '',
+      recordedAt: new Date().toISOString(),
+    };
+    const existingTimer = typingTimersRef.current[slotKey];
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    typingTimersRef.current[slotKey] = setTimeout(() => flushTypingInteraction(slot), 1200);
+  };
+
+  const flushAllTypingInteractions = () => {
+    slots.forEach((slot) => {
+      flushTypingInteraction(slot);
+    });
+  };
+
+  const logRatingInteraction = (slot, criterionId, optionValue) => {
+    recordSlotInteraction(slot, {
+      event_type: 'rating_selection',
+      metadata: {
+        criterion_id: criterionId,
+        option_value: optionValue,
+      },
+    });
+  };
 
   const setSlotSaveState = (slotId, state) => {
     setSavingState((prev) => {
@@ -205,6 +347,9 @@ const QuizAttemptPage = () => {
   const handleAnswerChange = (slot, value) => {
     setAnswers((prev) => ({ ...prev, [slot.slot]: value }));
     setSlotSaveState(slot.slot, hasAnyInput(slot, value) ? 'dirty' : null);
+    if (slot.response_type === RESPONSE_TYPES.OPEN_TEXT) {
+      scheduleTypingInteraction(slot, value?.text || '');
+    }
   };
 
   const handleSave = async (slot) => {
@@ -215,6 +360,7 @@ const QuizAttemptPage = () => {
       });
       return;
     }
+    flushTypingInteraction(slot);
     const slotId = slot.slot;
     const slotLabel = slot.slot_label;
     const answer = answers[slotId];
@@ -241,6 +387,7 @@ const QuizAttemptPage = () => {
   };
 
   const handleComplete = async () => {
+    flushAllTypingInteractions();
     if (!quizOpen) {
       setBanner({
         type: 'error',
@@ -278,6 +425,13 @@ const QuizAttemptPage = () => {
       setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      Object.values(typingTimersRef.current).forEach((timer) => clearTimeout(timer));
+      slotsRef.current.forEach((slot) => flushTypingInteraction(slot));
+    };
+  }, []);
 
   const loadingAttempt = attemptLoading && !slots.length;
 
@@ -439,20 +593,23 @@ const QuizAttemptPage = () => {
           <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
             <section className="order-2 space-y-5 lg:order-1">
               {slots.map((slot) => (
-                <ProblemAnswer
-                  key={slot.id}
-                  slot={slot}
-                  answer={answers[slot.slot] || createEmptyAnswer(slot)}
-                  onChange={(value) => handleAnswerChange(slot, value)}
-                  onSave={() => handleSave(slot)}
-                  saveState={savingState[slot.slot]}
-                  showValidation={showValidation}
-                  ratingConfig={responseConfig}
-                  ratingCriteriaCount={ratingCriteriaCount}
-                  ratingConfigError={responseConfigError}
-                  isRatingConfigLoading={isConfigLoading}
-                  quizOpen={quizOpen}
-                  quizClosedMessage={quizClosedMessage}
+                  <ProblemAnswer
+                    key={slot.id}
+                    slot={slot}
+                    answer={answers[slot.slot] || createEmptyAnswer(slot)}
+                    onChange={(value) => handleAnswerChange(slot, value)}
+                    onSave={() => handleSave(slot)}
+                    saveState={savingState[slot.slot]}
+                    showValidation={showValidation}
+                    ratingRubric={ratingRubric}
+                    ratingCriteriaCount={ratingCriteriaCount}
+                    ratingRubricError={ratingRubricError}
+                    isRubricLoading={attemptLoading}
+                    onRatingInteraction={(criterionId, optionValue) =>
+                      logRatingInteraction(slot, criterionId, optionValue)
+                    }
+                    quizOpen={quizOpen}
+                    quizClosedMessage={quizClosedMessage}
                 />
               ))}
             </section>
@@ -549,12 +706,13 @@ const ProblemAnswer = ({
   onSave,
   saveState,
   showValidation,
-  ratingConfig,
+  ratingRubric,
   ratingCriteriaCount,
-  ratingConfigError,
-  isRatingConfigLoading,
+  ratingRubricError,
+  isRubricLoading,
   quizOpen,
   quizClosedMessage,
+  onRatingInteraction,
 }) => {
   const isRating = slot.response_type === RESPONSE_TYPES.RATING;
   const state = saveState || (hasAnyInput(slot, answer) ? 'dirty' : null);
@@ -566,8 +724,8 @@ const ProblemAnswer = ({
   const problemLabel = slot.problem_display_label || 'Problem';
   const instructionText = slot.slot_instruction?.trim();
   const statementMarkupHtml = slot.problem_statement ? renderProblemMarkupHtml(slot.problem_statement) : '';
-  const criteria = Array.isArray(ratingConfig?.criteria) ? ratingConfig.criteria : [];
-  const scale = Array.isArray(ratingConfig?.scale) ? ratingConfig.scale : [];
+  const criteria = Array.isArray(ratingRubric?.criteria) ? ratingRubric.criteria : [];
+  const scale = Array.isArray(ratingRubric?.scale) ? ratingRubric.scale : [];
   const isRatingConfigReady = !isRating || (criteria.length > 0 && scale.length > 0);
   const closureMessage = quizClosedMessage || QUIZ_CLOSED_MESSAGE;
   let statusMessage = '';
@@ -587,16 +745,17 @@ const ProblemAnswer = ({
     const nextRatings = { ...(answer?.ratings || {}) };
     nextRatings[criterionId] = optionValue;
     onChange({ response_type: RESPONSE_TYPES.RATING, ratings: nextRatings });
+    onRatingInteraction?.(criterionId, optionValue);
   };
 
   const renderRatingFields = () => {
-    if (isRatingConfigLoading) {
+    if (isRubricLoading) {
       return <p className="mt-5 text-sm text-muted-foreground">Loading the rating rubric…</p>;
     }
     if (!isRatingConfigReady) {
       return (
         <p className="mt-5 rounded-lg border border-dashed p-3 text-sm text-destructive">
-          {ratingConfigError || 'We were unable to load the rating rubric. Please refresh this page or contact your instructor.'}
+          {ratingRubricError || 'We were unable to load the rating rubric. Please refresh this page or contact your instructor.'}
         </p>
       );
     }

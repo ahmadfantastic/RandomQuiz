@@ -1,8 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
-const Avatar = ({ src, name, size = 40, className, ...props }) => {
+const Avatar = ({ src, name, size = 40, className, onError, ...props }) => {
+  const [hasImageError, setHasImageError] = useState(false);
+
+  useEffect(() => {
+    setHasImageError(false);
+  }, [src]);
+
+  const handleError = (event) => {
+    setHasImageError(true);
+    if (onError) {
+      onError(event);
+    }
+  };
+
   const initials = (name || '')
     .split(/\s+/)
     .filter(Boolean)
@@ -10,13 +23,16 @@ const Avatar = ({ src, name, size = 40, className, ...props }) => {
     .map((segment) => segment[0].toUpperCase())
     .join('');
 
-  if (src) {
+  const hasValidImage = Boolean(src) && !hasImageError;
+
+  if (hasValidImage) {
     return (
       <img
         src={src}
         alt={name || 'Profile picture'}
         className={cn('rounded-full object-cover', className)}
         style={{ width: size, height: size }}
+        onError={handleError}
         {...props}
       />
     );

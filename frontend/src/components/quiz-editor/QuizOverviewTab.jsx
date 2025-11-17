@@ -46,6 +46,10 @@ const QuizOverviewTab = ({
     onDetailChange({ target: { name: 'description', value: value ?? '' } });
   };
 
+  const handleIdentityInstructionChange = (value) => {
+    onDetailChange({ target: { name: 'identity_instruction', value: value ?? '' } });
+  };
+
   const handleToggle = () => {
     if (scheduleActionLoading || (!isOpen && !readyForStudents)) return;
     if (isOpen) {
@@ -157,7 +161,7 @@ const QuizOverviewTab = ({
               <Label htmlFor="quiz-description">Description</Label>
               <MDEditor
                 value={details.description ?? ''}
-                onChange={(value) => handleDescriptionChange(value)}
+                onChange={handleDescriptionChange}
                 height={200}
                 preview="edit"
                 textareaProps={{
@@ -167,6 +171,22 @@ const QuizOverviewTab = ({
               />
               <p className="text-xs text-muted-foreground">
                 Use Markdown to format the quiz description; preview shows how it renders.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="identity-instruction">Identity Instruction</Label>
+              <MDEditor
+                value={details.identity_instruction ?? ''}
+                onChange={handleIdentityInstructionChange}
+                height={120}
+                preview="edit"
+                textareaProps={{
+                  id: 'identity-instruction',
+                  name: 'identity_instruction',
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                This message is shown on the public landing page before students enter their identifier.
               </p>
             </div>
             {detailsError && <p className="text-sm text-destructive">{detailsError}</p>}

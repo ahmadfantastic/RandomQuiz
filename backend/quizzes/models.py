@@ -6,11 +6,19 @@ from django.utils import timezone
 
 from accounts.models import Instructor
 from problems.models import ProblemBank, Problem
+from .response_config import load_response_config
 
 
 class Quiz(models.Model):
+    IDENTITY_INSTRUCTION_DEFAULT = 'Required so your instructor can match your submission.'
+
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    identity_instruction = models.TextField(
+        blank=True,
+        default=IDENTITY_INSTRUCTION_DEFAULT,
+        help_text='Instructions shown to students when confirming their identity.',
+    )
     owner = models.ForeignKey(Instructor, on_delete=models.CASCADE, related_name='owned_quizzes')
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
@@ -29,6 +37,26 @@ class Quiz(models.Model):
         if self.end_time and now > self.end_time:
             return False
         return True
+
+    def get_rubric(self) -> dict:
+        scale_options = list(self.rating_scale_options.all())
+        criteria_entries = list(self.rating_criteria.all())
+        if scale_options and criteria_entries:
+            return {
+                'scale': [{'value': option.value, 'label': option.label} for option in scale_options],
+                'criteria': [
+                    {
+                        'id': criterion.criterion_id,
+                        'name': criterion.name,
+                        'description': criterion.description,
+                    }
+                    for criterion in criteria_entries
+                ],
+            }
+        try:
+            return load_response_config()
+        except FileNotFoundError:
+            return {'scale': [], 'criteria': []}
 
 
 class QuizSlot(models.Model):
@@ -112,3 +140,117 @@ class QuizAttemptSlot(models.Model):
 
     def __str__(self) -> str:
         return f"Attempt {self.attempt_id} - {self.slot.label}"
+
+
+class QuizAttemptInteraction(models.Model):
+    class EventType(models.TextChoices):
+        TYPING = 'typing', 'Typing input'
+        RATING_SELECTION = 'rating_selection', 'Rating selection'
+
+    attempt_slot = models.ForeignKey(
+        QuizAttemptSlot,
+        on_delete=models.CASCADE,
+        related_name='interactions',
+    )
+    event_type = models.CharField(max_length=32, choices=EventType.choices)
+    metadata = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self) -> str:
+        return f"{self.attempt_slot} {self.event_type} @ {self.created_at.isoformat()}"
+
+
+class QuizRatingScaleOption(models.Model):
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='rating_scale_options')
+    order = models.PositiveIntegerField()
+    value = models.IntegerField()
+    label = models.CharField(max_length=255)
+
+    class Meta:
+        ordering = ['order']
+        constraints = [
+            models.UniqueConstraint(fields=['quiz', 'value'], name='unique_quiz_scale_value')
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.quiz.title}: {self.label} ({self.value})"
+
+
+class QuizRatingCriterion(models.Model):
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='rating_criteria')
+    order = models.PositiveIntegerField()
+    criterion_id = models.CharField(max_length=32)
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+
+    class Meta:
+        ordering = ['order']
+        constraints = [
+            models.UniqueConstraint(fields=['quiz', 'criterion_id'], name='unique_quiz_criterion_id')
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.quiz.title}: {self.criterion_id}"
+
+
+def _load_default_rubric_config():
+    try:
+        return load_response_config()
+    except FileNotFoundError:
+        return {'scale': [], 'criteria': []}
+
+
+def _build_scale_entries(config):
+    entries = []
+    for index, option in enumerate(config.get('scale') or []):
+        value = option.get('value')
+        label = option.get('label')
+        if value is None or label is None:
+            continue
+        entries.append({'order': index, 'value': value, 'label': label})
+    return entries
+
+
+def _build_criteria_entries(config):
+    entries = []
+    for index, criterion in enumerate(config.get('criteria') or []):
+        criterion_id = str(criterion.get('id') or '').strip()
+        name = criterion.get('name')
+        description = criterion.get('description')
+        if not criterion_id or name is None or description is None:
+            continue
+        entries.append(
+            {'order': index, 'criterion_id': criterion_id, 'name': name, 'description': description}
+        )
+    return entries
+
+
+def create_default_quiz_rubric(quiz):
+    if quiz.rating_scale_options.exists() or quiz.rating_criteria.exists():
+        return
+    config = _load_default_rubric_config()
+    scale_entries = _build_scale_entries(config)
+    criteria_entries = _build_criteria_entries(config)
+    if scale_entries:
+        QuizRatingScaleOption.objects.bulk_create(
+            [
+                QuizRatingScaleOption(quiz=quiz, order=entry['order'], value=entry['value'], label=entry['label'])
+                for entry in scale_entries
+            ]
+        )
+    if criteria_entries:
+        QuizRatingCriterion.objects.bulk_create(
+            [
+                QuizRatingCriterion(
+                    quiz=quiz,
+                    order=entry['order'],
+                    criterion_id=entry['criterion_id'],
+                    name=entry['name'],
+                    description=entry['description'],
+                )
+                for entry in criteria_entries
+            ]
+        )

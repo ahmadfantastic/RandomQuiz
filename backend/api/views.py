@@ -27,6 +27,9 @@ from quizzes.models import (
     QuizSlotProblemBank,
     QuizAttempt,
     QuizAttemptSlot,
+    QuizAttemptInteraction,
+    QuizRatingScaleOption,
+    QuizRatingCriterion,
 )
 from quizzes.response_config import load_response_config
 from quizzes.serializers import (
@@ -35,6 +38,7 @@ from quizzes.serializers import (
     QuizSlotProblemSerializer,
     QuizAttemptSerializer,
     QuizAttemptSlotSerializer,
+    QuizAttemptInteractionSerializer,
 )
 
 
@@ -298,6 +302,92 @@ class ProblemBankProblemListCreate(generics.ListCreateAPIView):
         return self._bank_cache
 
 
+class QuizRubricScaleSerializer(serializers.Serializer):
+    value = serializers.IntegerField()
+    label = serializers.CharField()
+
+
+class QuizRubricCriterionSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    name = serializers.CharField()
+    description = serializers.CharField()
+
+
+class QuizRubricPayloadSerializer(serializers.Serializer):
+    scale = QuizRubricScaleSerializer(many=True)
+    criteria = QuizRubricCriterionSerializer(many=True)
+
+    def validate_scale(self, value):
+        seen = set()
+        for option in value:
+            val = option['value']
+            if val in seen:
+                raise serializers.ValidationError('Duplicate rating values are not allowed.')
+            seen.add(val)
+        return value
+
+    def validate_criteria(self, value):
+        seen = set()
+        normalized = []
+        for criterion in value:
+            criterion_id = str(criterion.get('id') or '').strip()
+            if not criterion_id:
+                raise serializers.ValidationError('Each criterion must include an id.')
+            if criterion_id in seen:
+                raise serializers.ValidationError(f'Duplicate criterion id: {criterion_id}')
+            seen.add(criterion_id)
+            normalized.append({**criterion, 'id': criterion_id})
+        return normalized
+
+
+class QuizRubricView(APIView):
+    permission_classes = [IsInstructor]
+
+    def _get_quiz(self, request, quiz_id):
+        instructor = ensure_instructor(request.user)
+        return get_object_or_404(
+            Quiz.objects.filter(models.Q(owner=instructor) | models.Q(allowed_instructors=instructor)).distinct(),
+            id=quiz_id,
+        )
+
+    def get(self, request, quiz_id):
+        quiz = self._get_quiz(request, quiz_id)
+        return Response(quiz.get_rubric())
+
+    def put(self, request, quiz_id):
+        quiz = self._get_quiz(request, quiz_id)
+        serializer = QuizRubricPayloadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        with transaction.atomic():
+            quiz.rating_scale_options.all().delete()
+            quiz.rating_criteria.all().delete()
+            scale_objects = [
+                QuizRatingScaleOption(
+                    quiz=quiz,
+                    order=index,
+                    value=option['value'],
+                    label=option['label'],
+                )
+                for index, option in enumerate(payload['scale'])
+            ]
+            criterion_objects = [
+                QuizRatingCriterion(
+                    quiz=quiz,
+                    order=index,
+                    criterion_id=criterion['id'],
+                    name=criterion['name'],
+                    description=criterion['description'],
+                )
+                for index, criterion in enumerate(payload['criteria'])
+            ]
+            if scale_objects:
+                QuizRatingScaleOption.objects.bulk_create(scale_objects)
+            if criterion_objects:
+                QuizRatingCriterion.objects.bulk_create(criterion_objects)
+        return Response(quiz.get_rubric())
+
+
 class QuizViewSet(viewsets.ModelViewSet):
     serializer_class = QuizSerializer
     permission_classes = [IsInstructor]
@@ -533,10 +623,17 @@ class QuizAttemptList(APIView):
             ).distinct(),
             id=quiz_id,
         )
-        attempts = quiz.attempts.prefetch_related(
-            'attempt_slots__slot',
-            'attempt_slots__assigned_problem',
-        ).order_by('-started_at')
+        attempts = (
+            quiz.attempts
+            .select_related('quiz')
+            .prefetch_related(
+                'attempt_slots__slot',
+                'attempt_slots__assigned_problem',
+                'quiz__rating_scale_options',
+                'quiz__rating_criteria',
+            )
+            .order_by('-started_at')
+        )
         serializer = QuizAttemptSerializer(attempts, many=True)
         return Response(serializer.data)
 
@@ -555,6 +652,50 @@ class QuizAttemptDetail(APIView):
         )
         attempt.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class QuizAttemptInteractions(APIView):
+    permission_classes = [IsInstructor]
+
+    def get(self, request, quiz_id, attempt_id):
+        instructor = ensure_instructor(request.user)
+        attempt = get_object_or_404(
+            QuizAttempt.objects.filter(
+                models.Q(quiz__owner=instructor) | models.Q(quiz__allowed_instructors=instructor)
+            ).distinct(),
+            id=attempt_id,
+            quiz_id=quiz_id,
+        )
+        attempt_slots = (
+            attempt.attempt_slots.select_related('slot').prefetch_related('interactions').all()
+        )
+        slots_payload = []
+        for attempt_slot in attempt_slots:
+            slot = attempt_slot.slot
+            slots_payload.append(
+                {
+                    'id': attempt_slot.id,
+                    'slot_id': slot.id,
+                    'slot_label': slot.label,
+                    'response_type': slot.response_type,
+                    'interactions': [
+                        {
+                            'event_type': interaction.event_type,
+                            'metadata': interaction.metadata,
+                            'created_at': interaction.created_at,
+                        }
+                        for interaction in attempt_slot.interactions.order_by('created_at')
+                    ],
+                }
+            )
+        return Response(
+            {
+                'attempt_id': attempt.id,
+                'started_at': attempt.started_at,
+                'completed_at': attempt.completed_at,
+                'slots': slots_payload,
+            }
+        )
 
 
 class SlotProblemListCreate(APIView):
@@ -620,6 +761,7 @@ class PublicQuizDetail(APIView):
             'start_time': quiz.start_time,
             'end_time': quiz.end_time,
             'is_open': quiz.is_open(),
+            'identity_instruction': quiz.identity_instruction or Quiz.IDENTITY_INSTRUCTION_DEFAULT,
         }
         return Response(data)
 
@@ -720,12 +862,9 @@ class PublicAttemptSlotAnswer(APIView):
         raise serializers.ValidationError({'detail': 'Unsupported response type.'})
 
     def normalize_rating_answer(self, payload):
-        try:
-            config = load_response_config()
-        except FileNotFoundError as exc:
-            raise serializers.ValidationError({'detail': 'Rating rubric configuration is missing.'}) from exc
-        scale_options = config.get('scale') or []
-        criteria = config.get('criteria') or []
+        rubric = quiz.get_rubric()
+        scale_options = rubric.get('scale') or []
+        criteria = rubric.get('criteria') or []
         if not scale_options or not criteria:
             raise serializers.ValidationError({'detail': 'Rating rubric configuration is incomplete.'})
         ratings = payload.get('ratings')
@@ -762,6 +901,25 @@ class PublicAttemptSlotAnswer(APIView):
         }
 
 
+class PublicAttemptSlotInteraction(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, attempt_id, slot_id):
+        attempt_slot = get_object_or_404(QuizAttemptSlot, attempt_id=attempt_id, slot_id=slot_id)
+        attempt = attempt_slot.attempt
+        if attempt.completed_at:
+            return Response({'detail': 'This attempt has already been submitted.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not attempt.quiz.is_open():
+            return Response(
+                {'detail': 'This quiz window has closed and new answers are no longer accepted.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = QuizAttemptInteractionSerializer(data=request.data, context={'attempt_slot': attempt_slot})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': 'Interaction logged'}, status=status.HTTP_201_CREATED)
+
+
 class PublicAttemptDetail(APIView):
     permission_classes = [AllowAny]
 
@@ -770,6 +928,8 @@ class PublicAttemptDetail(APIView):
             QuizAttempt.objects.prefetch_related(
                 'attempt_slots__slot',
                 'attempt_slots__assigned_problem',
+                'quiz__rating_scale_options',
+                'quiz__rating_criteria',
             ),
             id=attempt_id,
         )
