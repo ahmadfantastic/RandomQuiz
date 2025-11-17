@@ -858,11 +858,11 @@ class PublicAttemptSlotAnswer(APIView):
                 'text': text,
             }
         if slot.response_type == QuizSlot.ResponseType.RATING:
-            return self.normalize_rating_answer(payload)
+            return self.normalize_rating_answer(slot, payload)
         raise serializers.ValidationError({'detail': 'Unsupported response type.'})
 
-    def normalize_rating_answer(self, payload):
-        rubric = quiz.get_rubric()
+    def normalize_rating_answer(self, slot, payload):
+        rubric = slot.quiz.get_rubric()
         scale_options = rubric.get('scale') or []
         criteria = rubric.get('criteria') or []
         if not scale_options or not criteria:
