@@ -1,4 +1,5 @@
 import React from 'react';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -12,6 +13,7 @@ const QuizSlotsTab = ({
   openSlotModal,
   openSlotDetailModal,
   loadSlots,
+  slotProblemOptions = {},
 }) => (
   <div className="space-y-6">
     <div className="flex items-center justify-between">
@@ -38,12 +40,10 @@ const QuizSlotsTab = ({
 
     {!slots.length ? (
       <Card>
-        <CardContent className="py-12 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-            <svg className="h-8 w-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-          </div>
+          <CardContent className="py-12 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+              <Plus className="h-8 w-8 text-muted-foreground" />
+            </div>
           <p className="text-lg font-semibold">No slots yet</p>
           <p className="text-sm text-muted-foreground">Create your first slot to start building the quiz</p>
           <Button onClick={openSlotModal} className="mt-4" disabled={isLoadingBanks || !banks.length}>
@@ -54,8 +54,15 @@ const QuizSlotsTab = ({
     ) : (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {slots.map((slot) => {
-          const problemCount = slot.slot_problems?.length ?? 0;
-          const isReady = problemCount > 0;
+          const selectedProblemCount = slot.slot_problems?.length ?? 0;
+          const responseBadgeClass = {
+            open_text: 'bg-blue-100 text-blue-800',
+            rating: 'bg-purple-100 text-purple-800',
+          }[slot.response_type] ?? 'bg-blue-100 text-blue-800';
+          const hasBank = Boolean(slot.problem_bank);
+          const availableProblems = hasBank ? slotProblemOptions[slot.problem_bank]?.length : undefined;
+          const bankProblemTotal = hasBank ? availableProblems ?? '—' : '—';
+          const isReady = selectedProblemCount > 0;
           return (
             <Card key={slot.id} className={cn(
               'transition-all hover:shadow-md',
@@ -78,20 +85,24 @@ const QuizSlotsTab = ({
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Bank:</span>
-                    <span className="font-medium">{slot.problem_bank_name || 'None'}</span>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Bank:</span>
+                      <span className="font-medium">{slot.problem_bank_name || 'None'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Response:</span>
+                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold', responseBadgeClass)}>
+                        {getResponseTypeLabel(slot.response_type)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Problems:</span>
+                      <span className="font-semibold">
+                        {selectedProblemCount}/{bankProblemTotal}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Response:</span>
-                    <span className="font-medium">{getResponseTypeLabel(slot.response_type)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Problems:</span>
-                    <span className="font-medium">{problemCount}</span>
-                  </div>
-                </div>
                 <Button 
                   onClick={() => openSlotDetailModal(slot.id)} 
                   size="sm" 

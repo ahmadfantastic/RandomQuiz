@@ -133,7 +133,7 @@ const ProfilePage = () => {
                     <Avatar size={72} name={displayName} src={avatarSource} />
                   </div>
                   <div className="flex-1 space-y-2">
-                    <Label htmlFor="profile-picture">Profile picture</Label>
+                    <Label htmlFor="profile-picture">Profile Picture</Label>
                     <input
                       id="profile-picture"
                       name="profile-picture"
@@ -148,11 +148,11 @@ const ProfilePage = () => {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="first_name">First name</Label>
+                    <Label htmlFor="first_name">First Name</Label>
                     <Input
                       id="first_name"
                       name="first_name"
-                      placeholder="First name"
+                      placeholder="First Name"
                       value={form.first_name}
                       onChange={handleInputChange}
                     />

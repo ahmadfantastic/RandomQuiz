@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,21 +10,7 @@ import '@uiw/react-markdown-preview/markdown.css';
 import '@uiw/react-md-editor/markdown-editor.css';
 import { Modal } from '@/components/ui/modal';
 import QRCode from 'qrcode';
-const LinkIcon = ({ className, ...props }) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.7"
-    className={cn('h-4 w-4 flex-shrink-0', className)}
-    {...props}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17H6a5 5 0 0 1 0-10h3" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 7h3a5 5 0 0 1 0 10h-3" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="m8.5 11.5 7 7" />
-  </svg>
-);
-
+import DateBadge from '@/components/ui/date-badge';
 const QuizOverviewTab = ({
   quiz,
   details,
@@ -66,8 +53,7 @@ const QuizOverviewTab = ({
     'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
     isOpen ? 'translate-x-5' : 'translate-x-1'
   );
-  const startLabel = scheduleState?.startLabel || 'Not opened yet';
-  const endLabel = scheduleState?.endLabel || 'Not closed yet';
+  const endFallback = scheduleState?.isOpen ? 'Still open' : 'Not closed yet';
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [qrLoading, setQrLoading] = useState(false);
@@ -138,13 +124,13 @@ const QuizOverviewTab = ({
   }, [generateQrDataUrl, qrFileName]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-6 lg:grid-cols-[1fr,360px]">
       <Card>
         <CardHeader>
           <CardTitle>Quiz Details</CardTitle>
           <CardDescription>Basic information displayed to students and instructors</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <form className="space-y-4" onSubmit={onSaveDetails}>
             <div className="space-y-2">
               <Label htmlFor="quiz-title">Title</Label>
@@ -178,7 +164,7 @@ const QuizOverviewTab = ({
               <MDEditor
                 value={details.identity_instruction ?? ''}
                 onChange={handleIdentityInstructionChange}
-                height={120}
+                height={80}
                 preview="edit"
                 textareaProps={{
                   id: 'identity-instruction',
@@ -197,104 +183,115 @@ const QuizOverviewTab = ({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Schedule</CardTitle>
-          <CardDescription>Control when students can access this quiz</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-background/70 p-3">
-            <div>
-              <p className="text-sm font-medium">Quiz access</p>
-              <p className="text-xs text-muted-foreground">
-                {isOpen ? 'Students can start attempts right now.' : 'New attempts are paused while the quiz is closed.'}
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Schedule</CardTitle>
+            <CardDescription>Control when students can access this quiz</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-4">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-background/70 p-3">
+              <div>
+                <p className="text-sm font-medium">Quiz access</p>
+                <p className="text-xs text-muted-foreground">
+                  {isOpen ? 'Students can start attempts right now.' : 'New attempts are paused while the quiz is closed.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isOpen}
+                onClick={handleToggle}
+                className={switchClasses}
+                disabled={scheduleActionLoading || (!isOpen && !readyForStudents)}
+              >
+                <span className={knobClasses} />
+              </button>
+            </div>
+            {!readyForStudents && !isOpen && (
+              <p className="text-xs text-destructive">
+                At least one slot with a linked bank and problems is required before publishing.
               </p>
+            )}
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p className="flex items-center gap-2">
+                <span>Last opened:</span>
+                <DateBadge
+                  value={scheduleState?.startTime}
+                  fallback="Not opened yet"
+                />
+              </p>
+              <p className="flex items-center gap-2">
+                <span>Last closed:</span>
+                <DateBadge
+                  value={scheduleState?.endTime}
+                  fallback={endFallback}
+                />
+              </p>
+              {scheduleActionLoading && <p className="text-xs text-muted-foreground">Updating status…</p>}
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={isOpen}
-              onClick={handleToggle}
-              className={switchClasses}
-              disabled={scheduleActionLoading || (!isOpen && !readyForStudents)}
-            >
-              <span className={knobClasses} />
-            </button>
-          </div>
-          {!readyForStudents && !isOpen && (
-            <p className="text-xs text-destructive">
-              At least one slot with a linked bank and problems is required before publishing.
-            </p>
-          )}
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Last opened: {startLabel}</p>
-            <p>Last closed: {endLabel}</p>
-            {scheduleActionLoading && <p className="text-xs text-muted-foreground">Updating status…</p>}
-          </div>
-          {scheduleActionError && (
-            <p className="text-sm text-destructive">{scheduleActionError}</p>
-          )}
-        </CardContent>
-      </Card>
+            {scheduleActionError && (
+              <p className="text-sm text-destructive">{scheduleActionError}</p>
+            )}
+          </CardContent>
+        </Card>
 
-      <Card className="lg:col-span-2">
-        <CardHeader>
-          <CardTitle>Public Access Link</CardTitle>
-          <CardDescription>Share this link with students to start collecting responses</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-start gap-2 text-blue-600">
-              <LinkIcon className="text-blue-600" aria-hidden />
-              {displayQuizLink ? (
-                <a
-                  href={absoluteQuizLink || quizLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="break-words text-sm font-semibold text-blue-600 transition hover:text-blue-700"
+        <Card>
+          <CardHeader>
+            <CardTitle>Public Access Link</CardTitle>
+            <CardDescription>Share this link with students to start collecting responses</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-start gap-2 text-blue-600">
+                <Link2 className="h-4 w-4 flex-shrink-0 text-blue-600" aria-hidden />
+                {displayQuizLink ? (
+                  <a
+                    href={absoluteQuizLink || quizLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-words text-sm font-semibold text-blue-600 transition hover:text-blue-700"
+                  >
+                    {displayQuizLink}
+                  </a>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    Configure the quiz before sharing the public link.
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={handleCopyLink} disabled={!quiz}>
+                  Copy
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleViewQr}
+                  variant="outline"
+                  disabled={!qrSourceLink || qrLoading}
                 >
-                  {displayQuizLink}
-                </a>
-              ) : (
-                <span className="text-sm text-muted-foreground">
-                  Configure the quiz before sharing the public link.
-                </span>
-              )}
+                  {qrLoading ? 'Generating QR…' : 'View QR'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDownloadQr}
+                  disabled={!qrSourceLink || qrLoading}
+                >
+                  Download QR
+                </Button>
+              </div>
+              {qrError && <p className="text-xs text-destructive">{qrError}</p>}
             </div>
-            <div className="flex flex-wrap gap-3">
-              <Button onClick={handleCopyLink} disabled={!quiz}>
-                Copy
-              </Button>
-              <Button variant="outline" to={quizLink} target="_blank" rel="noreferrer" disabled={!quizLink}>
-                Open
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleViewQr}
-                variant="ghost"
-                disabled={!qrSourceLink || qrLoading}
-              >
-                {qrLoading ? 'Generating QR…' : 'View QR'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleDownloadQr}
-                disabled={!qrSourceLink || qrLoading}
-              >
-                Download QR
-              </Button>
-            </div>
-            {qrError && <p className="text-xs text-destructive">{qrError}</p>}
-          </div>
-          {!readyForStudents && (
-            <p className="mt-3 text-sm text-amber-600">
-              ⚠️ Configure at least one slot with problems before sharing
-            </p>
-          )}
-          {copyMessage && <p className="mt-2 text-xs text-muted-foreground">{copyMessage}</p>}
-        </CardContent>
-      </Card>
+            {!readyForStudents && (
+              <p className="mt-3 text-sm text-amber-600">
+                ⚠️ Configure at least one slot with problems before sharing
+              </p>
+            )}
+            {copyMessage && <p className="mt-2 text-xs text-muted-foreground">{copyMessage}</p>}
+          </CardContent>
+        </Card>
+      </div>
       <Modal
         open={qrModalOpen}
         onOpenChange={setQrModalOpen}

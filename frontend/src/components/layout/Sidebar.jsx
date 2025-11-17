@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { BookOpen, ChevronDown, ListChecks, LogOut, Sparkles, Users, User, Home, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import QuizStatusIcon from '@/components/quiz/QuizStatusIcon';
@@ -10,43 +11,19 @@ import Avatar from '@/components/ui/Avatar';
 
 const navItems = [
   {
-    label: 'Profile',
-    to: '/profile',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 20c0-3 3.5-5 8-5s8 2 8 5" />
-      </svg>
-    ),
-  },
-  {
     label: 'Dashboard',
     to: '/dashboard',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 13h4v6H3zM11 9h4v10h-4zM19 5h4v14h-4z" />
-      </svg>
-    ),
+    icon: <Home className="h-5 w-5" />,
   },
   {
     label: 'Problem Banks',
     to: '/problem-banks',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7h16M4 12h16M4 17h16" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7v10" />
-      </svg>
-    ),
+    icon: <BookOpen className="h-5 w-5" />,
   },
   {
     label: 'Instructors',
     to: '/admin/instructors',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5.5a3 3 0 0 0-3 3m6 0a3 3 0 0 0-3-3m0 0a3 3 0 0 1 3 3" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 20v-1a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v1" />
-      </svg>
-    ),
+    icon: <Users className="h-5 w-5" />,
   },
 ];
 
@@ -233,25 +210,13 @@ const Sidebar = ({ isOpen, onClose }) => {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Avatar
-            size={48}
-            name={[profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.username}
-            src={profile.profile_picture_url}
-          />
-          <div>
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Random Quiz</p>
-            <p className="text-lg font-semibold">
-              {[profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.username}
-            </p>
-            {profile.email && <p className="text-xs text-muted-foreground">{profile.email}</p>}
-          </div>
+          <Sparkles className="h-6 w-6 text-primary" />
+          <p className="text-lg font-semibold uppercase tracking-[0.3em]">RANDOM Quiz</p>
         </div>
         <button className="rounded-md border p-2 lg:hidden" onClick={onClose} aria-label="Close navigation">
           <span className="sr-only">Close sidebar</span>
           <div className="h-4 w-4">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-full w-full">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 6l8 8M6 14L14 6" />
-            </svg>
+            <X className="h-full w-full" />
           </div>
         </button>
       </div>
@@ -281,32 +246,55 @@ const Sidebar = ({ isOpen, onClose }) => {
             aria-expanded={isQuizMenuOpen}
           >
             <span className="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-4 w-4">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M7 14h10" />
-              </svg>
+              <ListChecks className="h-4 w-4" />
               Quizzes
             </span>
-            <svg
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              className={cn('h-4 w-4 transition-transform', isQuizMenuOpen ? 'rotate-180' : 'rotate-0')}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 8l5 5 5-5" />
-            </svg>
+            <ChevronDown
+              className={cn(
+                'h-4 w-4 transition-transform',
+                isQuizMenuOpen ? 'rotate-180' : 'rotate-0'
+              )}
+            />
           </button>
           <div className="mt-3 space-y-2">{renderQuizMenu()}</div>
         </div>
       </nav>
-      <div className="mt-auto">
+      <div className="mt-auto space-y-3">
+        <div className="rounded-2xl border border-border/80 bg-card/70 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <Avatar
+              size={36}
+              name={[profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.username}
+              src={profile.profile_picture_url}
+            />
+            <div>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Profile</p>
+              <p className="text-sm font-semibold">
+                {[profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.username}
+              </p>
+              {profile.email && <p className="text-xs text-muted-foreground">{profile.email}</p>}
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 w-full justify-start gap-2"
+            to="/profile"
+            onClick={onClose}
+          >
+            <User className="h-4 w-4" />
+            View profile
+          </Button>
+        </div>
         <Button
           variant="outline"
-          className="w-full"
+          className="w-full flex items-center justify-center gap-2"
           onClick={() => {
             clearAuthFlag();
             window.location.assign('/');
           }}
         >
+          <LogOut className="h-4 w-4" />
           Log out
         </Button>
       </div>

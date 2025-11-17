@@ -49,9 +49,9 @@ const DashboardPage = () => {
       actions={
         <>
           <Button variant="outline" to="/problem-banks">
-            Problem banks
+            Problem Banks
           </Button>
-          <Button to="/quizzes/new">New quiz</Button>
+          <Button to="/quizzes/new">New Quiz</Button>
         </>
       }
     >
