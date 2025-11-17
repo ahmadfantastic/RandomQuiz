@@ -1,8 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import LoginForm from '@/features/auth/components/LoginForm';
+import { hasAuthFlag } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const LoginPage = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (hasAuthFlag()) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [navigate]);
+
   return (
     <div className="min-h-screen bg-muted/30">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-4 py-12 lg:flex-row lg:items-center lg:gap-16">

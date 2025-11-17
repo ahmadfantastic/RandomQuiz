@@ -7,15 +7,10 @@ import { Label } from '@/components/ui/label';
 import api from '@/lib/api';
 import { encodeAttemptToken } from '@/lib/attemptToken';
 import { renderProblemMarkupHtml } from '@/lib/markdown';
+import DateBadge from '@/components/ui/date-badge';
+import { formatDateTime } from '@/lib/formatDateTime';
 
 const DEFAULT_IDENTITY_INSTRUCTION = 'Required so your instructor can match your submission.';
-
-const formatDateTime = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-};
 
 const getQuizAvailability = (quiz) => {
   if (!quiz) {
@@ -47,7 +42,14 @@ const getQuizAvailability = (quiz) => {
     };
   }
 
-  const startMessage = start
+  const startMessage = start ? (
+    <>
+      Opens <DateBadge value={quiz.start_time} fallback="Soon"/>. Check back then for the invitation.
+    </>
+  ) : (
+    'The instructor has not opened this quiz yet. Check the window information above.'
+  );
+  const startErrorMessage = start
     ? `Opens ${formatDateTime(quiz.start_time)}. Check back then for the invitation.`
     : 'The instructor has not opened this quiz yet. Check the window information above.';
   return {
@@ -55,7 +57,7 @@ const getQuizAvailability = (quiz) => {
     label: 'Not open yet',
     buttonLabel: 'Not open yet',
     message: startMessage,
-    errorMessage: startMessage,
+    errorMessage: startErrorMessage,
     canAttempt: false,
   };
 };
@@ -106,14 +108,11 @@ const PublicQuizLandingPage = () => {
     };
   }, [publicId]);
 
-  const quizWindow = useMemo(() => {
-    if (!quiz) return 'No schedule shared for this quiz.';
-    const start = formatDateTime(quiz.start_time);
-    const end = formatDateTime(quiz.end_time);
-    if (!start && !end) return 'No schedule shared for this quiz.';
-    if (start && !end) return `Opens ${start}`;
-    if (!start && end) return `Closes ${end}`;
-    return `${start} — ${end}`;
+  const quizWindowInfo = useMemo(() => {
+    if (!quiz) return null;
+    const startTime = quiz.start_time ? quiz.start_time : null;
+    const endTime = quiz.end_time ? quiz.end_time : null;
+    return { startTime, endTime };
   }, [quiz]);
 
   const quizAvailability = useMemo(() => getQuizAvailability(quiz), [quiz]);
@@ -196,7 +195,30 @@ const PublicQuizLandingPage = () => {
           <dl className="mt-6 flex flex-wrap gap-6 text-sm text-primary-foreground/80">
             <div>
               <dt className="uppercase tracking-widest text-xs text-primary-foreground/60">Window</dt>
-              <dd className="text-base text-primary-foreground">{quizWindow}</dd>
+              <dd className="text-base text-primary-foreground">
+                {quizWindowInfo?.startTime || quizWindowInfo?.endTime ? (
+                  <div className="flex flex-wrap items-center gap-4">
+                    {quizWindowInfo.startTime && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] uppercase tracking-[0.3em]">
+                          Opens
+                        </span>
+                        <DateBadge value={quizWindowInfo.startTime} fallback="Unscheduled" className="bg-inherit text-inherit"/>
+                      </div>
+                    )}
+                    {quizWindowInfo.endTime && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] uppercase tracking-[0.3em] text-primary-foreground/60">
+                          Closes
+                        </span>
+                        <DateBadge value={quizWindowInfo.endTime} fallback="Unscheduled" />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  'No schedule shared for this quiz.'
+                )}
+              </dd>
             </div>
             <div>
               <dt className="uppercase tracking-widest text-xs text-primary-foreground/60">Status</dt>

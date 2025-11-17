@@ -14,10 +14,23 @@ const AdminInstructorManager = () => {
   const [instructors, setInstructors] = useState([]);
   const [form, setForm] = useState(defaultForm);
   const [errorMessage, setErrorMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [isLoadingInstructors, setIsLoadingInstructors] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const load = () => {
-    api.get('/api/instructors/').then((res) => setInstructors(res.data));
+  const load = async () => {
+    setIsLoadingInstructors(true);
+    setLoadError('');
+    try {
+      const res = await api.get('/api/instructors/');
+      setInstructors(res.data);
+    } catch (error) {
+      const detail = error.response?.data?.detail || 'Unable to load instructors right now.';
+      setLoadError(detail);
+      setInstructors([]);
+    } finally {
+      setIsLoadingInstructors(false);
+    }
   };
 
   useEffect(() => {
@@ -62,70 +75,95 @@ const AdminInstructorManager = () => {
 
   return (
     <AppShell
-      title="Team access"
+      title="Team Access"
       description="Invite instructors to collaborate on problem banks and quizzes. Manage admin privileges from one place."
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium text-muted-foreground">Invite colleagues whenever you need extra help.</p>
-        <Button onClick={() => setIsModalOpen(true)}>Add an instructor</Button>
+        <Button onClick={() => setIsModalOpen(true)}>Add an Instructor</Button>
       </div>
       <div className="grid gap-6 lg:grid-cols-1">
         <Card className="min-h-[360px]">
           <CardHeader>
-            <CardTitle>Current instructors</CardTitle>
+            <CardTitle>Current Instructors</CardTitle>
             <CardDescription>Toggle admin status or remove collaborators at any time.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {instructors.length === 0 && <p className="text-sm text-muted-foreground">No instructors yet.</p>}
-            {instructors.map((inst) => {
-              const isSelf = Boolean(inst.is_self);
-              const fullName = [inst.first_name, inst.last_name].filter(Boolean).join(' ');
-              return (
-                <div key={inst.id} className="rounded-xl border px-4 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+            {loadError && <p className="text-sm text-destructive">{loadError}</p>}
+            {isLoadingInstructors ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((placeholder) => (
+                  <div key={placeholder} className="rounded-xl border border-muted/40 bg-muted/20 p-4 animate-pulse">
                     <div className="flex items-center gap-3">
-                      <Avatar
-                        size={40}
-                        name={fullName}
-                        src={inst.profile_picture_url}
-                        className="flex-shrink-0"
-                      />
-                      <div>
-                        <p className="flex flex-wrap items-center gap-2 font-semibold">
-                          {fullName && <span>{fullName}</span>}
-                          <span className="text-xs text-muted-foreground">@{inst.username}</span>
-                          {isSelf && <span className="text-xs font-medium text-muted-foreground">(You)</span>}
-                        </p>
-                        <p className="text-sm text-muted-foreground">{inst.email}</p>
+                      <div className="h-10 w-10 rounded-full bg-muted" />
+                      <div className="space-y-1">
+                        <div className="h-3 w-32 rounded-full bg-muted" />
+                        <div className="h-2 w-24 rounded-full bg-muted/70" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-2 text-sm font-medium">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border border-input"
-                          checked={inst.is_admin_instructor}
-                          onChange={(e) => toggleAdmin(inst.id, e.target.checked)}
-                          disabled={isSelf}
-                          title={isSelf ? 'You cannot modify your own access' : undefined}
-                        />
-                        Admin
-                      </label>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => remove(inst.id)}
-                        disabled={isSelf}
-                        title={isSelf ? 'You cannot remove yourself' : undefined}
-                      >
-                        Remove
-                      </Button>
+                    <div className="mt-3 flex items-center justify-between gap-4">
+                      <div className="h-2 w-12 rounded-full bg-muted/60" />
+                      <div className="h-2 w-10 rounded-full bg-muted/60" />
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            ) : (
+              <>
+                {instructors.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No instructors yet.</p>
+                )}
+                {instructors.map((inst) => {
+                  const isSelf = Boolean(inst.is_self);
+                  const fullName = [inst.first_name, inst.last_name].filter(Boolean).join(' ');
+                  return (
+                    <div key={inst.id} className="rounded-xl border px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            size={40}
+                            name={fullName}
+                            src={inst.profile_picture_url}
+                            className="flex-shrink-0"
+                          />
+                          <div>
+                            <p className="flex flex-wrap items-center gap-2 font-semibold">
+                              {fullName && <span>{fullName}</span>}
+                              <span className="text-xs text-muted-foreground">@{inst.username}</span>
+                              {isSelf && <span className="text-xs font-medium text-muted-foreground">(You)</span>}
+                            </p>
+                            <p className="text-sm text-muted-foreground">{inst.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-2 text-sm font-medium">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border border-input"
+                              checked={inst.is_admin_instructor}
+                              onChange={(e) => toggleAdmin(inst.id, e.target.checked)}
+                              disabled={isSelf}
+                              title={isSelf ? 'You cannot modify your own access' : undefined}
+                            />
+                            Admin
+                          </label>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => remove(inst.id)}
+                            disabled={isSelf}
+                            title={isSelf ? 'You cannot remove yourself' : undefined}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

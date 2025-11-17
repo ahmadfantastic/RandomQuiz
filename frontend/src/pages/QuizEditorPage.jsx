@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Check } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +12,7 @@ import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { getQuizStatus } from '@/lib/quizStatus';
 import { RESPONSE_TYPE_OPTIONS, getResponseTypeLabel } from '@/lib/responseTypes';
+import DateBadge from '@/components/ui/date-badge';
 import QuizStatusBanner from '@/components/quiz-editor/QuizStatusBanner';
 import QuizOverviewTab from '@/components/quiz-editor/QuizOverviewTab';
 import QuizSlotsTab from '@/components/quiz-editor/QuizSlotsTab';
@@ -31,16 +33,6 @@ const TABS = {
 };
 
 const defaultSlotForm = { label: '', instruction: '', problem_bank: '', response_type: 'open_text' };
-
-const formatDateTime = (value) => {
-  if (!value) return 'Not scheduled';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not scheduled';
-  return date.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-};
 
 const normalizeSlot = (slot) => ({
   ...slot,
@@ -621,10 +613,24 @@ const QuizEditorPage = () => {
     const start = quiz.start_time ? new Date(quiz.start_time).getTime() : null;
     const end = quiz.end_time ? new Date(quiz.end_time).getTime() : null;
     if (start && now < start) {
-      return { status: 'Scheduled', description: `Opens ${formatDateTime(quiz.start_time)}` };
+      return {
+        status: 'Scheduled',
+        description: (
+          <>
+            Opens <DateBadge value={quiz.start_time} fallback="Soon" />
+          </>
+        ),
+      };
     }
     if (end && now > end) {
-      return { status: 'Closed', description: `Closed ${formatDateTime(quiz.end_time)}` };
+      return {
+        status: 'Closed',
+        description: (
+          <>
+            Closed <DateBadge value={quiz.end_time} fallback="Recently closed" />
+          </>
+        ),
+      };
     }
     if (start && (!end || now <= end)) {
       return { status: 'Open', description: 'Students can join using the public link below.' };
@@ -639,15 +645,11 @@ const QuizEditorPage = () => {
 
   const scheduleState = useMemo(() => {
     if (!quiz) return null;
-    const startLabel = quiz.start_time ? formatDateTime(quiz.start_time) : 'Not opened yet';
-    let endLabel = 'Not closed yet';
-    if (quiz.end_time) {
-      endLabel = formatDateTime(quiz.end_time);
-    } else if (quiz.start_time) {
-      endLabel = 'Still open';
-    }
-    const isOpen = Boolean(quiz.start_time && !quiz.end_time);
-    return { startLabel, endLabel, isOpen };
+    return {
+      startTime: quiz.start_time || null,
+      endTime: quiz.end_time || null,
+      isOpen: Boolean(quiz.start_time && !quiz.end_time),
+    };
   }, [quiz]);
 
   const handleDetailChange = (event) => {
@@ -992,11 +994,7 @@ const QuizEditorPage = () => {
                   onClick={() => toggleSlotProblem(slot, problem)}
                   disabled={disableChanges}
                 >
-                  {linked && (
-                    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M3.75 8.75l3.25 3.25 5.25-5.5" />
-                    </svg>
-                  )}
+                  {linked && <Check className="h-3 w-3" />}
                 </button>
                 <button
                   type="button"
@@ -1108,7 +1106,7 @@ const QuizEditorPage = () => {
 
   return (
     <AppShell
-      title={quiz ? quiz.title : 'Quiz workspace'}
+      title={quiz ? quiz.title : 'Quiz Workspace'}
       description="Configure quiz settings, manage problem slots, and review student responses."
       actions={
         <>
@@ -1124,10 +1122,76 @@ const QuizEditorPage = () => {
       }
     >
       {isLoadingQuiz ? (
-        <div className="space-y-4">
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
+        <div className="space-y-6">
+          <Card className="animate-pulse border border-muted/40 bg-muted/10">
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="h-4 w-1/3 rounded-full bg-muted/60" />
+                <div className="h-4 w-24 rounded-full bg-muted/60" />
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={`status-pill-${index}`} className="h-8 w-28 rounded-full bg-muted/60" />
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <div className="h-9 w-32 rounded-full bg-muted/60" />
+                <div className="h-9 w-20 rounded-full bg-muted/60" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="border-b border-muted/30">
+            <div className="flex flex-wrap gap-3 px-4 py-3">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <span key={`tab-pill-${index}`} className="h-8 w-24 rounded-full bg-muted/70" />
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card className="animate-pulse border border-muted/40 bg-muted/10">
+                <CardHeader className="space-y-3 pb-2">
+                  <div className="h-5 w-32 rounded-full bg-muted/60" />
+                  <div className="flex gap-3">
+                    <div className="h-4 w-16 rounded-full bg-muted/60" />
+                    <div className="h-4 w-12 rounded-full bg-muted/60" />
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={`overview-line-${index}`} className="h-4 rounded-full bg-muted/60" />
+                  ))}
+                  <div className="h-10 w-32 rounded-full bg-muted/60" />
+                </CardContent>
+              </Card>
+              <Card className="animate-pulse border border-muted/40 bg-muted/10">
+                <CardHeader className="space-y-3 pb-2">
+                  <div className="h-5 w-32 rounded-full bg-muted/60" />
+                  <div className="h-4 w-20 rounded-full bg-muted/60" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-2">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={`slot-line-${index}`} className="h-3 rounded-full bg-muted/60" />
+                    ))}
+                  </div>
+                  <div className="h-10 w-full rounded-full bg-muted/60" />
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="animate-pulse max-w-sm border border-muted/40 bg-muted/10">
+              <CardHeader className="space-y-2 pb-2">
+                <div className="h-4 w-40 rounded-full bg-muted/60" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="h-3 w-3/4 rounded-full bg-muted/60" />
+                <div className="h-8 w-24 rounded-full bg-muted/60" />
+              </CardContent>
+            </Card>
+          </div>
         </div>
       ) : !quiz ? (
         <Card className="border-destructive/30 bg-destructive/5">
@@ -1218,6 +1282,7 @@ const QuizEditorPage = () => {
                 openSlotModal={openSlotModal}
                 openSlotDetailModal={openSlotDetailModal}
                 loadSlots={loadSlots}
+                slotProblemOptions={slotProblemOptions}
               />
             )}
 
@@ -1304,22 +1369,30 @@ const QuizEditorPage = () => {
         {selectedAttempt ? (
           <div className="space-y-4">
             <div className="rounded-md bg-muted/50 p-3 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p>
-                    Attempt:{' '}
-                    <span className="font-semibold">
-                      {selectedAttempt.student_identifier || 'Unknown student'}
-                    </span>
-                  </p>
-                  <p className="text-muted-foreground">
-                    Started {formatDateTime(selectedAttempt.started_at)}
-                    {selectedAttempt.completed_at
-                      ? ` · Completed ${formatDateTime(selectedAttempt.completed_at)}`
-                      : ' · In progress'}
-                  </p>
-                </div>
-                <Button size="lg" variant="default" onClick={() => setIsTimelineOpen(true)}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p>
+                        Attempt:{' '}
+                        <span className="font-semibold">
+                          {selectedAttempt.student_identifier || 'Unknown student'}
+                        </span>
+                      </p>
+                      <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+                        <span>Started</span>
+                        <DateBadge value={selectedAttempt.started_at} fallback="Not available" />
+                      </p>
+                      <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+                        {selectedAttempt.completed_at ? (
+                          <>
+                            <span>Completed</span>
+                            <DateBadge value={selectedAttempt.completed_at} fallback="Not available" />
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">· In progress</span>
+                        )}
+                      </p>
+                    </div>
+                <Button size="sm" variant="default" onClick={() => setIsTimelineOpen(true)}>
                   View Timeline
                 </Button>
               </div>
@@ -1446,7 +1519,7 @@ const QuizEditorPage = () => {
                 disabled={isLoadingBanks || !banks.length}
               >
                 <option value="" disabled>
-                  Select a bank
+                  Select a Bank
                 </option>
                 {banks.map((bank) => (
                   <option key={bank.id} value={bank.id}>
@@ -1522,8 +1595,9 @@ const QuizEditorPage = () => {
                 {attemptToDelete?.student_identifier || 'Unknown student'}
               </span>
             </p>
-            <p className="text-muted-foreground">
-              Started {attemptToDelete ? formatDateTime(attemptToDelete.started_at) : '—'}
+            <p className="text-muted-foreground flex items-center gap-2">
+              <span>Started</span>
+              <DateBadge value={attemptToDelete?.started_at} fallback="Not available" />
             </p>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -1577,7 +1651,7 @@ const QuizEditorPage = () => {
                   disabled={isLoadingBanks || !banks.length}
                 >
                   <option value="" disabled>
-                    Select a bank
+                    Select a Bank
                   </option>
                   {banks.map((bank) => (
                     <option key={bank.id} value={bank.id}>

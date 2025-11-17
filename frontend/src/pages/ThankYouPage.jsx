@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -40,9 +41,7 @@ const ThankYouPage = () => {
         <section className="rounded-3xl bg-primary px-6 py-8 text-primary-foreground shadow-xl">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-foreground/20 text-primary-foreground">
-              <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-              </svg>
+              <CheckCircle2 className="h-8 w-8" />
             </div>
             <div>
               <p className="text-sm uppercase tracking-[0.3em] text-primary-foreground/75">Submission received</p>

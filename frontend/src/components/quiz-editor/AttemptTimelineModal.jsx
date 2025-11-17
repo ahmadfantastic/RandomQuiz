@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/ui/modal';
+import DateBadge from '@/components/ui/date-badge';
 import api from '@/lib/api';
 
 const clamp = (value, min, max) => {
@@ -43,16 +44,6 @@ const getRatingColor = (value, range) => {
 const parseTimestamp = (value, fallback) => {
   const parsed = value ? new Date(value).getTime() : NaN;
   return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const formatDateTime = (value) => {
-  if (!value) return 'Not available';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'Not available';
-  return parsed.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 };
 
 const computeTypingDelta = (metadata) => {
@@ -249,8 +240,12 @@ const AttemptTimelineModal = ({ open, attempt, quizId, onOpenChange, ratingRange
       <div className="space-y-4">
         <div className="rounded-xl border border-border/70 bg-muted/50 p-4 text-sm">
           <p className="font-semibold">{attempt?.student_identifier || 'Unknown student'}</p>
-          <p className="text-xs text-muted-foreground">
-            Started {formatDateTime(startTime)} · Submitted {formatDateTime(endTime)}
+          <p className="text-xs text-muted-foreground flex items-center gap-2">
+            <span>Started</span>
+            <DateBadge value={startTime} fallback="Not available" />
+            <span className="text-muted-foreground">·</span>
+            <span>Submitted</span>
+            <DateBadge value={endTime} fallback="Not available" />
           </p>
         </div>
         {loading && <p className="text-sm text-muted-foreground">Loading timeline…</p>}

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import AppShell from '@/components/layout/AppShell';
+import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,24 @@ import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-markdown-preview/markdown.css';
 import '@uiw/react-md-editor/markdown-editor.css';
 import { cn } from '@/lib/utils';
+import AppShell from '@/components/layout/AppShell';
+
+const ProblemListPlaceholder = () => (
+  <div className="space-y-3 animate-pulse">
+    {[1, 2, 3].map((placeholder) => (
+      <div
+        key={placeholder}
+        className="rounded-lg border border-border bg-muted/10 px-4 py-3"
+      >
+        <div className="h-4 w-1/3 rounded-full bg-muted/40" />
+        <div className="mt-3 space-y-2">
+          <div className="h-2 rounded bg-muted/20" />
+          <div className="h-2 w-3/4 rounded bg-muted/20" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 const ProblemBankManager = () => {
   const [banks, setBanks] = useState([]);
@@ -38,21 +56,46 @@ const ProblemBankManager = () => {
   const { statements: problemStatements, loadStatement: loadProblemStatement, resetStatements } =
     useProblemStatements();
   const [problemActionError, setProblemActionError] = useState('');
+  const [bankListError, setBankListError] = useState('');
+  const [isLoadingBanks, setIsLoadingBanks] = useState(true);
+  const [isBankDetailsLoading, setIsBankDetailsLoading] = useState(false);
   const [deletingProblems, setDeletingProblems] = useState({});
   const canEditSelectedBank = Boolean(selectedBank?.is_owner);
   const selectedBankOwnerLabel = selectedBank?.owner_username || 'the owner';
 
-  const loadBanks = () => {
-    api.get('/api/problem-banks/').then((res) => setBanks(res.data));
+  const loadBanks = async () => {
+    setIsLoadingBanks(true);
+    setBankListError('');
+    try {
+      const res = await api.get('/api/problem-banks/');
+      setBanks(res.data);
+    } catch (error) {
+      const detail = error.response?.data?.detail || 'Unable to load problem banks right now.';
+      setBankListError(detail);
+      setBanks([]);
+    } finally {
+      setIsLoadingBanks(false);
+    }
   };
 
-  const loadBankDetails = async (bankId) => {
+  const loadBankDetails = async (bankId, bankMeta = null) => {
     setProblemActionError('');
     resetStatements();
     setOpenProblemId(null);
-    const res = await api.get(`/api/problem-banks/${bankId}/`);
-    const problems = await api.get(`/api/problem-banks/${bankId}/problems/`);
-    setSelectedBank({ ...res.data, problems: problems.data });
+    setIsBankDetailsLoading(true);
+    if (bankMeta) {
+      setSelectedBank((prev) => (prev?.id === bankId ? prev : { ...bankMeta, problems: [] }));
+    }
+    try {
+      const res = await api.get(`/api/problem-banks/${bankId}/`);
+      const problems = await api.get(`/api/problem-banks/${bankId}/problems/`);
+      setSelectedBank({ ...res.data, problems: problems.data });
+    } catch (error) {
+      const detail = error.response?.data?.detail || 'Unable to load this bank right now.';
+      setProblemActionError(detail);
+    } finally {
+      setIsBankDetailsLoading(false);
+    }
   };
 
   const handleProblemToggle = (problemId) => {
@@ -111,7 +154,7 @@ const ProblemBankManager = () => {
       statement: problemStatement,
     });
     setProblemStatement('');
-    loadBankDetails(selectedBank.id);
+    loadBankDetails(selectedBank.id, selectedBank);
   };
 
   const closeEditModal = () => {
@@ -169,7 +212,7 @@ const ProblemBankManager = () => {
     try {
       await api.delete(`/api/problems/${problemId}/`);
       if (selectedBank) {
-        await loadBankDetails(selectedBank.id);
+        await loadBankDetails(selectedBank.id, selectedBank);
       }
     } catch (error) {
       const detail = error.response?.data?.detail || 'Unable to delete this problem right now.';
@@ -234,6 +277,19 @@ const ProblemBankManager = () => {
     editingProblemId && (!editingProblemEntry || editingProblemEntry.loading)
   );
   const editingStatementLoadError = editingProblemEntry?.error;
+  const bankCardTitle = isBankDetailsLoading
+    ? 'Loading Bank…'
+    : selectedBank
+      ? selectedBank.name
+      : 'Select a Bank';
+  const bankCardDescription = isBankDetailsLoading
+    ? 'Fetching problems for the selected bank…'
+    : selectedBank
+      ? canEditSelectedBank
+        ? 'Review questions and add new problems below.'
+        : `Only ${selectedBankOwnerLabel} can edit this bank. You can review the problems here.`
+      : 'Pick a bank from the list to review it here.';
+  const selectedBankProblems = selectedBank?.problems ?? [];
 
   return (
     <AppShell
@@ -258,65 +314,103 @@ const ProblemBankManager = () => {
             <CardDescription>Browse every bank in your workspace; only the owner can edit its problems.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {banks.length === 0 && (
-              <p className="text-sm text-muted-foreground">No problem banks yet. Create one to get started.</p>
+            {bankListError && <p className="text-sm text-destructive">{bankListError}</p>}
+            {isLoadingBanks ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((placeholder) => (
+                  <div
+                    key={placeholder}
+                    className="h-16 animate-pulse rounded-lg border border-dashed border-muted bg-muted/30"
+                  />
+                ))}
+              </div>
+            ) : (
+              <>
+                {banks.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No problem banks yet. Create one to get started.</p>
+                )}
+                {banks.map((bank) => {
+                  const ownerLabel = bank.is_owner
+                    ? 'You own this bank'
+                    : `Owned by ${bank.owner_username || 'another instructor'}`;
+                  return (
+                    <button
+                      key={bank.id}
+                      type="button"
+                      onClick={() => loadBankDetails(bank.id, bank)}
+                      className={cn(
+                        'flex w-full flex-col rounded-lg border px-4 py-3 text-left transition hover:border-primary hover:text-primary',
+                        selectedBank?.id === bank.id && 'border-primary bg-primary/5 text-primary'
+                      )}
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium">{bank.name}</span>
+                        {bank.description && (
+                          <span className="text-sm text-muted-foreground">{bank.description}</span>
+                        )}
+                        <span className="text-xs text-muted-foreground">{ownerLabel}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </>
             )}
-            {banks.map((bank) => {
-              const ownerLabel = bank.is_owner
-                ? 'You own this bank'
-                : `Owned by ${bank.owner_username || 'another instructor'}`;
-              return (
-                <button
-                  key={bank.id}
-                  type="button"
-                  onClick={() => loadBankDetails(bank.id)}
-                  className={cn(
-                    'flex w-full flex-col rounded-lg border px-4 py-3 text-left transition hover:border-primary hover:text-primary',
-                    selectedBank?.id === bank.id && 'border-primary bg-primary/5 text-primary'
-                  )}
-                >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-medium">{bank.name}</span>
-                    {bank.description && <span className="text-sm text-muted-foreground">{bank.description}</span>}
-                    <span className="text-xs text-muted-foreground">{ownerLabel}</span>
-                  </div>
-                </button>
-              );
-            })}
           </CardContent>
         </Card>
         <Card className="min-h-[400px] mt-6">
           <CardHeader>
-            <CardTitle>{selectedBank ? selectedBank.name : 'Select a bank'}</CardTitle>
-            <CardDescription>
-              {selectedBank
-                ? canEditSelectedBank
-                  ? 'Review questions and add new problems below.'
-                  : `Only ${selectedBankOwnerLabel} can edit this bank. You can review the problems here.`
-                : 'Pick a bank from the list to review it here.'}
-            </CardDescription>
+            <CardTitle>{bankCardTitle}</CardTitle>
+            <CardDescription>{bankCardDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {selectedBank ? (
-              <>
-                {selectedBank.description && (
-                  <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">{selectedBank.description}</div>
+          {problemActionError && (
+            <p className="text-sm text-destructive">{problemActionError}</p>
+          )}
+          {!selectedBank && isBankDetailsLoading ? (
+            <div className="space-y-4 animate-pulse">
+              <div className="h-4 w-3/4 rounded-full bg-muted/40" />
+              <div className="h-3 w-1/2 rounded-full bg-muted/30" />
+              <div className="space-y-3">
+                {[1, 2, 3].map((placeholder) => (
+                  <div key={placeholder} className="rounded-lg border px-4 py-3">
+                    <div className="h-4 w-1/3 rounded-full bg-muted/40" />
+                    <div className="mt-3 space-y-2">
+                      <div className="h-2 rounded bg-muted/20" />
+                      <div className="h-2 w-3/4 rounded bg-muted/20" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2 rounded-lg border p-4">
+                <div className="h-4 w-1/3 rounded-full bg-muted/40" />
+                <div className="mt-3 space-y-2">
+                  <div className="h-3 rounded bg-muted/30" />
+                  <div className="h-24 rounded bg-muted/10" />
+                </div>
+                <div className="mt-4 h-10 w-32 rounded-full bg-muted/30" />
+              </div>
+            </div>
+          ) : selectedBank ? (
+            <>
+              {selectedBank.description && (
+                <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+                  {selectedBank.description}
+                </div>
+              )}
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Problems</p>
+                {!canEditSelectedBank && (
+                  <p className="text-xs text-muted-foreground">
+                    This bank is read-only. Only {selectedBankOwnerLabel} can manage its problems.
+                  </p>
                 )}
-                <div className="space-y-2">
-                  {problemActionError && (
-                    <p className="text-sm text-destructive">{problemActionError}</p>
-                  )}
-                  <p className="text-sm font-medium text-muted-foreground">Problems</p>
-                  {!canEditSelectedBank && (
-                    <p className="text-xs text-muted-foreground">
-                      This bank is read-only. Only {selectedBankOwnerLabel} can manage its problems.
-                    </p>
-                  )}
-                  <div className="space-y-3">
-                    {selectedBank.problems.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No problems yet. Add one using the form below.</p>
-                    )}
-                    {selectedBank.problems.map((problem, idx) => {
+                <div className="space-y-3">
+                  {isBankDetailsLoading ? (
+                    <ProblemListPlaceholder />
+                  ) : selectedBankProblems.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No problems yet. Add one using the form below.</p>
+                  ) : (
+                    selectedBankProblems.map((problem, idx) => {
                       const label = problem.display_label || `Problem ${idx + 1}`;
                       const isOpen = openProblemId === problem.id;
                       const entry = problemStatements[problem.id];
@@ -338,14 +432,9 @@ const ProblemBankManager = () => {
                             aria-expanded={isOpen}
                           >
                             <span className="text-sm font-semibold">{label}</span>
-                            <svg
-                              viewBox="0 0 20 20"
-                              fill="none"
-                              stroke="currentColor"
+                            <ChevronDown
                               className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : 'rotate-0'}`}
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 8l5 5 5-5" />
-                            </svg>
+                            />
                           </button>
                           {isOpen && (
                             <div className="px-4 pb-4 space-y-3">
@@ -387,41 +476,53 @@ const ProblemBankManager = () => {
                           )}
                         </div>
                       );
-                    })}
-                  </div>
+                    })
+                  )}
                 </div>
-                {canEditSelectedBank ? (
-                  <div className="space-y-4 rounded-lg border p-4">
-                    <p className="text-sm font-medium">Add a new problem</p>
-                    <form className="space-y-4" onSubmit={handleAddProblem}>
-                      <div className="space-y-2">
-                        <Label htmlFor="problem-statement">Statement (Markdown)</Label>
-                        <div id="problem-statement">
-                          <MDEditor
-                            value={problemStatement}
-                            onChange={(value) => setProblemStatement(value ?? '')}
-                            height={240}
-                            preview="edit"
-                          />
-                        </div>
+              </div>
+              {isBankDetailsLoading ? (
+                <div className="space-y-2 rounded-lg border p-4">
+                  <div className="h-4 w-2/5 rounded-full bg-muted/40" />
+                  <div className="mt-3 space-y-2">
+                    <div className="h-3 rounded bg-muted/30" />
+                    <div className="h-24 rounded bg-muted/10" />
+                  </div>
+                  <div className="mt-4 h-10 w-32 rounded-full bg-muted/30" />
+                </div>
+              ) : canEditSelectedBank ? (
+                <div className="space-y-4 rounded-lg border p-4">
+                  <p className="text-sm font-medium">Add a new problem</p>
+                  <form className="space-y-4" onSubmit={handleAddProblem}>
+                    <div className="space-y-2">
+                      <Label htmlFor="problem-statement">Statement (Markdown)</Label>
+                      <div id="problem-statement">
+                        <MDEditor
+                          value={problemStatement}
+                          onChange={(value) => setProblemStatement(value ?? '')}
+                          height={240}
+                          preview="edit"
+                        />
                       </div>
-                      <Button type="submit" disabled={!problemStatement.trim()}>
-                        Add problem
-                      </Button>
-                    </form>
-                  </div>
-                ) : (
-                  <div className="space-y-2 rounded-lg border p-4">
-                    <p className="text-sm font-medium">Read-only bank</p>
-                    <p className="text-sm text-muted-foreground">
-                      Only {selectedBankOwnerLabel} can add or edit problems in this bank.
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">Choose a problem bank from the left to start managing its questions.</p>
-            )}
+                    </div>
+                    <Button type="submit" disabled={!problemStatement.trim()}>
+                      Add problem
+                    </Button>
+                  </form>
+                </div>
+              ) : (
+                <div className="space-y-2 rounded-lg border p-4">
+                  <p className="text-sm font-medium">Read-only bank</p>
+                  <p className="text-sm text-muted-foreground">
+                    Only {selectedBankOwnerLabel} can add or edit problems in this bank.
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Choose a problem bank from the left to start managing its questions.
+            </p>
+          )}
           </CardContent>
         </Card>
       </div>

@@ -614,10 +614,10 @@ const QuizAttemptPage = () => {
               ))}
             </section>
 
-            <aside className="order-1 space-y-6 lg:order-2">
+            <aside className="order-1 space-y-6 lg:order-2 lg:sticky lg:top-6 lg:self-start">
               <Card className="border-primary/40 shadow-lg">
                 <CardHeader>
-                  <CardTitle>Submission status</CardTitle>
+                  <CardTitle>Submission Status</CardTitle>
                   <CardDescription>Keep saving as you go and submit when you&apos;re confident.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -643,7 +643,7 @@ const QuizAttemptPage = () => {
                     onClick={handleComplete}
                     disabled={!allAnswered || submitting || !quizOpen}
                   >
-                    {submitting ? 'Submitting...' : 'Submit quiz'}
+                    {submitting ? 'Submitting...' : 'Submit Quiz'}
                   </Button>
                   {!allAnswered && showValidation && (
                     <p className="text-sm font-medium text-destructive">All questions are required before submitting.</p>
@@ -663,7 +663,7 @@ const QuizAttemptPage = () => {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
                   <p>1. Fill in an answer for every problem - blank responses are not allowed.</p>
-                  <p>2. Use the "Save answer" button if you pause or switch devices.</p>
+                  <p>2. Use the "Save Answer" button if you pause or switch devices.</p>
                   <p>3. When all problems show as answered, submit once. You cannot edit afterwards.</p>
                 </CardContent>
               </Card>
@@ -833,7 +833,7 @@ const ProblemAnswer = ({
             !quizOpen
           }
         >
-          {isSaving ? 'Saving...' : 'Save answer'}
+          {isSaving ? 'Saving...' : 'Save Answer'}
         </Button>
       </div>
     </article>
