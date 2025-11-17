@@ -41,6 +41,3 @@ externalPort = 8080
 deploymentTarget = "autoscale"
 run = ["bash", "-c", "cd backend && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:5000 --workers 2 --reuse-port randomquiz.wsgi:application"]
 build = ["bash", "build.sh"]
-
-[objectStorage]
-defaultBucketID = "replit-objstore-3b1ac8f3-1313-4087-a5b2-60596b538892"
