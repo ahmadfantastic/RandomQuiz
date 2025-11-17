@@ -3,8 +3,8 @@
 ## Overview
 RandomQuiz is a quiz delivery platform with a Django REST Framework backend and React frontend (Vite + TailwindCSS). Instructors manage problem banks, quizzes, and assignments while students access quizzes via public links.
 
-**Current Status**: Fully configured and running in Replit environment
-**Last Updated**: November 16, 2025
+**Current Status**: Fully configured and ready for deployment
+**Last Updated**: November 17, 2025
 
 ## Project Architecture
 
@@ -33,6 +33,13 @@ RandomQuiz is a quiz delivery platform with a Django REST Framework backend and 
   - Public quiz landing and attempt pages
 
 ## Recent Changes
+
+### Migration and Deployment Updates (Nov 17, 2025)
+1. Applied latest database migrations (quizzes app updates including QuizAttemptInteraction, rubric, and identity instruction fields)
+2. Updated all npm dependencies to latest compatible versions
+3. Rebuilt frontend CSS and JavaScript bundles with updated dependencies
+4. Configured Replit autoscale deployment with proper build and run commands
+5. Collected static files for production deployment
 
 ### Replit Environment Setup (Nov 16, 2025)
 1. Installed Python 3.11 and Node.js 20
