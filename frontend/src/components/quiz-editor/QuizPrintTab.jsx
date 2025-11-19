@@ -18,7 +18,6 @@ const slugify = (value = '') => {
 const COPIES_INPUT_ID = 'quiz-print-copies';
 
 const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], criteria: [] } }) => {
-  const [seed, setSeed] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
   const [copiesInput, setCopiesInput] = useState('1');
@@ -33,10 +32,10 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
       if (!problems.length) {
         return { slot, problem: null, index };
       }
-      const randomIndex = Math.floor(Math.random() * problems.length + seed) % problems.length;
+      const randomIndex = Math.floor(Math.random() * problems.length) % problems.length;
       return { slot, problem: problems[randomIndex], index };
     });
-  }, [slots, seed]);
+  }, [slots]);
 
   const printableSlots = useMemo(() => selectRandomSlots(), [selectRandomSlots]);
 
@@ -63,7 +62,7 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
   const hasProblemContent = printableSlots.some((entry) => Boolean(entry.problem));
   const canShuffle = (slots || []).length > 0;
 
-  const handleShuffle = () => setSeed((value) => value + 1);
+
   const handleCopiesChange = useCallback((event) => {
     const sanitized = event.target.value.replace(/[^0-9]/g, '');
     setCopiesInput(sanitized);
@@ -130,40 +129,41 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-6">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Printable quiz</p>
           <p className="text-sm text-muted-foreground">
             Generate a randomized version of the quiz that students can write on.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-col gap-1 text-[0.65rem] text-muted-foreground">
-            <Label
-              htmlFor={COPIES_INPUT_ID}
-              className="text-[0.65rem] uppercase tracking-[0.3em]"
-            >
-              Copies
+
+        <div className="flex flex-col gap-4 rounded-lg border p-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={COPIES_INPUT_ID} className="text-sm font-medium">
+              Number of Copies
             </Label>
-            <Input
-              type="number"
-              min={1}
-              value={copiesInput}
-              onChange={handleCopiesChange}
-              onBlur={handleCopiesBlur}
-              className="max-w-[80px]"
-              inputMode="numeric"
-              id={COPIES_INPUT_ID}
-            />
-            <p className="text-[0.6rem] text-muted-foreground">Each copy starts on a new page.</p>
+            <div className="flex items-center gap-3">
+              <Input
+                type="number"
+                min={1}
+                value={copiesInput}
+                onChange={handleCopiesChange}
+                onBlur={handleCopiesBlur}
+                className="max-w-[100px]"
+                inputMode="numeric"
+                id={COPIES_INPUT_ID}
+              />
+              <p className="text-xs text-muted-foreground">
+                Each copy will contain unique randomized problems and start on a new page.
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={handleShuffle} disabled={!canShuffle}>
-              Shuffle problems
-            </Button>
+
+          <div className="flex justify-start pt-2">
             <Button
               onClick={handleDownloadPdf}
               disabled={!hasProblemContent || isDownloading}
+              className="w-full sm:w-auto"
             >
               {isDownloading ? 'Generating PDF…' : 'Download PDF'}
             </Button>
@@ -182,36 +182,7 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
       )}
       {downloadError && <p className="text-sm text-destructive">{downloadError}</p>}
 
-      <div className="rounded-2xl border border-muted/40 bg-white p-8 text-sm shadow-sm space-y-4">
-        <h3 className="text-lg font-semibold">Selected problems</h3>
-        <div className="mt-4 space-y-3">
-          {printableSlots.map(({ slot, problem, index }) => (
-            <div key={slot?.id ?? index} className="flex items-center justify-between gap-3 rounded-lg border border-muted/30 px-3 py-2">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                  Slot {slot?.order || index + 1}
-                </p>
-                <p className="text-sm font-semibold text-foreground">
-                  {slot?.label || 'Untitled Slot'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {problem?.display_label || 'No problem selected'}
-                </p>
-              </div>
-              <span className="rounded-full border px-3 py-1 text-xs text-muted-foreground">
-                {slot?.response_type === 'rating' ? 'Rating' : 'Open response'}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="rounded-lg border border-muted/30 px-3 py-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Student identifier</p>
-          <div className="h-10 rounded-md border border-muted/40 bg-muted/10" />
-          <p className="text-xs text-muted-foreground mt-2">
-            Write the identifier students will use.
-          </p>
-        </div>
-      </div>
+
     </div>
   );
 };

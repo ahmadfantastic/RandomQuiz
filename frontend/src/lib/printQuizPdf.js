@@ -187,43 +187,6 @@ const buildDocDefinition = ({
     ).join(', ')
   );
 
-  const pageCopyMap = {};
-  const annotateNodeWithCopy = (node, copyIndex) => {
-    if (Array.isArray(node)) {
-      return node.map((child) => annotateNodeWithCopy(child, copyIndex));
-    }
-    if (!node || typeof node !== 'object') {
-      return node;
-    }
-    const existingPageBreakBefore = node.pageBreakBefore;
-    const next = { ...node, copyIndex };
-    if (next.stack) {
-      next.stack = annotateNodeWithCopy(next.stack, copyIndex);
-    }
-    if (next.content) {
-      next.content = annotateNodeWithCopy(next.content, copyIndex);
-    }
-    if (next.table && Array.isArray(next.table.body)) {
-      next.table = {
-        ...next.table,
-        body: next.table.body.map((row) =>
-          row.map((cell) => annotateNodeWithCopy(cell, copyIndex))
-        ),
-      };
-    }
-    next.pageBreakBefore = (currentNode, followingNodesOnPage, currentPage) => {
-      console.log('Page', currentPage, 'is for copy', copyIndex);
-      if (currentPage != null) {
-        pageCopyMap[currentPage] = copyIndex;
-        console.log('Page', currentPage, 'is for copy', copyIndex);
-      }
-      if (typeof existingPageBreakBefore === 'function') {
-        return existingPageBreakBefore(currentNode, followingNodesOnPage, currentPage);
-      }
-      return false;
-    };
-    return next;
-  };
   const content = [];
   safeCopies.forEach((slots, copyIndex) => {
     const copyContent = buildSinglePrintContent({
@@ -232,36 +195,68 @@ const buildDocDefinition = ({
       printableSlots: slots,
       ratingCriteria,
       ratingScaleOptions,
-    }).map((node) => annotateNodeWithCopy(node, copyIndex));
-    if (copyContent.length && copyIndex < safeCopies.length - 1) {
-      const lastIdx = copyContent.length - 1;
-      copyContent[lastIdx] = {
-        ...copyContent[lastIdx],
-        pageBreak: 'after',
-      };
+    });
+
+    const selectionSummary = selectionSummaries[copyIndex] || '';
+
+    // Wrap content in a table to allow repeating footer (via header row with absolute position)
+    const copyTable = {
+      table: {
+        headerRows: 1,
+        widths: ['*'],
+        body: [
+          [
+            {
+              stack: [
+                // Empty text to ensure the header cell is rendered
+                { text: ' ', fontSize: 1 },
+                // The actual footer text, absolutely positioned
+                {
+                  text: selectionSummary,
+                  alignment: 'right',
+                  color: '#888888',
+                  italics: true,
+                  absolutePosition: { x: 36, y: 780 },
+                },
+              ],
+              margin: [0, 0, 0, 0],
+              border: [false, false, false, false],
+            },
+          ],
+          [
+            {
+              stack: copyContent,
+            },
+          ],
+        ],
+      },
+      layout: {
+        hLineWidth: () => 0,
+        vLineWidth: () => 0,
+        paddingLeft: () => 0,
+        paddingRight: () => 0,
+        paddingTop: () => 0,
+        paddingBottom: () => 0,
+      },
+    };
+
+    if (copyIndex < safeCopies.length - 1) {
+      copyTable.pageBreak = 'after';
     }
-    content.push(...copyContent);
+
+    content.push(copyTable);
   });
 
   if (typeof window !== 'undefined') {
-    window.__quizPrintPageCopyMap = pageCopyMap;
+    window.__quizPrintPageCopyMap = null;
   }
 
   return {
     pageSize: 'A4',
     pageMargins: [36, 36, 36, 36],
     content,
-    footer: (currentPage, pageCount) => ({
-      margin: [36, 0, 36, 18],
-      columns: [
-        {
-          text: selectionSummaries[pageCopyMap[currentPage] ?? 0] || '',
-          alignment: 'right',
-          color: '#888888',
-          italics: true,
-        },
-      ],
-    }),
+    // Footer is now handled per-copy via table headers
+
     styles: {
       printTitle: { fontSize: 12, bold: true },
       slotTitle: { fontSize: 11, bold: true },
