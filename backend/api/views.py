@@ -58,6 +58,7 @@ class LoginView(APIView):
 
 
 class LogoutView(APIView):
+    permission_classes = [AllowAny]
     authentication_classes = []
 
     def post(self, request):
