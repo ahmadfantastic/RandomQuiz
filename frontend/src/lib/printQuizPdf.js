@@ -49,8 +49,7 @@ const normalizeContent = (content) => {
   return next;
 };
 
-const buildDocDefinition = ({
-  printableFilename,
+const buildSinglePrintContent = ({
   quiz,
   details,
   printableSlots,
@@ -106,7 +105,7 @@ const buildDocDefinition = ({
     const displayLabel = slot?.label || 'Untitled Slot';
     const slotTitle = `${slot.order || index + 1}: ${displayLabel}`;
     docContent.push({ text: slotTitle, style: 'slotTitle', margin: [0, 4, 0, 1] });
-    docContent.push({ text: slot.instruction, style: 'slotInstruction', });
+    docContent.push({ text: slot.instruction, style: 'slotInstruction' });
     docContent.push(...convertMarkdownToPdfContent(problem.problem_statement));
     const isRating = slot.response_type === 'rating';
     if (!isRating) {
@@ -164,22 +163,99 @@ const buildDocDefinition = ({
     }
   });
 
-  const selectionSummary = printableSlots
-    .map(({ slot, problem }, index) => {
-      const problemLabel = problem?.display_label || 'Unknown';
-      return `${problemLabel}`;
-    })
-    .join(', ');
+  return docContent;
+};
+
+const buildDocDefinition = ({
+  printableFilename,
+  quiz,
+  details,
+  ratingCriteria,
+  ratingScaleOptions,
+  printableCopies,
+}) => {
+  const safeCopies = Array.isArray(printableCopies) && printableCopies.length > 0
+    ? printableCopies
+    : [[]];
+  const selectionSummaries = safeCopies.map((slots) =>
+    Array.from(
+      new Set(
+        slots
+          .map(({ problem }) => problem?.display_label || 'Unknown')
+          .filter(Boolean)
+      )
+    ).join(', ')
+  );
+
+  const pageCopyMap = {};
+  const annotateNodeWithCopy = (node, copyIndex) => {
+    if (Array.isArray(node)) {
+      return node.map((child) => annotateNodeWithCopy(child, copyIndex));
+    }
+    if (!node || typeof node !== 'object') {
+      return node;
+    }
+    const existingPageBreakBefore = node.pageBreakBefore;
+    const next = { ...node, copyIndex };
+    if (next.stack) {
+      next.stack = annotateNodeWithCopy(next.stack, copyIndex);
+    }
+    if (next.content) {
+      next.content = annotateNodeWithCopy(next.content, copyIndex);
+    }
+    if (next.table && Array.isArray(next.table.body)) {
+      next.table = {
+        ...next.table,
+        body: next.table.body.map((row) =>
+          row.map((cell) => annotateNodeWithCopy(cell, copyIndex))
+        ),
+      };
+    }
+    next.pageBreakBefore = (currentNode, followingNodesOnPage, currentPage) => {
+      console.log('Page', currentPage, 'is for copy', copyIndex);
+      if (currentPage != null) {
+        pageCopyMap[currentPage] = copyIndex;
+        console.log('Page', currentPage, 'is for copy', copyIndex);
+      }
+      if (typeof existingPageBreakBefore === 'function') {
+        return existingPageBreakBefore(currentNode, followingNodesOnPage, currentPage);
+      }
+      return false;
+    };
+    return next;
+  };
+  const content = [];
+  safeCopies.forEach((slots, copyIndex) => {
+    const copyContent = buildSinglePrintContent({
+      quiz,
+      details,
+      printableSlots: slots,
+      ratingCriteria,
+      ratingScaleOptions,
+    }).map((node) => annotateNodeWithCopy(node, copyIndex));
+    if (copyContent.length && copyIndex < safeCopies.length - 1) {
+      const lastIdx = copyContent.length - 1;
+      copyContent[lastIdx] = {
+        ...copyContent[lastIdx],
+        pageBreak: 'after',
+      };
+    }
+    content.push(...copyContent);
+  });
+
+  if (typeof window !== 'undefined') {
+    window.__quizPrintPageCopyMap = pageCopyMap;
+  }
 
   return {
     pageSize: 'A4',
     pageMargins: [36, 36, 36, 36],
-    content: docContent,
+    content,
     footer: (currentPage, pageCount) => ({
       margin: [36, 0, 36, 18],
       columns: [
         {
-          text: selectionSummary,
+          text: selectionSummaries[pageCopyMap[currentPage] ?? 0] || '',
           alignment: 'right',
           color: '#888888',
           italics: true,
@@ -189,7 +265,7 @@ const buildDocDefinition = ({
     styles: {
       printTitle: { fontSize: 12, bold: true },
       slotTitle: { fontSize: 11, bold: true },
-      slotInstruction: { fontSize: 10, bold: false, italics: true, margin: [0, 0, 0, 2]},
+      slotInstruction: { fontSize: 10, bold: false, italics: true, margin: [0, 0, 0, 2] },
       sectionLabel: { fontSize: 10, color: '#444444', bold: true, characterSpacing: 0.5 },
       printBody: { fontSize: 10, margin: [0, 0, 0, 2] },
       noteText: { fontSize: 9, color: '#555555' },
@@ -228,7 +304,7 @@ export const previewQuizPdf = ({
   printableFilename,
   quiz,
   details,
-  printableSlots,
+  printableCopies,
   ratingCriteria,
   ratingScaleOptions,
 }) =>
@@ -238,11 +314,11 @@ export const previewQuizPdf = ({
         printableFilename,
         quiz,
         details,
-        printableSlots,
+        printableCopies,
         ratingCriteria,
         ratingScaleOptions,
       });
-      pdfMake.createPdf(definition).print();
+      pdfMake.createPdf(definition).open();
       resolve();
     } catch (error) {
       reject(error);

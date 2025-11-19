@@ -1,6 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { previewQuizPdf } from '@/lib/printQuizPdf';
 
 const DEFAULT_IDENTITY_INSTRUCTION = 'Required so your instructor can match your submission.';
@@ -13,23 +15,42 @@ const slugify = (value = '') => {
   return text || 'quiz-print';
 };
 
+const COPIES_INPUT_ID = 'quiz-print-copies';
+
 const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], criteria: [] } }) => {
   const [seed, setSeed] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
+  const [copiesInput, setCopiesInput] = useState('1');
 
   const printableFilename = useMemo(() => `${slugify(quiz?.title)}-printable.pdf`, [quiz?.title]);
 
-  const printableSlots = useMemo(() => {
+  const copies = useMemo(() => Math.max(1, Number(copiesInput) || 1), [copiesInput]);
+
+  const selectRandomSlots = useCallback(() => {
     return (slots || []).map((slot, index) => {
       const problems = Array.isArray(slot.slot_problems) ? slot.slot_problems : [];
-      const hasProblems = problems.length > 0;
-      const selectedProblem = hasProblems
-        ? problems[Math.floor(Math.random() * problems.length)]
-        : null;
-      return { slot, problem: selectedProblem, index };
+      if (!problems.length) {
+        return { slot, problem: null, index };
+      }
+      const randomIndex = Math.floor(Math.random() * problems.length + seed) % problems.length;
+      return { slot, problem: problems[randomIndex], index };
     });
   }, [slots, seed]);
+
+  const printableSlots = useMemo(() => selectRandomSlots(), [selectRandomSlots]);
+
+  const printableCopies = useMemo(() => {
+    const copiesCount = Math.max(1, copies);
+    if (copiesCount <= 1) {
+      return [printableSlots];
+    }
+    const versions = [printableSlots];
+    for (let index = 1; index < copiesCount; index += 1) {
+      versions.push(selectRandomSlots());
+    }
+    return versions;
+  }, [copies, printableSlots, selectRandomSlots]);
 
   const ratingCriteria = useMemo(() => {
     return Array.isArray(rubric?.criteria) ? rubric.criteria : [];
@@ -43,6 +64,15 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
   const canShuffle = (slots || []).length > 0;
 
   const handleShuffle = () => setSeed((value) => value + 1);
+  const handleCopiesChange = useCallback((event) => {
+    const sanitized = event.target.value.replace(/[^0-9]/g, '');
+    setCopiesInput(sanitized);
+  }, []);
+  const handleCopiesBlur = useCallback(() => {
+    if (!copiesInput) {
+      setCopiesInput('1');
+    }
+  }, [copiesInput]);
 
   const getMissingFields = useCallback(() => {
     const missing = [];
@@ -76,7 +106,7 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
       printableFilename,
       quiz,
       details,
-      printableSlots,
+      printableCopies,
       ratingCriteria,
       ratingScaleOptions,
     })
@@ -89,8 +119,10 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
   }, [
     printableFilename,
     canShuffle,
+    copies,
     details,
-    printableSlots,
+    printableCopies,
+    getMissingFields,
     quiz,
     ratingCriteria,
     ratingScaleOptions,
@@ -105,16 +137,37 @@ const QuizPrintTab = ({ quiz, details = {}, slots = [], rubric = { scale: [], cr
             Generate a randomized version of the quiz that students can write on.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleShuffle} disabled={!canShuffle}>
-            Shuffle problems
-          </Button>
-          <Button
-            onClick={handleDownloadPdf}
-            disabled={!hasProblemContent || isDownloading}
-          >
-            {isDownloading ? 'Generating PDF…' : 'Download PDF'}
-          </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-1 text-[0.65rem] text-muted-foreground">
+            <Label
+              htmlFor={COPIES_INPUT_ID}
+              className="text-[0.65rem] uppercase tracking-[0.3em]"
+            >
+              Copies
+            </Label>
+            <Input
+              type="number"
+              min={1}
+              value={copiesInput}
+              onChange={handleCopiesChange}
+              onBlur={handleCopiesBlur}
+              className="max-w-[80px]"
+              inputMode="numeric"
+              id={COPIES_INPUT_ID}
+            />
+            <p className="text-[0.6rem] text-muted-foreground">Each copy starts on a new page.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handleShuffle} disabled={!canShuffle}>
+              Shuffle problems
+            </Button>
+            <Button
+              onClick={handleDownloadPdf}
+              disabled={!hasProblemContent || isDownloading}
+            >
+              {isDownloading ? 'Generating PDF…' : 'Download PDF'}
+            </Button>
+          </div>
         </div>
       </div>
       {(!hasProblemContent || !canShuffle) && (
