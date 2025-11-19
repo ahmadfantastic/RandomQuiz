@@ -20,6 +20,7 @@ import AttemptTimelineModal from '@/components/quiz-editor/AttemptTimelineModal'
 import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
 import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
 import QuizRubricTab from '@/components/quiz-editor/QuizRubricTab';
+import QuizPrintTab from '@/components/quiz-editor/QuizPrintTab';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import useProblemStatements from '@/lib/useProblemStatements';
@@ -30,6 +31,7 @@ const TABS = {
   RESPONSES: 'responses',
   INSTRUCTORS: 'instructors',
   RUBRIC: 'rubric',
+  PRINT: 'print',
 };
 
 const defaultSlotForm = { label: '', instruction: '', problem_bank: '', response_type: 'open_text' };
@@ -1224,11 +1226,12 @@ const QuizEditorPage = () => {
             <nav className="flex gap-6">
               {[
                 { id: TABS.OVERVIEW, label: 'Overview', icon: '📋' },
-              { id: TABS.SLOTS, label: 'Problem Slots', icon: '🎲', badge: slotReadiness.total },
-              { id: TABS.RESPONSES, label: 'Responses', icon: '📝', badge: attempts.length },
-              { id: TABS.INSTRUCTORS, label: 'Instructors', icon: '👥', badge: allowedInstructors.length },
-              { id: TABS.RUBRIC, label: 'Rubric', icon: '🧾' },
-            ].map((tab) => (
+                { id: TABS.SLOTS, label: 'Problem Slots', icon: '🎲', badge: slotReadiness.total },
+                { id: TABS.RESPONSES, label: 'Responses', icon: '📝', badge: attempts.length },
+                { id: TABS.INSTRUCTORS, label: 'Instructors', icon: '👥', badge: allowedInstructors.length },
+                { id: TABS.PRINT, label: 'Printable Quiz', icon: '🖨️' },
+                { id: TABS.RUBRIC, label: 'Rubric', icon: '🧾' },
+              ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
@@ -1307,6 +1310,9 @@ const QuizEditorPage = () => {
                 loadInstructors={loadAllowedInstructors}
                 instructorError={instructorError}
               />
+            )}
+            {activeTab === TABS.PRINT && (
+              <QuizPrintTab quiz={quiz} details={details} slots={slots} rubric={rubric} />
             )}
             {activeTab === TABS.RUBRIC && (
               <QuizRubricTab
