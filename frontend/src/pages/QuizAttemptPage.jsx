@@ -210,23 +210,23 @@ const QuizAttemptPage = () => {
     setRatingRubric(null);
     api
       .get(`/api/public/attempts/${attemptId}/`)
-    .then((response) => {
-      if (!isActive) return;
-      const attempt = response.data;
-      setAttemptCompleted(Boolean(attempt.completed_at));
-      const attemptQuizIsOpen = attempt.quiz_is_open ?? true;
-      setQuizOpen(attemptQuizIsOpen);
-      if (attemptQuizIsOpen) {
-        setQuizClosedMessage('');
-      } else {
-        setQuizClosedMessage(QUIZ_CLOSED_MESSAGE);
-        setBanner({ type: 'error', message: QUIZ_CLOSED_MESSAGE });
-      }
-      setSlots(attempt.attempt_slots || []);
-      setResolvedStudentIdentifier((current) => current || attempt.student_identifier);
-      setQuizInfo(attempt.quiz || initialQuizInfo);
-      setRatingRubric(attempt.rubric || attempt.quiz?.rubric || null);
-    })
+      .then((response) => {
+        if (!isActive) return;
+        const attempt = response.data;
+        setAttemptCompleted(Boolean(attempt.completed_at));
+        const attemptQuizIsOpen = attempt.quiz_is_open ?? true;
+        setQuizOpen(attemptQuizIsOpen);
+        if (attemptQuizIsOpen) {
+          setQuizClosedMessage('');
+        } else {
+          setQuizClosedMessage(QUIZ_CLOSED_MESSAGE);
+          setBanner({ type: 'error', message: QUIZ_CLOSED_MESSAGE });
+        }
+        setSlots(attempt.attempt_slots || []);
+        setResolvedStudentIdentifier((current) => current || attempt.student_identifier);
+        setQuizInfo(attempt.quiz || initialQuizInfo);
+        setRatingRubric(attempt.rubric || attempt.quiz?.rubric || null);
+      })
       .catch((error) => {
         if (!isActive) return;
         const detail = error.response?.data?.detail;
@@ -252,7 +252,7 @@ const QuizAttemptPage = () => {
       ...payload,
       metadata: payload.metadata ?? null,
     };
-    api.post(`/api/public/attempts/${attemptId}/slots/${slot.slot}/interactions/`, interactionPayload).catch(() => {});
+    api.post(`/api/public/attempts/${attemptId}/slots/${slot.slot}/interactions/`, interactionPayload).catch(() => { });
   };
 
   const flushTypingInteraction = (slot) => {
@@ -549,18 +549,18 @@ const QuizAttemptPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
-        <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
-          <section className="rounded-3xl bg-primary px-6 py-8 text-primary-foreground shadow-xl">
-            <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/75">In progress</p>
+      <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
+        <section className="rounded-3xl bg-primary px-6 py-8 text-primary-foreground shadow-xl">
+          <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/75">In progress</p>
           <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">{quizTitle}</h1>
           {quizDescription && (
             quizDescriptionMarkup ? (
-            <div className="mt-3 text-sm leading-relaxed text-primary-foreground/80">
-              <div
-                className="prose max-w-none text-sm markup-content"
-                dangerouslySetInnerHTML={{ __html: quizDescriptionMarkup }}
-              />
-            </div>
+              <div className="mt-3 text-sm leading-relaxed text-primary-foreground/80">
+                <div
+                  className="prose max-w-none text-sm markup-content"
+                  dangerouslySetInnerHTML={{ __html: quizDescriptionMarkup }}
+                />
+              </div>
             ) : (
               <p className="mt-3 text-sm text-primary-foreground/80 whitespace-pre-line">{quizDescription}</p>
             )
@@ -591,31 +591,31 @@ const QuizAttemptPage = () => {
           )}
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
-            <section className="order-2 space-y-5 lg:order-1">
+            <section className="order-3 space-y-5 lg:order-none">
               {slots.map((slot) => (
-                  <ProblemAnswer
-                    key={slot.id}
-                    slot={slot}
-                    answer={answers[slot.slot] || createEmptyAnswer(slot)}
-                    onChange={(value) => handleAnswerChange(slot, value)}
-                    onSave={() => handleSave(slot)}
-                    saveState={savingState[slot.slot]}
-                    showValidation={showValidation}
-                    ratingRubric={ratingRubric}
-                    ratingCriteriaCount={ratingCriteriaCount}
-                    ratingRubricError={ratingRubricError}
-                    isRubricLoading={attemptLoading}
-                    onRatingInteraction={(criterionId, optionValue) =>
-                      logRatingInteraction(slot, criterionId, optionValue)
-                    }
-                    quizOpen={quizOpen}
-                    quizClosedMessage={quizClosedMessage}
+                <ProblemAnswer
+                  key={slot.id}
+                  slot={slot}
+                  answer={answers[slot.slot] || createEmptyAnswer(slot)}
+                  onChange={(value) => handleAnswerChange(slot, value)}
+                  onSave={() => handleSave(slot)}
+                  saveState={savingState[slot.slot]}
+                  showValidation={showValidation}
+                  ratingRubric={ratingRubric}
+                  ratingCriteriaCount={ratingCriteriaCount}
+                  ratingRubricError={ratingRubricError}
+                  isRubricLoading={attemptLoading}
+                  onRatingInteraction={(criterionId, optionValue) =>
+                    logRatingInteraction(slot, criterionId, optionValue)
+                  }
+                  quizOpen={quizOpen}
+                  quizClosedMessage={quizClosedMessage}
                 />
               ))}
             </section>
 
-            <aside className="order-1 space-y-6 lg:order-2 lg:sticky lg:top-6 lg:self-start">
-              <Card className="border-primary/40 shadow-lg">
+            <aside className="contents lg:block lg:sticky lg:top-6 lg:self-start lg:space-y-6">
+              <Card className="order-4 border-primary/40 shadow-lg lg:order-none">
                 <CardHeader>
                   <CardTitle>Submission Status</CardTitle>
                   <CardDescription>Keep saving as you go and submit when you&apos;re confident.</CardDescription>
@@ -656,7 +656,7 @@ const QuizAttemptPage = () => {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="order-1 lg:order-none">
                 <CardHeader>
                   <CardTitle>Helpful reminders</CardTitle>
                   <CardDescription>Everything you do is saved to this attempt.</CardDescription>
@@ -668,7 +668,7 @@ const QuizAttemptPage = () => {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="order-2 lg:order-none">
                 <CardHeader>
                   <CardTitle>Attempt details</CardTitle>
                 </CardHeader>
@@ -777,7 +777,7 @@ const ProblemAnswer = ({
         'rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur-sm transition-colors',
         hasError ? 'border-destructive/60 bg-destructive/5' : 'border-border'
       )}
-    > 
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{slot.slot_label}</p>
