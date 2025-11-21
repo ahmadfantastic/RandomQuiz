@@ -111,7 +111,7 @@ const QuizzesPage = () => {
         description: createForm.description.trim(),
       };
       const response = await api.post('/api/quizzes/', payload);
-      navigate(`/quizzes/${response.data.id}`, { state: { created: true } });
+      navigate(`/quizzes/${response.data.id}/edit`, { state: { created: true } });
     } catch (err) {
       const data = err.response?.data;
       const detail = (Array.isArray(data?.title) && data.title[0]) || data?.detail || 'Could not create the quiz. Please try again.';
@@ -217,7 +217,7 @@ const QuizzesPage = () => {
                 </div>
               </CardContent>
               <div className="p-6 pt-0">
-                <Button size="sm" variant="outline" to={`/quizzes/${quiz.id}`} className="w-full">
+                <Button size="sm" variant="outline" to={`/quizzes/${quiz.id}/edit`} className="w-full">
                   Open quiz
                 </Button>
               </div>

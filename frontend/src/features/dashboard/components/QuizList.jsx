@@ -50,7 +50,7 @@ const QuizList = ({ quizzes, isLoading }) => {
           <div key={quiz.id} className="rounded-lg border p-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <Link to={`/quizzes/${quiz.id}`} className="text-base font-semibold hover:underline">
+                <Link to={`/quizzes/${quiz.id}/edit`} className="text-base font-semibold hover:underline">
                   {quiz.title}
                 </Link>
                 <p className="text-sm text-muted-foreground">{quiz.description || 'No description provided'}</p>

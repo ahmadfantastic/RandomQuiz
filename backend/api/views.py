@@ -4,7 +4,7 @@ from datetime import timedelta
 from io import StringIO
 from django.contrib.auth import authenticate, login, logout
 from django.db import models, transaction
-from django.db.models import Count
+from django.db.models import Count, Avg, Min, Max, StdDev
 from django.db.models.functions import TruncDate
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework import generics, parsers, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -993,3 +993,218 @@ class PublicAttemptComplete(APIView):
             updates.append(attempt_slot)
         if updates:
             QuizAttemptSlot.objects.bulk_update(updates, ['answer_data', 'answered_at'])
+
+class QuizAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, quiz_id):
+        instructor = ensure_instructor(request.user)
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        if quiz.owner != instructor and not quiz.allowed_instructors.filter(id=instructor.id).exists():
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Get optional per-slot problem filters
+        # Format: slot_filters={"slot_id": "problem_label", ...}
+        slot_filters_param = request.query_params.get('slot_filters')
+        slot_filters = {}
+        if slot_filters_param:
+            try:
+                import json
+                slot_filters = json.loads(slot_filters_param)
+            except:
+                pass
+        
+        # Get optional global problem filter (legacy support)
+        problem_id = request.query_params.get('problem_id')
+        
+        attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+        
+        # If filtering by problem, only include attempts that have that problem assigned
+        if problem_id:
+            attempts = attempts.filter(
+                attempt_slots__assigned_problem_id=problem_id
+            ).distinct()
+        
+        total_attempts = attempts.count()
+        
+        # Completion stats - since we only query completed attempts, completion rate is 100%
+        # unless we want to compare against all attempts (including incomplete ones)
+        all_attempts = QuizAttempt.objects.filter(quiz=quiz).count()
+        completion_rate = (total_attempts / all_attempts * 100) if all_attempts > 0 else 0
+        
+        # Time distribution
+        durations = []
+        for attempt in attempts:
+            if attempt.started_at and attempt.completed_at:
+                diff = (attempt.completed_at - attempt.started_at).total_seconds()
+                durations.append(diff / 60.0) # minutes
+
+        time_stats = {
+            'min': min(durations) if durations else 0,
+            'max': max(durations) if durations else 0,
+            'mean': sum(durations) / len(durations) if durations else 0,
+            'median': sorted(durations)[len(durations) // 2] if durations else 0,
+            'count': len(durations),
+            'raw_values': durations
+        }
+
+        # Slot analytics
+        slots_data = []
+        quiz_slots = quiz.slots.all().order_by('order')
+        
+        # Pre-fetch all interactions for this quiz's attempts to avoid N+1
+        # Group by slot_id
+        interactions_by_slot = {}
+        all_interactions = QuizAttemptInteraction.objects.filter(
+            attempt_slot__attempt__in=attempts
+        ).select_related('attempt_slot')
+        
+        for interaction in all_interactions:
+            slot_id = interaction.attempt_slot.slot_id
+            if slot_id not in interactions_by_slot:
+                interactions_by_slot[slot_id] = []
+            
+            # Calculate relative position if possible
+            attempt = interaction.attempt_slot.attempt
+            start = attempt.started_at
+            end = attempt.completed_at
+            position = 0
+            if start and end and interaction.created_at:
+                total_duration = (end - start).total_seconds()
+                if total_duration > 0:
+                    event_time = (interaction.created_at - start).total_seconds()
+                    position = min(max(event_time / total_duration, 0), 1) * 100
+
+            interactions_by_slot[slot_id].append({
+                'event_type': interaction.event_type,
+                'created_at': interaction.created_at,
+                'metadata': interaction.metadata,
+                'position': position,
+                'student_id': attempt.student_identifier,
+                'attempt_started_at': attempt.started_at,
+                'attempt_completed_at': attempt.completed_at
+            })
+
+        rubric = quiz.get_rubric()
+        criteria = rubric.get('criteria', [])
+        scale = rubric.get('scale', [])
+        scale_values = [s['value'] for s in scale] if scale else []
+
+        for slot in quiz_slots:
+            slot_attempts = QuizAttemptSlot.objects.filter(
+                attempt__in=attempts,
+                slot=slot
+            ).select_related('assigned_problem')
+            
+            # Check if this slot has a specific problem filter
+            slot_filter = slot_filters.get(str(slot.id))
+            if slot_filter and slot_filter != 'all':
+                # Filter by problem label
+                slot_attempts = slot_attempts.filter(assigned_problem__order_in_bank=int(slot_filter.split()[-1]))
+            elif problem_id:
+                # Fall back to global filter
+                slot_attempts = slot_attempts.filter(assigned_problem_id=problem_id)
+            
+            # Problem distribution
+            prob_dist = {}
+            prob_order = {}  # Track order_in_bank for each problem
+            for sa in slot_attempts:
+                label = sa.assigned_problem.display_label
+                prob_dist[label] = prob_dist.get(label, 0) + 1
+                prob_order[label] = sa.assigned_problem.order_in_bank
+            
+            prob_dist_list = [
+                {'label': k, 'count': v} 
+                for k, v in prob_dist.items()
+            ]
+            prob_dist_list.sort(key=lambda x: prob_order[x['label']])
+
+            slot_data = {
+                'id': slot.id,
+                'label': slot.label,
+                'response_type': slot.response_type,
+                'problem_distribution': prob_dist_list,
+                'interactions': interactions_by_slot.get(slot.id, [])
+            }
+
+            if slot.response_type == QuizSlot.ResponseType.OPEN_TEXT:
+                word_counts = []
+                for sa in slot_attempts:
+                    if sa.answer_data and 'text' in sa.answer_data:
+                        text = sa.answer_data['text']
+                        word_counts.append(len(text.split()))
+                
+                slot_data['data'] = {
+                    'min': min(word_counts) if word_counts else 0,
+                    'max': max(word_counts) if word_counts else 0,
+                    'mean': sum(word_counts) / len(word_counts) if word_counts else 0,
+                    'median': sorted(word_counts)[len(word_counts) // 2] if word_counts else 0,
+                    'count': len(word_counts),
+                    'raw_values': word_counts
+                }
+            
+            elif slot.response_type == QuizSlot.ResponseType.RATING:
+                # Per-criterion distribution
+                criteria_stats = []
+                
+                for criterion in criteria:
+                    c_id = criterion['id']
+                    c_name = criterion['name']
+                    
+                    # Initialize counts for each scale value
+                    counts = {val: 0 for val in scale_values}
+                    total_responses = 0
+                    
+                    for sa in slot_attempts:
+                        if sa.answer_data and 'ratings' in sa.answer_data:
+                            ratings = sa.answer_data['ratings']
+                            if c_id in ratings:
+                                val = ratings[c_id]
+                                if val in counts:
+                                    counts[val] += 1
+                                    total_responses += 1
+                    
+                    # Format for chart
+                    dist_data = []
+                    for val in scale_values:
+                        count = counts[val]
+                        percentage = (count / total_responses * 100) if total_responses > 0 else 0
+                        # Find label for value
+                        label = next((s['label'] for s in scale if s['value'] == val), str(val))
+                        dist_data.append({
+                            'value': val,
+                            'label': label,
+                            'count': count,
+                            'percentage': percentage
+                        })
+                    
+                    criteria_stats.append({
+                        'criterion_id': c_id,
+                        'name': c_name,
+                        'distribution': dist_data,
+                        'total': total_responses
+                    })
+
+                slot_data['criteria_distributions'] = criteria_stats
+                slot_data['data'] = {'criteria': criteria_stats}
+
+            slots_data.append(slot_data)
+
+        # Get all unique problems used in this quiz for the filter dropdown
+        all_problems = Problem.objects.filter(
+            slot_links__quiz_slot__quiz=quiz
+        ).distinct().order_by('order_in_bank')
+        
+        available_problems = [
+            {'id': p.id, 'label': p.display_label}
+            for p in all_problems
+        ]
+
+        return Response({
+            'completion_rate': completion_rate,
+            'total_attempts': total_attempts,
+            'time_distribution': time_stats,
+            'slots': slots_data,
+            'interactions': [],
+            'available_problems': available_problems
+        })

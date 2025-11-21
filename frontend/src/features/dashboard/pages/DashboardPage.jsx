@@ -57,7 +57,7 @@ const DashboardPage = () => {
     >
       <div className="space-y-6">
         {error && <p className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">{error}</p>}
-        
+
         <OverviewCards stats={stats} isLoading={isLoading} />
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -98,7 +98,7 @@ const DashboardPage = () => {
                     return (
                       <div key={quiz.id} className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted/50">
                         <div className="flex-1 min-w-0">
-                          <a href={`/quizzes/${quiz.id}`} className="font-medium hover:underline">
+                          <a href={`/quizzes/${quiz.id}/edit`} className="font-medium hover:underline">
                             {quiz.title}
                           </a>
                           <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">

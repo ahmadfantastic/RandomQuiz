@@ -10,6 +10,7 @@ import QuizAttemptPage from '@/pages/QuizAttemptPage';
 import ThankYouPage from '@/pages/ThankYouPage';
 import QuizzesPage from '@/pages/QuizzesPage';
 import ProfilePage from '@/pages/ProfilePage';
+import QuizAnalyticsPage from '@/pages/QuizAnalyticsPage';
 
 const App = () => (
   <Router>
@@ -19,7 +20,8 @@ const App = () => (
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/quizzes" element={<QuizzesPage />} />
       <Route path="/quizzes/new" element={<QuizzesPage />} />
-      <Route path="/quizzes/:quizId" element={<QuizEditorPage />} />
+      <Route path="/quizzes/:quizId/edit" element={<QuizEditorPage />} />
+      <Route path="/quizzes/:quizId/analytics" element={<QuizAnalyticsPage />} />
       <Route path="/problem-banks" element={<ProblemBankManager />} />
       <Route path="/admin/instructors" element={<AdminInstructorManager />} />
       <Route path="/q/:publicId" element={<PublicQuizLandingPage />} />

@@ -84,7 +84,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           profile_picture_url: res.data.profile_picture_url || '',
         });
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       isMounted = false;
     };
@@ -149,7 +149,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                   return (
                     <NavLink
                       key={quiz.id}
-                      to={`/quizzes/${quiz.id}`}
+                      to={`/quizzes/${quiz.id}/edit`}
                       className={({ isActive }) =>
                         cn(
                           'block rounded-xl border border-transparent transition-colors hover:border-primary/70 hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
@@ -180,17 +180,17 @@ const Sidebar = ({ isOpen, onClose }) => {
               </div>
             )}
             <div className="mt-3">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  to="/quizzes"
-                  className="text-[11px] uppercase tracking-wide text-muted-foreground w-full"
-                  onClick={onClose}
-                >
-                  Show all
-                </Button>
-              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                to="/quizzes"
+                className="text-[11px] uppercase tracking-wide text-muted-foreground w-full"
+                onClick={onClose}
+              >
+                Show all
+              </Button>
             </div>
+          </div>
         </div>
         {hasQuizzes && (
           <Button size="sm" variant="outline" to="/quizzes/new" className="w-full" onClick={onClose}>

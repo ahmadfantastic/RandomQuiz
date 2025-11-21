@@ -30,6 +30,7 @@ from .views import (
     SlotProblemListCreate,
     QuizViewSet,
     DashboardStatsView,
+    QuizAnalyticsView,
 )
 
 router = DefaultRouter()
@@ -53,6 +54,7 @@ urlpatterns = [
         name='quiz-allowed-delete',
     ),
     path('quizzes/<int:quiz_id>/rubric/', QuizRubricView.as_view(), name='quiz-rubric'),
+    path('quizzes/<int:quiz_id>/analytics/', QuizAnalyticsView.as_view(), name='quiz-analytics'),
     path('quizzes/<int:quiz_id>/attempts/', QuizAttemptList.as_view(), name='quiz-attempts'),
     path(
         'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/',

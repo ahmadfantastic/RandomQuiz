@@ -5,6 +5,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import DateBadge from '@/components/ui/date-badge';
 
+import { Link, useParams } from 'react-router-dom';
+
 const QuizResponsesTab = ({
   attempts,
   attemptError,
@@ -12,6 +14,8 @@ const QuizResponsesTab = ({
   openAttemptModal,
   requestAttemptDeletion,
 }) => {
+  const { quizId } = useParams();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -21,7 +25,12 @@ const QuizResponsesTab = ({
             View and manage all student attempts
           </p>
         </div>
-        <Button variant="outline" onClick={loadAttempts}>Refresh</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to={`/quizzes/${quizId}/analytics`}>Analytics</Link>
+          </Button>
+          <Button variant="outline" onClick={loadAttempts}>Refresh</Button>
+        </div>
       </div>
 
       {attemptError && (
