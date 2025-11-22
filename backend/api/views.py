@@ -1090,25 +1090,53 @@ class QuizAnalyticsView(APIView):
         scale = rubric.get('scale', [])
         scale_values = [s['value'] for s in scale] if scale else []
 
+        # Pre-fetch all attempt slots for these attempts to avoid N+1
+        all_attempt_slots = QuizAttemptSlot.objects.filter(
+            attempt__in=attempts
+        ).select_related('assigned_problem')
+
+        # Group attempt slots by slot_id
+        attempt_slots_by_slot = {}
+        for attempt_slot in all_attempt_slots:
+            if attempt_slot.slot_id not in attempt_slots_by_slot:
+                attempt_slots_by_slot[attempt_slot.slot_id] = []
+            attempt_slots_by_slot[attempt_slot.slot_id].append(attempt_slot)
+
         for slot in quiz_slots:
-            slot_attempts = QuizAttemptSlot.objects.filter(
-                attempt__in=attempts,
-                slot=slot
-            ).select_related('assigned_problem')
+            # Get pre-fetched slots for this slot
+            slot_attempts_list = attempt_slots_by_slot.get(slot.id, [])
             
             # Check if this slot has a specific problem filter
             slot_filter = slot_filters.get(str(slot.id))
+            
+            filtered_slot_attempts = []
             if slot_filter and slot_filter != 'all':
-                # Filter by problem label
-                slot_attempts = slot_attempts.filter(assigned_problem__order_in_bank=int(slot_filter.split()[-1]))
+                # Filter by problem label (order in bank)
+                try:
+                    filter_order = int(slot_filter.split()[-1])
+                    filtered_slot_attempts = [
+                        sa for sa in slot_attempts_list 
+                        if sa.assigned_problem.order_in_bank == filter_order
+                    ]
+                except (ValueError, IndexError):
+                    filtered_slot_attempts = slot_attempts_list
             elif problem_id:
                 # Fall back to global filter
-                slot_attempts = slot_attempts.filter(assigned_problem_id=problem_id)
+                try:
+                    pid = int(problem_id)
+                    filtered_slot_attempts = [
+                        sa for sa in slot_attempts_list 
+                        if sa.assigned_problem_id == pid
+                    ]
+                except ValueError:
+                    filtered_slot_attempts = slot_attempts_list
+            else:
+                filtered_slot_attempts = slot_attempts_list
             
             # Problem distribution
             prob_dist = {}
             prob_order = {}  # Track order_in_bank for each problem
-            for sa in slot_attempts:
+            for sa in filtered_slot_attempts:
                 label = sa.assigned_problem.display_label
                 prob_dist[label] = prob_dist.get(label, 0) + 1
                 prob_order[label] = sa.assigned_problem.order_in_bank
@@ -1117,7 +1145,8 @@ class QuizAnalyticsView(APIView):
                 {'label': k, 'count': v} 
                 for k, v in prob_dist.items()
             ]
-            prob_dist_list.sort(key=lambda x: prob_order[x['label']])
+            # Sort by order in bank
+            prob_dist_list.sort(key=lambda x: prob_order.get(x['label'], 0))
 
             slot_data = {
                 'id': slot.id,
@@ -1129,7 +1158,7 @@ class QuizAnalyticsView(APIView):
 
             if slot.response_type == QuizSlot.ResponseType.OPEN_TEXT:
                 word_counts = []
-                for sa in slot_attempts:
+                for sa in filtered_slot_attempts:
                     if sa.answer_data and 'text' in sa.answer_data:
                         text = sa.answer_data['text']
                         word_counts.append(len(text.split()))
@@ -1155,7 +1184,7 @@ class QuizAnalyticsView(APIView):
                     counts = {val: 0 for val in scale_values}
                     total_responses = 0
                     
-                    for sa in slot_attempts:
+                    for sa in filtered_slot_attempts:
                         if sa.answer_data and 'ratings' in sa.answer_data:
                             ratings = sa.answer_data['ratings']
                             if c_id in ratings:
