@@ -84,6 +84,7 @@ const QuizAnalyticsPage = () => {
                         completion_rate: data.completion_rate
                     }}
                     timeStats={data.time_distribution}
+                    word_count_stats={data.word_count_stats}
                 />
 
                 <div className="grid gap-8">

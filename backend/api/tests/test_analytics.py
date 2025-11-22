@@ -74,6 +74,13 @@ class QuizAnalyticsTests(APITestCase):
         # Check time stats
         self.assertGreater(response.data['time_distribution']['mean'], 0)
         
+        # Check word count stats
+        # "This is a test answer" = 5 words
+        self.assertEqual(response.data['word_count_stats']['mean'], 5)
+        self.assertEqual(response.data['word_count_stats']['median'], 5)
+        self.assertEqual(response.data['word_count_stats']['min'], 5)
+        self.assertEqual(response.data['word_count_stats']['max'], 5)
+        
         # Check slot stats
         slot_data = response.data['slots'][0]
         self.assertEqual(slot_data['id'], self.slot.id)

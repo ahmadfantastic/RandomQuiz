@@ -366,13 +366,33 @@ const SlotAnalytics = ({ slots }) => {
                         <CardTitle className="text-base font-medium">{slot.label}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        {slot.response_type === 'open_text' ? (
-                            <WordCountChart data={slot.data} />
-                        ) : (
-                            <RatingChart data={slot.data} />
-                        )}
+                        <div className="flex gap-4">
+                            <div className="flex-1">
+                                {slot.response_type === 'open_text' ? (
+                                    <WordCountChart data={slot.data} />
+                                ) : (
+                                    <RatingChart data={slot.data} />
+                                )}
+                            </div>
+                            {slot.problem_distribution && slot.problem_distribution.length > 0 && (
+                                <div className="w-64 shrink-0">
+                                    <h4 className="text-sm font-semibold mb-2">Problem Selection</h4>
+                                    <div className="space-y-2">
+                                        {slot.problem_distribution.map((item, index) => (
+                                            <div key={index} className="flex justify-between items-center text-sm">
+                                                <span className="truncate flex-1 mr-4" title={item.label}>
+                                                    {item.label}
+                                                </span>
+                                                <span className="text-muted-foreground bg-muted px-2 py-0.5 rounded text-xs">
+                                                    {item.count} times
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <SlotInteractionTimeline interactions={slot.interactions} />
-                        <ProblemDistribution distribution={slot.problem_distribution} />
                     </CardContent>
                 </Card>
             ))}

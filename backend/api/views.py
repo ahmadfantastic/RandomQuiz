@@ -1118,6 +1118,9 @@ class QuizAnalyticsView(APIView):
                 attempt_slots_by_slot[slot_id] = []
             attempt_slots_by_slot[slot_id].append(attempt_slot)
 
+        # Collect all word counts for global average
+        all_word_counts = []
+
         for slot in quiz_slots:
             # Get pre-fetched slots for this slot
             slot_attempts_list = attempt_slots_by_slot.get(slot.id, [])
@@ -1179,7 +1182,9 @@ class QuizAnalyticsView(APIView):
                     answer_data = sa['answer_data']
                     if answer_data and 'text' in answer_data:
                         text = answer_data['text']
-                        word_counts.append(len(text.split()))
+                        count = len(text.split())
+                        word_counts.append(count)
+                        all_word_counts.append(count)
                 
                 slot_data['data'] = {
                     'min': min(word_counts) if word_counts else 0,
@@ -1247,6 +1252,13 @@ class QuizAnalyticsView(APIView):
             {'id': p.id, 'label': p.display_label}
             for p in all_problems
         ]
+        
+        word_count_stats = {
+            'min': min(all_word_counts) if all_word_counts else 0,
+            'max': max(all_word_counts) if all_word_counts else 0,
+            'mean': sum(all_word_counts) / len(all_word_counts) if all_word_counts else 0,
+            'median': sorted(all_word_counts)[len(all_word_counts) // 2] if all_word_counts else 0,
+        }
 
         return Response({
             'completion_rate': completion_rate,
@@ -1254,5 +1266,6 @@ class QuizAnalyticsView(APIView):
             'time_distribution': time_stats,
             'slots': slots_data,
             'interactions': [],
-            'available_problems': available_problems
+            'available_problems': available_problems,
+            'word_count_stats': word_count_stats
         })

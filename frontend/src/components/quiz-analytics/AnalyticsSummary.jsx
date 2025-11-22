@@ -1,10 +1,10 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, CheckCircle, Clock } from 'lucide-react';
+import { Users, CheckCircle, Clock, AlignLeft } from 'lucide-react';
 
-const AnalyticsSummary = ({ completionStats, timeStats }) => {
+const AnalyticsSummary = ({ completionStats, timeStats, word_count_stats }) => {
     const { total_attempts, completed_count, completion_rate } = completionStats;
-    const { mean, median } = timeStats;
+    const { mean, median, min, max } = timeStats;
 
     const formatTime = (minutes) => {
         if (!minutes) return 'N/A';
@@ -35,19 +35,19 @@ const AnalyticsSummary = ({ completionStats, timeStats }) => {
                 <CardContent>
                     <div className="text-2xl font-bold">{formatTime(mean)}</div>
                     <p className="text-xs text-muted-foreground">
-                        Median: {formatTime(median)}
+                        Median: {formatTime(median)} (Range: {formatTime(min)}-{formatTime(max)})
                     </p>
                 </CardContent>
             </Card>
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Attempts</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium">Average Word Count</CardTitle>
+                    <AlignLeft className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">{total_attempts}</div>
+                    <div className="text-2xl font-bold">{Math.round(word_count_stats?.mean || 0)}</div>
                     <p className="text-xs text-muted-foreground">
-                        Students who started the quiz
+                        Median: {Math.round(word_count_stats?.median || 0)} (Range: {Math.round(word_count_stats?.min || 0)}-{Math.round(word_count_stats?.max || 0)})
                     </p>
                 </CardContent>
             </Card>
