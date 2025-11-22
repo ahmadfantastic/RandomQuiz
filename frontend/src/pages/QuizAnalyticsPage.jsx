@@ -15,42 +15,29 @@ const QuizAnalyticsPage = () => {
     const [error, setError] = useState(null);
     const [data, setData] = useState(null);
     const [quizTitle, setQuizTitle] = useState('');
-    const [slotFilters, setSlotFilters] = useState({});
-
-    const fetchData = async (filters = {}) => {
-        try {
-            setLoading(true);
-
-            // Build URL with slot filters
-            let analyticsUrl = `/api/quizzes/${quizId}/analytics/`;
-            if (Object.keys(filters).length > 0) {
-                const filtersJson = JSON.stringify(filters);
-                analyticsUrl += `?slot_filters=${encodeURIComponent(filtersJson)}`;
-            }
-
-            const [analyticsRes, quizRes] = await Promise.all([
-                api.get(analyticsUrl),
-                api.get(`/api/quizzes/${quizId}/`)
-            ]);
-            setData(analyticsRes.data);
-            setQuizTitle(quizRes.data.title);
-        } catch (err) {
-            setError('Failed to load analytics data.');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     useEffect(() => {
-        if (quizId) {
-            fetchData(slotFilters);
-        }
-    }, [quizId, slotFilters]);
+        const fetchData = async () => {
+            try {
+                setLoading(true);
+                const [analyticsRes, quizRes] = await Promise.all([
+                    api.get(`/api/quizzes/${quizId}/analytics/`),
+                    api.get(`/api/quizzes/${quizId}/`)
+                ]);
+                setData(analyticsRes.data);
+                setQuizTitle(quizRes.data.title);
+            } catch (err) {
+                setError('Failed to load analytics data.');
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    const handleFiltersChange = (newFilters) => {
-        setSlotFilters(newFilters);
-    };
+        if (quizId) {
+            fetchData();
+        }
+    }, [quizId]);
 
     if (loading) {
         return (
@@ -105,7 +92,7 @@ const QuizAnalyticsPage = () => {
 
                 <div>
                     <h2 className="text-xl font-semibold mb-4">Slot Analysis</h2>
-                    <SlotAnalytics slots={data.slots} onFiltersChange={handleFiltersChange} />
+                    <SlotAnalytics slots={data.slots} />
                 </div>
             </div>
         </AppShell>

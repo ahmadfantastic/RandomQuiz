@@ -357,83 +357,25 @@ const SlotInteractionTimeline = ({ interactions }) => {
     );
 };
 
-const SlotAnalytics = ({ slots, onFiltersChange }) => {
-    // State to track selected problem for each slot
-    const [slotFilters, setSlotFilters] = React.useState({});
-
-    // Track original problem lists to keep dropdown options available
-    const [originalProblems, setOriginalProblems] = React.useState({});
-
-    // Initialize original problem lists on first render
-    React.useEffect(() => {
-        const problems = {};
-        slots.forEach(slot => {
-            if (!originalProblems[slot.id] && slot.problem_distribution) {
-                problems[slot.id] = slot.problem_distribution;
-            }
-        });
-        if (Object.keys(problems).length > 0) {
-            setOriginalProblems(prev => ({ ...prev, ...problems }));
-        }
-    }, [slots]);
-
-    const handleFilterChange = (slotId, problemLabel) => {
-        const newFilters = {
-            ...slotFilters,
-            [slotId]: problemLabel
-        };
-        setSlotFilters(newFilters);
-
-        // Notify parent component to refetch data with new filters
-        if (onFiltersChange) {
-            onFiltersChange(newFilters);
-        }
-    };
-
+const SlotAnalytics = ({ slots }) => {
     return (
         <div className="space-y-4">
-            {slots.map((slot) => {
-                const selectedProblem = slotFilters[slot.id] || 'all';
-                // Use original problem list for dropdown options
-                const problemOptions = originalProblems[slot.id] || slot.problem_distribution || [];
-                const hasMultipleProblems = problemOptions.length > 1;
-
-                return (
-                    <Card key={slot.id}>
-                        <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-base font-medium">{slot.label}</CardTitle>
-                                {hasMultipleProblems && (
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-xs text-muted-foreground">Problem:</label>
-                                        <select
-                                            value={selectedProblem}
-                                            onChange={(e) => handleFilterChange(slot.id, e.target.value)}
-                                            className="text-xs border rounded px-2 py-1 bg-background"
-                                        >
-                                            <option value="all">All</option>
-                                            {problemOptions.map((problem, idx) => (
-                                                <option key={idx} value={problem.label}>
-                                                    {problem.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            {slot.response_type === 'open_text' ? (
-                                <WordCountChart data={slot.data} />
-                            ) : (
-                                <RatingChart data={slot.data} />
-                            )}
-                            <SlotInteractionTimeline interactions={slot.interactions} />
-                            <ProblemDistribution distribution={slot.problem_distribution} />
-                        </CardContent>
-                    </Card>
-                );
-            })}
+            {slots.map((slot) => (
+                <Card key={slot.id}>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-base font-medium">{slot.label}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {slot.response_type === 'open_text' ? (
+                            <WordCountChart data={slot.data} />
+                        ) : (
+                            <RatingChart data={slot.data} />
+                        )}
+                        <SlotInteractionTimeline interactions={slot.interactions} />
+                        <ProblemDistribution distribution={slot.problem_distribution} />
+                    </CardContent>
+                </Card>
+            ))}
         </div>
     );
 };
