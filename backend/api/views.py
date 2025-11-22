@@ -1052,37 +1052,46 @@ class QuizAnalyticsView(APIView):
         slots_data = []
         quiz_slots = quiz.slots.all().order_by('order')
         
-        # Pre-fetch all interactions for this quiz's attempts to avoid N+1
+        # Pre-fetch all interactions for this quiz's attempts to avoid N+1 and reduce memory
         # Group by slot_id
         interactions_by_slot = {}
+        # Use values() to avoid creating model instances
         all_interactions = QuizAttemptInteraction.objects.filter(
             attempt_slot__attempt__in=attempts
-        ).select_related('attempt_slot')
+        ).values(
+            'attempt_slot__slot_id',
+            'event_type',
+            'created_at',
+            'metadata',
+            'attempt_slot__attempt__student_identifier',
+            'attempt_slot__attempt__started_at',
+            'attempt_slot__attempt__completed_at'
+        )
         
         for interaction in all_interactions:
-            slot_id = interaction.attempt_slot.slot_id
+            slot_id = interaction['attempt_slot__slot_id']
             if slot_id not in interactions_by_slot:
                 interactions_by_slot[slot_id] = []
             
             # Calculate relative position if possible
-            attempt = interaction.attempt_slot.attempt
-            start = attempt.started_at
-            end = attempt.completed_at
+            start = interaction['attempt_slot__attempt__started_at']
+            end = interaction['attempt_slot__attempt__completed_at']
+            created_at = interaction['created_at']
             position = 0
-            if start and end and interaction.created_at:
+            if start and end and created_at:
                 total_duration = (end - start).total_seconds()
                 if total_duration > 0:
-                    event_time = (interaction.created_at - start).total_seconds()
+                    event_time = (created_at - start).total_seconds()
                     position = min(max(event_time / total_duration, 0), 1) * 100
 
             interactions_by_slot[slot_id].append({
-                'event_type': interaction.event_type,
-                'created_at': interaction.created_at,
-                'metadata': interaction.metadata,
+                'event_type': interaction['event_type'],
+                'created_at': created_at,
+                'metadata': interaction['metadata'],
                 'position': position,
-                'student_id': attempt.student_identifier,
-                'attempt_started_at': attempt.started_at,
-                'attempt_completed_at': attempt.completed_at
+                'student_id': interaction['attempt_slot__attempt__student_identifier'],
+                'attempt_started_at': start,
+                'attempt_completed_at': end
             })
 
         rubric = quiz.get_rubric()
@@ -1090,17 +1099,24 @@ class QuizAnalyticsView(APIView):
         scale = rubric.get('scale', [])
         scale_values = [s['value'] for s in scale] if scale else []
 
-        # Pre-fetch all attempt slots for these attempts to avoid N+1
+        # Pre-fetch all attempt slots for these attempts to avoid N+1 and reduce memory
+        # Use values() to avoid creating model instances
         all_attempt_slots = QuizAttemptSlot.objects.filter(
             attempt__in=attempts
-        ).select_related('assigned_problem')
+        ).values(
+            'slot_id',
+            'assigned_problem__order_in_bank',
+            'assigned_problem__id',
+            'answer_data'
+        )
 
         # Group attempt slots by slot_id
         attempt_slots_by_slot = {}
         for attempt_slot in all_attempt_slots:
-            if attempt_slot.slot_id not in attempt_slots_by_slot:
-                attempt_slots_by_slot[attempt_slot.slot_id] = []
-            attempt_slots_by_slot[attempt_slot.slot_id].append(attempt_slot)
+            slot_id = attempt_slot['slot_id']
+            if slot_id not in attempt_slots_by_slot:
+                attempt_slots_by_slot[slot_id] = []
+            attempt_slots_by_slot[slot_id].append(attempt_slot)
 
         for slot in quiz_slots:
             # Get pre-fetched slots for this slot
@@ -1116,7 +1132,7 @@ class QuizAnalyticsView(APIView):
                     filter_order = int(slot_filter.split()[-1])
                     filtered_slot_attempts = [
                         sa for sa in slot_attempts_list 
-                        if sa.assigned_problem.order_in_bank == filter_order
+                        if sa['assigned_problem__order_in_bank'] == filter_order
                     ]
                 except (ValueError, IndexError):
                     filtered_slot_attempts = slot_attempts_list
@@ -1126,7 +1142,7 @@ class QuizAnalyticsView(APIView):
                     pid = int(problem_id)
                     filtered_slot_attempts = [
                         sa for sa in slot_attempts_list 
-                        if sa.assigned_problem_id == pid
+                        if sa['assigned_problem__id'] == pid
                     ]
                 except ValueError:
                     filtered_slot_attempts = slot_attempts_list
@@ -1137,9 +1153,10 @@ class QuizAnalyticsView(APIView):
             prob_dist = {}
             prob_order = {}  # Track order_in_bank for each problem
             for sa in filtered_slot_attempts:
-                label = sa.assigned_problem.display_label
+                order = sa['assigned_problem__order_in_bank']
+                label = f"Problem {order}"
                 prob_dist[label] = prob_dist.get(label, 0) + 1
-                prob_order[label] = sa.assigned_problem.order_in_bank
+                prob_order[label] = order
             
             prob_dist_list = [
                 {'label': k, 'count': v} 
@@ -1159,8 +1176,9 @@ class QuizAnalyticsView(APIView):
             if slot.response_type == QuizSlot.ResponseType.OPEN_TEXT:
                 word_counts = []
                 for sa in filtered_slot_attempts:
-                    if sa.answer_data and 'text' in sa.answer_data:
-                        text = sa.answer_data['text']
+                    answer_data = sa['answer_data']
+                    if answer_data and 'text' in answer_data:
+                        text = answer_data['text']
                         word_counts.append(len(text.split()))
                 
                 slot_data['data'] = {
@@ -1185,8 +1203,9 @@ class QuizAnalyticsView(APIView):
                     total_responses = 0
                     
                     for sa in filtered_slot_attempts:
-                        if sa.answer_data and 'ratings' in sa.answer_data:
-                            ratings = sa.answer_data['ratings']
+                        answer_data = sa['answer_data']
+                        if answer_data and 'ratings' in answer_data:
+                            ratings = answer_data['ratings']
                             if c_id in ratings:
                                 val = ratings[c_id]
                                 if val in counts:
