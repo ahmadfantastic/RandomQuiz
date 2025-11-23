@@ -7,6 +7,7 @@ import api from '@/lib/api';
 import AnalyticsSummary from '@/components/quiz-analytics/AnalyticsSummary';
 import TimeDistributionChart from '@/components/quiz-analytics/TimeDistributionChart';
 import SlotAnalytics from '@/components/quiz-analytics/SlotAnalytics';
+import AllSlotInteractions from '@/components/quiz-analytics/AllSlotInteractions';
 
 
 const QuizAnalyticsPage = () => {
@@ -95,6 +96,8 @@ const QuizAnalyticsPage = () => {
                     <h2 className="text-xl font-semibold mb-4">Slot Analysis</h2>
                     <SlotAnalytics slots={data.slots} />
                 </div>
+
+                <AllSlotInteractions slots={data.slots} />
             </div>
         </AppShell>
     );
