@@ -18,9 +18,9 @@ import QuizOverviewTab from '@/components/quiz-editor/QuizOverviewTab';
 import QuizSlotsTab from '@/components/quiz-editor/QuizSlotsTab';
 import AttemptTimelineModal from '@/components/quiz-editor/AttemptTimelineModal';
 import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
-import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
-import QuizRubricTab from '@/components/quiz-editor/QuizRubricTab';
-import QuizPrintTab from '@/components/quiz-editor/QuizPrintTab';
+import RubricCriteriaModal from '@/components/quiz-editor/RubricCriteriaModal';
+import RubricScaleModal from '@/components/quiz-editor/RubricScaleModal';
+import QuizPrintModal from '@/components/quiz-editor/QuizPrintModal';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import useProblemStatements from '@/lib/useProblemStatements';
@@ -30,8 +30,6 @@ const TABS = {
   SLOTS: 'slots',
   RESPONSES: 'responses',
   INSTRUCTORS: 'instructors',
-  RUBRIC: 'rubric',
-  PRINT: 'print',
 };
 
 const defaultSlotForm = { label: '', instruction: '', problem_bank: '', response_type: 'open_text' };
@@ -164,6 +162,9 @@ const QuizEditorPage = () => {
   const [isRubricSaving, setIsRubricSaving] = useState(false);
   const [rubricSaveError, setRubricSaveError] = useState('');
   const [rubricSaveSuccess, setRubricSaveSuccess] = useState('');
+  const [isRubricCriteriaOpen, setIsRubricCriteriaOpen] = useState(false);
+  const [isRubricScaleOpen, setIsRubricScaleOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const pendingBankRequests = useRef(new Set());
   const ratingCriteria = useMemo(() => {
     return Array.isArray(rubric?.criteria) ? rubric.criteria : [];
@@ -408,7 +409,7 @@ const QuizEditorPage = () => {
     api
       .get('/api/quizzes/')
       .then((res) => setQuizzes(res.data))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setIsLoadingQuizzes(false));
   };
 
@@ -809,16 +810,16 @@ const QuizEditorPage = () => {
       setSlotError('Each slot must have a problem bank.');
       return;
     }
-  setSavingSlotId(slot.id);
-  setSlotError('');
-  try {
-    const trimmedInstruction = (slot.instruction || '').trim();
-    await api.patch(`/api/slots/${slot.id}/`, {
-      label: slot.label.trim(),
-      problem_bank: selectedBankId,
-      response_type: slot.response_type,
-      instruction: trimmedInstruction,
-    });
+    setSavingSlotId(slot.id);
+    setSlotError('');
+    try {
+      const trimmedInstruction = (slot.instruction || '').trim();
+      await api.patch(`/api/slots/${slot.id}/`, {
+        label: slot.label.trim(),
+        problem_bank: selectedBankId,
+        response_type: slot.response_type,
+        instruction: trimmedInstruction,
+      });
       loadSlots();
     } catch (error) {
       const detail = error.response?.data?.detail || error.response?.data?.label?.[0] || 'Unable to update the slot.';
@@ -1048,11 +1049,11 @@ const QuizEditorPage = () => {
       }
       const rows = (ratingCriteria.length
         ? ratingCriteria.map((criterion) => ({
-            id: criterion.id,
-            name: criterion.name,
-            description: criterion.description,
-            value: ratings[criterion.id],
-          }))
+          id: criterion.id,
+          name: criterion.name,
+          description: criterion.description,
+          value: ratings[criterion.id],
+        }))
         : Object.entries(ratings).map(([id, value]) => ({ id, name: id, description: '', value }))
       ).filter((row) => row.id);
       if (!rows.length) {
@@ -1229,8 +1230,6 @@ const QuizEditorPage = () => {
                 { id: TABS.SLOTS, label: 'Problem Slots', icon: '🎲', badge: slotReadiness.total },
                 { id: TABS.RESPONSES, label: 'Responses', icon: '📝', badge: attempts.length },
                 { id: TABS.INSTRUCTORS, label: 'Instructors', icon: '👥', badge: allowedInstructors.length },
-                { id: TABS.PRINT, label: 'Printable Quiz', icon: '🖨️' },
-                { id: TABS.RUBRIC, label: 'Rubric', icon: '🧾' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1273,6 +1272,7 @@ const QuizEditorPage = () => {
                 onCloseQuiz={handleCloseQuiz}
                 scheduleActionLoading={scheduleActionLoading}
                 scheduleActionError={scheduleActionError}
+                onOpenQuizPrint={() => setIsPrintModalOpen(true)}
               />
             )}
 
@@ -1286,6 +1286,8 @@ const QuizEditorPage = () => {
                 openSlotDetailModal={openSlotDetailModal}
                 loadSlots={loadSlots}
                 slotProblemOptions={slotProblemOptions}
+                openRubricCriteria={() => setIsRubricCriteriaOpen(true)}
+                openRubricScale={() => setIsRubricScaleOpen(true)}
               />
             )}
 
@@ -1311,26 +1313,8 @@ const QuizEditorPage = () => {
                 instructorError={instructorError}
               />
             )}
-            {activeTab === TABS.PRINT && (
-              <QuizPrintTab quiz={quiz} details={details} slots={slots} rubric={rubric} />
-            )}
-            {activeTab === TABS.RUBRIC && (
-              <QuizRubricTab
-                rubricForm={rubricForm}
-                isLoading={isRubricLoading}
-                loadError={rubricError}
-                onReload={loadRubric}
-                onFieldChange={handleRubricFieldChange}
-                onAddScaleOption={handleAddScaleOption}
-                onRemoveScaleOption={handleRemoveScaleOption}
-                onAddCriterion={handleAddCriterion}
-                onRemoveCriterion={handleRemoveCriterion}
-                onSave={handleSaveRubric}
-                isSaving={isRubricSaving}
-                saveError={rubricSaveError}
-                saveSuccess={rubricSaveSuccess}
-              />
-            )}
+
+
           </div>
 
           {/* Quick Switch Sidebar */}
@@ -1375,29 +1359,29 @@ const QuizEditorPage = () => {
         {selectedAttempt ? (
           <div className="space-y-4">
             <div className="rounded-md bg-muted/50 p-3 text-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p>
-                        Attempt:{' '}
-                        <span className="font-semibold">
-                          {selectedAttempt.student_identifier || 'Unknown student'}
-                        </span>
-                      </p>
-                      <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-                        <span>Started</span>
-                        <DateBadge value={selectedAttempt.started_at} fallback="Not available" />
-                      </p>
-                      <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-                        {selectedAttempt.completed_at ? (
-                          <>
-                            <span>Completed</span>
-                            <DateBadge value={selectedAttempt.completed_at} fallback="Not available" />
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">· In progress</span>
-                        )}
-                      </p>
-                    </div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p>
+                    Attempt:{' '}
+                    <span className="font-semibold">
+                      {selectedAttempt.student_identifier || 'Unknown student'}
+                    </span>
+                  </p>
+                  <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+                    <span>Started</span>
+                    <DateBadge value={selectedAttempt.started_at} fallback="Not available" />
+                  </p>
+                  <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+                    {selectedAttempt.completed_at ? (
+                      <>
+                        <span>Completed</span>
+                        <DateBadge value={selectedAttempt.completed_at} fallback="Not available" />
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">· In progress</span>
+                    )}
+                  </p>
+                </div>
                 <Button size="sm" variant="default" onClick={() => setIsTimelineOpen(true)}>
                   View Timeline
                 </Button>
@@ -1466,6 +1450,38 @@ const QuizEditorPage = () => {
         attempt={selectedAttempt}
         quizId={quizIdNumber}
         ratingRange={ratingScaleRange}
+      />
+      <RubricCriteriaModal
+        open={isRubricCriteriaOpen}
+        onOpenChange={setIsRubricCriteriaOpen}
+        rubricForm={rubricForm}
+        onFieldChange={handleRubricFieldChange}
+        onAddCriterion={handleAddCriterion}
+        onRemoveCriterion={handleRemoveCriterion}
+        onSave={handleSaveRubric}
+        isSaving={isRubricSaving}
+        saveError={rubricSaveError}
+        saveSuccess={rubricSaveSuccess}
+      />
+      <RubricScaleModal
+        open={isRubricScaleOpen}
+        onOpenChange={setIsRubricScaleOpen}
+        rubricForm={rubricForm}
+        onFieldChange={handleRubricFieldChange}
+        onAddScaleOption={handleAddScaleOption}
+        onRemoveScaleOption={handleRemoveScaleOption}
+        onSave={handleSaveRubric}
+        isSaving={isRubricSaving}
+        saveError={rubricSaveError}
+        saveSuccess={rubricSaveSuccess}
+      />
+      <QuizPrintModal
+        open={isPrintModalOpen}
+        onOpenChange={setIsPrintModalOpen}
+        quiz={quiz}
+        details={details}
+        slots={slots}
+        rubric={rubric}
       />
       <Modal
         open={Boolean(previewedProblem)}

@@ -27,6 +27,7 @@ const QuizOverviewTab = ({
   onCloseQuiz,
   scheduleActionLoading,
   scheduleActionError,
+  onOpenQuizPrint,
 }) => {
   const isOpen = scheduleState?.isOpen;
   const handleDescriptionChange = (value) => {
@@ -73,9 +74,9 @@ const QuizOverviewTab = ({
     const title = (quiz?.title || 'quiz link').trim();
     const slug = title
       ? title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
       : 'quiz-link';
     return `${slug || 'quiz-link'}-qr.png`;
   }, [quiz?.title]);
@@ -289,6 +290,21 @@ const QuizOverviewTab = ({
               </p>
             )}
             {copyMessage && <p className="mt-2 text-xs text-muted-foreground">{copyMessage}</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Printable Quiz</CardTitle>
+            <CardDescription>Generate a PDF version for offline use</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="mb-4 text-sm text-muted-foreground">
+              Create randomized paper copies for in-class assessments.
+            </p>
+            <Button variant="outline" onClick={onOpenQuizPrint} className="w-full">
+              Open Print Dialog
+            </Button>
           </CardContent>
         </Card>
       </div>

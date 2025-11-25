@@ -14,6 +14,8 @@ const QuizSlotsTab = ({
   openSlotDetailModal,
   loadSlots,
   slotProblemOptions = {},
+  openRubricCriteria,
+  openRubricScale,
 }) => (
   <div className="space-y-6">
     <div className="flex items-center justify-between">
@@ -40,10 +42,10 @@ const QuizSlotsTab = ({
 
     {!slots.length ? (
       <Card>
-          <CardContent className="py-12 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <Plus className="h-8 w-8 text-muted-foreground" />
-            </div>
+        <CardContent className="py-12 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <Plus className="h-8 w-8 text-muted-foreground" />
+          </div>
           <p className="text-lg font-semibold">No slots yet</p>
           <p className="text-sm text-muted-foreground">Create your first slot to start building the quiz</p>
           <Button onClick={openSlotModal} className="mt-4" disabled={isLoadingBanks || !banks.length}>
@@ -85,32 +87,42 @@ const QuizSlotsTab = ({
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Bank:</span>
-                      <span className="font-medium">{slot.problem_bank_name || 'None'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Response:</span>
-                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold', responseBadgeClass)}>
-                        {getResponseTypeLabel(slot.response_type)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Problems:</span>
-                      <span className="font-semibold">
-                        {selectedProblemCount}/{bankProblemTotal}
-                      </span>
-                    </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Bank:</span>
+                    <span className="font-medium">{slot.problem_bank_name || 'None'}</span>
                   </div>
-                <Button 
-                  onClick={() => openSlotDetailModal(slot.id)} 
-                  size="sm" 
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Response:</span>
+                    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold', responseBadgeClass)}>
+                      {getResponseTypeLabel(slot.response_type)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Problems:</span>
+                    <span className="font-semibold">
+                      {selectedProblemCount}/{bankProblemTotal}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => openSlotDetailModal(slot.id)}
+                  size="sm"
                   className="w-full"
                   variant={isReady ? 'outline' : 'default'}
                 >
                   {isReady ? 'Edit Slot' : 'Configure Slot'}
                 </Button>
+                {slot.response_type === 'rating' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" size="sm" onClick={openRubricCriteria}>
+                      Edit Criteria
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={openRubricScale}>
+                      Edit Scale
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
