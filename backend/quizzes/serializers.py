@@ -12,7 +12,92 @@ from .models import (
     QuizAttemptSlot,
     QuizAttemptInteraction,
     create_default_quiz_rubric,
+    GradingRubric,
+    GradingRubricItem,
+    GradingRubricItemLevel,
+    QuizSlotGrade,
+    QuizSlotGradeItem,
 )
+
+
+class QuizSlotGradeItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuizSlotGradeItem
+        fields = ['id', 'rubric_item', 'selected_level']
+
+
+class QuizSlotGradeSerializer(serializers.ModelSerializer):
+    items = QuizSlotGradeItemSerializer(many=True)
+    grader_name = serializers.CharField(source='grader.user.username', read_only=True)
+
+    class Meta:
+        model = QuizSlotGrade
+        fields = ['id', 'feedback', 'grader', 'grader_name', 'graded_at', 'items']
+        read_only_fields = ['grader', 'graded_at']
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        grade = QuizSlotGrade.objects.create(**validated_data)
+        for item_data in items_data:
+            QuizSlotGradeItem.objects.create(grade=grade, **item_data)
+        return grade
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items')
+        instance.feedback = validated_data.get('feedback', instance.feedback)
+        instance.save()
+
+        # Re-create items
+        instance.items.all().delete()
+        for item_data in items_data:
+            QuizSlotGradeItem.objects.create(grade=instance, **item_data)
+        return instance
+
+
+class GradingRubricItemLevelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GradingRubricItemLevel
+        fields = ['id', 'order', 'points', 'label', 'description']
+
+
+class GradingRubricItemSerializer(serializers.ModelSerializer):
+    levels = GradingRubricItemLevelSerializer(many=True)
+
+    class Meta:
+        model = GradingRubricItem
+        fields = ['id', 'order', 'label', 'description', 'levels']
+
+
+class GradingRubricSerializer(serializers.ModelSerializer):
+    items = GradingRubricItemSerializer(many=True)
+
+    class Meta:
+        model = GradingRubric
+        fields = ['id', 'items']
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        rubric = GradingRubric.objects.create(**validated_data)
+        for item_data in items_data:
+            levels_data = item_data.pop('levels')
+            item = GradingRubricItem.objects.create(rubric=rubric, **item_data)
+            for level_data in levels_data:
+                GradingRubricItemLevel.objects.create(rubric_item=item, **level_data)
+        return rubric
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items')
+        
+        # Clear existing items and re-create them (simplest approach for full replacement)
+        instance.items.all().delete()
+        
+        for item_data in items_data:
+            levels_data = item_data.pop('levels')
+            item = GradingRubricItem.objects.create(rubric=instance, **item_data)
+            for level_data in levels_data:
+                GradingRubricItemLevel.objects.create(rubric_item=item, **level_data)
+        
+        return instance
 
 
 class QuizSlotProblemSerializer(serializers.ModelSerializer):
@@ -97,6 +182,7 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
     problem_statement = serializers.CharField(source='assigned_problem.statement', read_only=True)
     problem_display_label = serializers.CharField(source='assigned_problem.display_label', read_only=True)
     response_type = serializers.CharField(source='slot.response_type', read_only=True)
+    grade = QuizSlotGradeSerializer(read_only=True)
 
     class Meta:
         model = QuizAttemptSlot
@@ -112,8 +198,9 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
             'response_type',
             'answer_data',
             'answered_at',
+            'grade',
         ]
-        read_only_fields = ['attempt', 'slot', 'assigned_problem', 'answered_at']
+        read_only_fields = ['attempt', 'slot', 'assigned_problem', 'answered_at', 'grade']
 
 
 class QuizAttemptSerializer(serializers.ModelSerializer):

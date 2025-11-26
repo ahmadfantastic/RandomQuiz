@@ -30,6 +30,8 @@ from quizzes.models import (
     QuizAttemptInteraction,
     QuizRatingScaleOption,
     QuizRatingCriterion,
+    GradingRubric,
+    QuizSlotGrade,
 )
 from quizzes.response_config import load_response_config
 from quizzes.serializers import (
@@ -39,7 +41,37 @@ from quizzes.serializers import (
     QuizAttemptSerializer,
     QuizAttemptSlotSerializer,
     QuizAttemptInteractionSerializer,
+    GradingRubricSerializer,
+    QuizSlotGradeSerializer,
 )
+
+
+class QuizSlotGradeView(APIView):
+    permission_classes = [IsInstructor]
+
+    def put(self, request, quiz_id, attempt_id, slot_id):
+        instructor = ensure_instructor(request.user)
+        # Verify access
+        get_object_or_404(
+            Quiz.objects.filter(models.Q(owner=instructor) | models.Q(allowed_instructors=instructor)).distinct(),
+            id=quiz_id,
+        )
+        attempt_slot = get_object_or_404(
+            QuizAttemptSlot,
+            attempt__quiz_id=quiz_id,
+            attempt_id=attempt_id,
+            slot_id=slot_id
+        )
+        
+        try:
+            grade = attempt_slot.grade
+            serializer = QuizSlotGradeSerializer(grade, data=request.data)
+        except QuizSlotGrade.DoesNotExist:
+            serializer = QuizSlotGradeSerializer(data=request.data)
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save(attempt_slot=attempt_slot, grader=instructor)
+        return Response(serializer.data)
 
 
 class LoginView(APIView):
@@ -386,6 +418,34 @@ class QuizRubricView(APIView):
             if criterion_objects:
                 QuizRatingCriterion.objects.bulk_create(criterion_objects)
         return Response(quiz.get_rubric())
+
+
+class GradingRubricView(APIView):
+    permission_classes = [IsInstructor]
+
+    def _get_quiz(self, request, quiz_id):
+        instructor = ensure_instructor(request.user)
+        return get_object_or_404(
+            Quiz.objects.filter(models.Q(owner=instructor) | models.Q(allowed_instructors=instructor)).distinct(),
+            id=quiz_id,
+        )
+
+    def get(self, request, quiz_id):
+        quiz = self._get_quiz(request, quiz_id)
+        try:
+            rubric = quiz.grading_rubric
+        except GradingRubric.DoesNotExist:
+            return Response({'items': []})
+        serializer = GradingRubricSerializer(rubric)
+        return Response(serializer.data)
+
+    def put(self, request, quiz_id):
+        quiz = self._get_quiz(request, quiz_id)
+        rubric, created = GradingRubric.objects.get_or_create(quiz=quiz)
+        serializer = GradingRubricSerializer(rubric, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class QuizViewSet(viewsets.ModelViewSet):

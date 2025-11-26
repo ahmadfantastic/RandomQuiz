@@ -254,3 +254,66 @@ def create_default_quiz_rubric(quiz):
                 for entry in criteria_entries
             ]
         )
+
+class GradingRubric(models.Model):
+    quiz = models.OneToOneField(Quiz, on_delete=models.CASCADE, related_name='grading_rubric')
+
+    def __str__(self) -> str:
+        return f"Rubric for {self.quiz.title}"
+
+
+class GradingRubricItem(models.Model):
+    rubric = models.ForeignKey(GradingRubric, on_delete=models.CASCADE, related_name='items')
+    order = models.PositiveIntegerField()
+    label = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['order']
+        constraints = [
+            models.UniqueConstraint(fields=['rubric', 'order'], name='unique_rubric_item_order')
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.rubric}: {self.label}"
+
+
+class GradingRubricItemLevel(models.Model):
+    rubric_item = models.ForeignKey(GradingRubricItem, on_delete=models.CASCADE, related_name='levels')
+    order = models.PositiveIntegerField()
+    points = models.FloatField()
+    label = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['order']
+        constraints = [
+            models.UniqueConstraint(fields=['rubric_item', 'order'], name='unique_rubric_item_level_order')
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.rubric_item}: {self.label} ({self.points} pts)"
+
+
+class QuizSlotGrade(models.Model):
+    attempt_slot = models.OneToOneField(QuizAttemptSlot, on_delete=models.CASCADE, related_name='grade')
+    grader = models.ForeignKey(Instructor, on_delete=models.SET_NULL, null=True, blank=True)
+    feedback = models.TextField(blank=True)
+    graded_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"Grade for {self.attempt_slot}"
+
+
+class QuizSlotGradeItem(models.Model):
+    grade = models.ForeignKey(QuizSlotGrade, on_delete=models.CASCADE, related_name='items')
+    rubric_item = models.ForeignKey(GradingRubricItem, on_delete=models.CASCADE)
+    selected_level = models.ForeignKey(GradingRubricItemLevel, on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['grade', 'rubric_item'], name='unique_grade_rubric_item')
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.grade} - {self.rubric_item}: {self.selected_level.points} pts"

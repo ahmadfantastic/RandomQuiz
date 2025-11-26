@@ -18,6 +18,8 @@ from .views import (
     QuizAllowedInstructorDelete,
     QuizAllowedInstructorList,
     QuizRubricView,
+    GradingRubricView,
+    QuizSlotGradeView,
     QuizSlotListCreate,
     QuizSlotViewSet,
     QuizAttemptDetail,
@@ -54,6 +56,7 @@ urlpatterns = [
         name='quiz-allowed-delete',
     ),
     path('quizzes/<int:quiz_id>/rubric/', QuizRubricView.as_view(), name='quiz-rubric'),
+    path('quizzes/<int:quiz_id>/grading-rubric/', GradingRubricView.as_view(), name='quiz-grading-rubric'),
     path('quizzes/<int:quiz_id>/analytics/', QuizAnalyticsView.as_view(), name='quiz-analytics'),
     path('quizzes/<int:quiz_id>/attempts/', QuizAttemptList.as_view(), name='quiz-attempts'),
     path(
@@ -65,6 +68,11 @@ urlpatterns = [
         'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/interactions/',
         QuizAttemptInteractions.as_view(),
         name='quiz-attempt-interactions',
+    ),
+    path(
+        'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/slots/<int:slot_id>/grade/',
+        QuizSlotGradeView.as_view(),
+        name='quiz-slot-grade',
     ),
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('slots/<int:slot_id>/slot-problems/', SlotProblemListCreate.as_view(), name='slot-problem-list'),

@@ -21,6 +21,7 @@ import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
 import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
 import RubricCriteriaModal from '@/components/quiz-editor/RubricCriteriaModal';
 import RubricScaleModal from '@/components/quiz-editor/RubricScaleModal';
+import GradingInterface from '@/components/quiz-editor/GradingInterface';
 import QuizPrintModal from '@/components/quiz-editor/QuizPrintModal';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
@@ -31,6 +32,7 @@ const TABS = {
   SLOTS: 'slots',
   RESPONSES: 'responses',
   INSTRUCTORS: 'instructors',
+  GRADING_RUBRIC: 'grading_rubric',
 };
 
 const defaultSlotForm = { label: '', instruction: '', problem_bank: '', response_type: 'open_text' };
@@ -1220,6 +1222,7 @@ const QuizEditorPage = () => {
                 { id: TABS.SLOTS, label: 'Problem Slots', icon: '🎲', badge: slotReadiness.total },
                 { id: TABS.RESPONSES, label: 'Responses', icon: '📝', badge: attempts.length },
                 { id: TABS.INSTRUCTORS, label: 'Instructors', icon: '👥', badge: allowedInstructors.length },
+                { id: TABS.GRADING_RUBRIC, label: 'Grading', icon: '💯' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1294,15 +1297,16 @@ const QuizEditorPage = () => {
             {activeTab === TABS.INSTRUCTORS && (
               <QuizAllowedInstructorsTab
                 allowedInstructors={allowedInstructors}
-                instructorId={instructorId}
-                setInstructorId={setInstructorId}
+                canManageCollaborators={canManageAllowedInstructors}
                 handleAddInstructor={handleAddInstructor}
                 handleRemoveInstructor={handleRemoveInstructor}
-                canManageCollaborators={canManageAllowedInstructors}
-                loadInstructors={loadAllowedInstructors}
+                instructorId={instructorId}
+                setInstructorId={setInstructorId}
                 instructorError={instructorError}
+                loadInstructors={loadAllowedInstructors}
               />
             )}
+            {activeTab === TABS.GRADING_RUBRIC && <GradingInterface quizId={quizIdNumber} />}
 
 
           </div>
