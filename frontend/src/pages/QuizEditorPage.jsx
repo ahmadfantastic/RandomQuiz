@@ -18,6 +18,7 @@ import QuizOverviewTab from '@/components/quiz-editor/QuizOverviewTab';
 import QuizSlotsTab from '@/components/quiz-editor/QuizSlotsTab';
 import AttemptTimelineModal from '@/components/quiz-editor/AttemptTimelineModal';
 import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
+import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
 import RubricCriteriaModal from '@/components/quiz-editor/RubricCriteriaModal';
 import RubricScaleModal from '@/components/quiz-editor/RubricScaleModal';
 import QuizPrintModal from '@/components/quiz-editor/QuizPrintModal';
@@ -119,9 +120,7 @@ const QuizEditorPage = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(TABS.OVERVIEW);
   const [quiz, setQuiz] = useState(null);
-  const [quizzes, setQuizzes] = useState([]);
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(true);
-  const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
   const [banks, setBanks] = useState([]);
   const [isLoadingBanks, setIsLoadingBanks] = useState(true);
   const [slots, setSlots] = useState([]);
@@ -404,14 +403,7 @@ const QuizEditorPage = () => {
     [slotProblemOptions]
   );
 
-  const loadQuizList = () => {
-    setIsLoadingQuizzes(true);
-    api
-      .get('/api/quizzes/')
-      .then((res) => setQuizzes(res.data))
-      .catch(() => { })
-      .finally(() => setIsLoadingQuizzes(false));
-  };
+
 
   const loadBanks = () => {
     setIsLoadingBanks(true);
@@ -572,9 +564,7 @@ const QuizEditorPage = () => {
     loadBanks();
   }, []);
 
-  useEffect(() => {
-    loadQuizList();
-  }, [quizId]);
+
 
   useEffect(() => {
     setSlotProblemOptions({});
@@ -1317,33 +1307,7 @@ const QuizEditorPage = () => {
 
           </div>
 
-          {/* Quick Switch Sidebar */}
-          {!isLoadingQuizzes && quizzes.length > 1 && (
-            <Card className="mt-8">
-              <CardHeader>
-                <CardTitle className="text-base">Switch Quiz</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {quizzes.slice(0, 5).map((item) => (
-                    <Button
-                      key={item.id}
-                      variant={quizIdNumber === item.id ? 'default' : 'outline'}
-                      size="sm"
-                      to={`/quizzes/${item.id}`}
-                    >
-                      {item.title}
-                    </Button>
-                  ))}
-                  {quizzes.length > 5 && (
-                    <Button variant="outline" size="sm" to="/dashboard">
-                      View all
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+
         </div>
       )}
       <Modal
