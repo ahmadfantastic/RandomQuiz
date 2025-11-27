@@ -1215,7 +1215,7 @@ const QuizEditorPage = () => {
           />
 
           {/* Tab Navigation */}
-          <div className="border-b">
+          <div className="-mx-4 px-4 border-b overflow-x-auto">
             <nav className="flex gap-6">
               {[
                 { id: TABS.OVERVIEW, label: 'Overview', icon: '📋' },
@@ -1228,14 +1228,14 @@ const QuizEditorPage = () => {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                    'flex items-center gap-2 border-b-2 px-2 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0',
                     activeTab === tab.id
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted-foreground hover:text-foreground'
                   )}
                 >
                   <span>{tab.icon}</span>
-                  <span>{tab.label}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
                   {tab.badge !== undefined && (
                     <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs">
                       {tab.badge}

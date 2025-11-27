@@ -107,11 +107,90 @@ const GradingInterface = ({ quizId }) => {
     };
 
     return (
-        <div className="flex h-[calc(100vh-200px)] gap-4">
+        <div className="flex flex-col md:flex-row h-[calc(100vh-200px)] gap-4">
             {/* Sidebar - Student List */}
+            <div className="w-full md:w-64 flex-shrink-0 border-b md:border-b-0 md:border-l md:pl-4 overflow-y-auto max-h-[200px] md:max-h-full order-1 md:order-2">
+                <div className="mb-4 flex justify-between items-center">
+                    <h3 className="font-semibold">Students</h3>
+                    <Button variant="outline" size="sm" onClick={() => setIsRubricModalOpen(true)}>
+                        <Edit className="h-3 w-3 mr-1" /> Rubric
+                    </Button>
+                </div>
+                <div className="space-y-2">
+                    {attempts.map(attempt => {
+                        const gradableSlots = attempt.attempt_slots?.filter(s => s.response_type !== 'rating') || [];
+                        const isFullyGraded = gradableSlots.length > 0 && gradableSlots.every(s => s.grade?.items?.length > 0);
+
+                        // Calculate score
+                        let currentScore = 0;
+                        let maxScore = 0;
+
+                        if (rubric?.items) {
+                            // Calculate max score per slot (sum of max points of all criteria)
+                            const maxScorePerSlot = rubric.items.reduce((sum, item) => {
+                                const maxPoints = Math.max(...item.levels.map(l => l.points || 0));
+                                return sum + maxPoints;
+                            }, 0);
+
+                            maxScore = maxScorePerSlot * gradableSlots.length;
+
+                            // Calculate current score
+                            gradableSlots.forEach(slot => {
+                                slot.grade?.items?.forEach(gradeItem => {
+                                    const rubricItem = rubric.items.find(ri => ri.id === gradeItem.rubric_item);
+                                    const level = rubricItem?.levels.find(l => l.id === gradeItem.selected_level);
+                                    if (level) {
+                                        currentScore += (level.points || 0);
+                                    }
+                                });
+                            });
+                        }
+
+                        return (
+                            <button
+                                key={attempt.id}
+                                onClick={() => setSelectedAttemptId(attempt.id)}
+                                className={cn(
+                                    "w-full text-left p-3 rounded-md flex items-center gap-3 transition-colors",
+                                    selectedAttemptId === attempt.id
+                                        ? "bg-primary text-primary-foreground"
+                                        : "hover:bg-muted"
+                                )}
+                            >
+                                <div className={cn(
+                                    "h-8 w-8 rounded-full flex items-center justify-center",
+                                    isFullyGraded
+                                        ? "bg-green-100 text-green-600"
+                                        : "bg-muted-foreground/20"
+                                )}>
+                                    {isFullyGraded ? <Check className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-medium truncate">{attempt.student_identifier}</p>
+                                    <div className="flex justify-between items-center mt-0.5">
+                                        <p className="text-xs opacity-80">
+                                            {new Date(attempt.started_at).toLocaleDateString()}
+                                        </p>
+                                        {isFullyGraded && (
+                                            <span className={cn(
+                                                "text-xs font-bold px-1.5 py-0.5 rounded",
+                                                selectedAttemptId === attempt.id
+                                                    ? "bg-primary-foreground/20 text-primary-foreground"
+                                                    : "bg-primary/10 text-primary"
+                                            )}>
+                                                {currentScore}/{maxScore}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
 
             {/* Main Content - Grading Interface */}
-            <div className="flex-1 overflow-y-auto pr-2">
+            <div className="flex-1 overflow-y-auto pr-2 order-2 md:order-1">
                 {selectedAttempt ? (
                     <div className="space-y-8">
                         <div className="flex justify-between items-start">
@@ -249,87 +328,6 @@ const GradingInterface = ({ quizId }) => {
                         <p>Select a student from the sidebar to start grading</p>
                     </div>
                 )}
-            </div>
-
-            {/* Sidebar - Student List */}
-            <div className="w-64 flex-shrink-0 border-l pl-4 overflow-y-auto">
-                <div className="mb-4 flex justify-between items-center">
-                    <h3 className="font-semibold">Students</h3>
-                    <Button variant="outline" size="sm" onClick={() => setIsRubricModalOpen(true)}>
-                        <Edit className="h-3 w-3 mr-1" /> Rubric
-                    </Button>
-                </div>
-                <div className="space-y-2">
-                    {attempts.map(attempt => {
-                        const gradableSlots = attempt.attempt_slots?.filter(s => s.response_type !== 'rating') || [];
-                        const isFullyGraded = gradableSlots.length > 0 && gradableSlots.every(s => s.grade?.items?.length > 0);
-
-                        // Calculate score
-                        let currentScore = 0;
-                        let maxScore = 0;
-
-                        if (rubric?.items) {
-                            // Calculate max score per slot (sum of max points of all criteria)
-                            const maxScorePerSlot = rubric.items.reduce((sum, item) => {
-                                const maxPoints = Math.max(...item.levels.map(l => l.points || 0));
-                                return sum + maxPoints;
-                            }, 0);
-
-                            maxScore = maxScorePerSlot * gradableSlots.length;
-
-                            // Calculate current score
-                            gradableSlots.forEach(slot => {
-                                slot.grade?.items?.forEach(gradeItem => {
-                                    const rubricItem = rubric.items.find(ri => ri.id === gradeItem.rubric_item);
-                                    const level = rubricItem?.levels.find(l => l.id === gradeItem.selected_level);
-                                    if (level) {
-                                        currentScore += (level.points || 0);
-                                    }
-                                });
-                            });
-                        }
-
-                        return (
-                            <button
-                                key={attempt.id}
-                                onClick={() => setSelectedAttemptId(attempt.id)}
-                                className={cn(
-                                    "w-full text-left p-3 rounded-md flex items-center gap-3 transition-colors",
-                                    selectedAttemptId === attempt.id
-                                        ? "bg-primary text-primary-foreground"
-                                        : "hover:bg-muted"
-                                )}
-                            >
-                                <div className={cn(
-                                    "h-8 w-8 rounded-full flex items-center justify-center",
-                                    isFullyGraded
-                                        ? "bg-green-100 text-green-600"
-                                        : "bg-muted-foreground/20"
-                                )}>
-                                    {isFullyGraded ? <Check className="h-4 w-4" /> : <User className="h-4 w-4" />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium truncate">{attempt.student_identifier}</p>
-                                    <div className="flex justify-between items-center mt-0.5">
-                                        <p className="text-xs opacity-80">
-                                            {new Date(attempt.started_at).toLocaleDateString()}
-                                        </p>
-                                        {isFullyGraded && (
-                                            <span className={cn(
-                                                "text-xs font-bold px-1.5 py-0.5 rounded",
-                                                selectedAttemptId === attempt.id
-                                                    ? "bg-primary-foreground/20 text-primary-foreground"
-                                                    : "bg-primary/10 text-primary"
-                                            )}>
-                                                {currentScore}/{maxScore}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            </button>
-                        );
-                    })}
-                </div>
             </div>
 
             <RubricEditorModal

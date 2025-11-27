@@ -18,14 +18,14 @@ const QuizSlotsTab = ({
   openRubricScale,
 }) => (
   <div className="space-y-6">
-    <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h3 className="text-lg font-semibold">Problem Slots</h3>
         <p className="text-sm text-muted-foreground">
           Each slot draws random problems from a bank
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={loadSlots}>Refresh</Button>
         <Button variant="outline" to="/problem-banks">Manage Banks</Button>
         <Button onClick={openSlotModal} disabled={isLoadingBanks || !banks.length}>

@@ -31,7 +31,7 @@ const Modal = ({ open, onOpenChange, title, description, children, className }) 
     >
       <div
         className={cn(
-          'w-full max-w-xl rounded-xl border border-border bg-background p-6 shadow-xl max-h-[90vh] overflow-y-auto',
+          'w-full max-w-xl rounded-xl border border-border bg-background p-4 md:p-6 shadow-xl max-h-[90vh] overflow-y-auto',
           className
         )}
         onClick={(event) => event.stopPropagation()}
