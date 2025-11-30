@@ -117,7 +117,13 @@ const GradingInterface = ({ quizId }) => {
                     </Button>
                 </div>
                 <div className="space-y-2">
-                    {attempts.map(attempt => {
+                    {isLoading ? (
+                        <div className="space-y-2">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="h-12 bg-muted/50 rounded-md animate-pulse" />
+                            ))}
+                        </div>
+                    ) : attempts.map(attempt => {
                         const gradableSlots = attempt.attempt_slots?.filter(s => s.response_type !== 'rating') || [];
                         const isFullyGraded = gradableSlots.length > 0 && gradableSlots.every(s => s.grade?.items?.length > 0);
 
@@ -213,7 +219,7 @@ const GradingInterface = ({ quizId }) => {
                                     {/* Problem & Answer */}
                                     <div className="grid gap-6 md:grid-cols-2">
                                         <div className="space-y-2">
-                                            <Label className="text-muted-foreground uppercase text-xs font-bold">Problem</Label>
+                                            <Label className="text-muted-foreground uppercase text-xs font-bold">Problem {slot.slot_label}</Label>
                                             <div className="p-3 bg-muted/20 rounded-md text-sm prose max-w-none">
                                                 <div dangerouslySetInnerHTML={{ __html: renderProblemMarkupHtml(slot.problem_statement) }} />
                                             </div>
