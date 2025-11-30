@@ -208,7 +208,7 @@ const GradingInterface = ({ quizId }) => {
                             </div>
                         </div>
 
-                        {selectedAttempt.attempt_slots?.filter(s => s.response_type !== 'rating').map(slot => (
+                        {selectedAttempt.attempt_slots?.filter(s => s.response_type !== 'rating').map((slot, index) => (
                             <Card key={slot.id} className="border-muted">
                                 <CardHeader className="bg-muted/30 pb-3">
                                     <CardTitle className="text-base font-medium">
@@ -219,7 +219,7 @@ const GradingInterface = ({ quizId }) => {
                                     {/* Problem & Answer */}
                                     <div className="grid gap-6 md:grid-cols-2">
                                         <div className="space-y-2">
-                                            <Label className="text-muted-foreground uppercase text-xs font-bold">Problem {slot.slot_label}</Label>
+                                            <Label className="text-muted-foreground uppercase text-xs font-bold">Problem {slot.problem_display_label}</Label>
                                             <div className="p-3 bg-muted/20 rounded-md text-sm prose max-w-none">
                                                 <div dangerouslySetInnerHTML={{ __html: renderProblemMarkupHtml(slot.problem_statement) }} />
                                             </div>
