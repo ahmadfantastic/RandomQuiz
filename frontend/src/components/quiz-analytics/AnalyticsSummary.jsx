@@ -14,11 +14,23 @@ const AnalyticsSummary = ({ completionStats, timeStats, word_count_stats }) => {
     };
 
     return (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Average Score</CardTitle>
+                    <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{completionStats.avg_score ? completionStats.avg_score.toFixed(1) : '0.0'}</div>
+                    <p className="text-xs text-muted-foreground">
+                        Range: {completionStats.min_score !== undefined ? completionStats.min_score.toFixed(1) : '0'} - {completionStats.max_score !== undefined ? completionStats.max_score.toFixed(1) : '0'}
+                    </p>
+                </CardContent>
+            </Card>
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
-                    <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                    <Users className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                     <div className="text-2xl font-bold">{Math.round(completion_rate)}%</div>

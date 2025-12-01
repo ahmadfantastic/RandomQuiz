@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import ProblemStatsTable from './ProblemStatsTable';
+import StudentProblemDetailsModal from './StudentProblemDetailsModal';
 
 const WordCountChart = ({ data }) => {
     const { raw_values, min, max } = data;
@@ -160,35 +162,23 @@ const RatingChart = ({ data }) => {
     );
 };
 
-const ProblemDistribution = ({ distribution }) => {
-    if (!distribution || distribution.length === 0) {
-        return null;
-    }
 
-    return (
-        <div className="mt-4 pt-4 border-t">
-            <h4 className="text-sm font-semibold mb-2">Problem Selection</h4>
-            <div className="space-y-2">
-                {distribution.map((item, index) => (
-                    <div key={index} className="flex justify-between items-center text-sm">
-                        <span className="truncate flex-1 mr-4" title={item.label}>
-                            {item.label}
-                        </span>
-                        <span className="text-muted-foreground bg-muted px-2 py-0.5 rounded text-xs">
-                            {item.count} times
-                        </span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
 
 
 
 
 
 const SlotAnalytics = ({ slots }) => {
+    const [selectedProblem, setSelectedProblem] = React.useState(null);
+    const [selectedSlotId, setSelectedSlotId] = React.useState(null);
+    const [isModalOpen, setIsModalOpen] = React.useState(false);
+
+    const handleProblemClick = (slotId, problem) => {
+        setSelectedSlotId(slotId);
+        setSelectedProblem(problem);
+        setIsModalOpen(true);
+    };
+
     return (
         <div className="space-y-4">
             {slots.map((slot) => (
@@ -197,29 +187,21 @@ const SlotAnalytics = ({ slots }) => {
                         <CardTitle className="text-base font-medium">{slot.label}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="flex gap-4">
-                            <div className="flex-1">
+                        <div className="flex flex-col gap-6">
+                            <div className="w-full">
                                 {slot.response_type === 'open_text' ? (
                                     <WordCountChart data={slot.data} />
                                 ) : (
                                     <RatingChart data={slot.data} />
                                 )}
                             </div>
-                            {slot.problem_distribution && slot.problem_distribution.length > 0 && (
-                                <div className="w-64 shrink-0">
-                                    <h4 className="text-sm font-semibold mb-2">Problem Selection</h4>
-                                    <div className="space-y-2">
-                                        {slot.problem_distribution.map((item, index) => (
-                                            <div key={index} className="flex justify-between items-center text-sm">
-                                                <span className="truncate flex-1 mr-4" title={item.label}>
-                                                    {item.label}
-                                                </span>
-                                                <span className="text-muted-foreground bg-muted px-2 py-0.5 rounded text-xs">
-                                                    {item.count} times
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
+                            {slot.response_type === 'open_text' && slot.problem_distribution && slot.problem_distribution.length > 0 && (
+                                <div className="w-full border-t pt-4">
+                                    <h4 className="text-sm font-semibold mb-4">Problem Breakdown</h4>
+                                    <ProblemStatsTable
+                                        problems={slot.problem_distribution}
+                                        onProblemClick={(problem) => handleProblemClick(slot.id, problem)}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -227,6 +209,13 @@ const SlotAnalytics = ({ slots }) => {
                     </CardContent>
                 </Card>
             ))}
+
+            <StudentProblemDetailsModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                slotId={selectedSlotId}
+                problem={selectedProblem}
+            />
         </div>
     );
 };

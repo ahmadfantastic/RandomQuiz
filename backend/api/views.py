@@ -31,7 +31,9 @@ from quizzes.models import (
     QuizRatingScaleOption,
     QuizRatingCriterion,
     GradingRubric,
+    GradingRubric,
     QuizSlotGrade,
+    QuizSlotGradeItem,
 )
 from quizzes.response_config import load_response_config
 from quizzes.serializers import (
@@ -1164,11 +1166,34 @@ class QuizAnalyticsView(APIView):
         all_attempt_slots = QuizAttemptSlot.objects.filter(
             attempt__in=attempts
         ).values(
+            'id',
             'slot_id',
             'assigned_problem__order_in_bank',
             'assigned_problem__id',
-            'answer_data'
+            'answer_data',
+            'attempt__started_at',
+            'attempt__completed_at',
+            'attempt__student_identifier'
         )
+
+        # Fetch grades and items
+        # We need to map attempt_slot_id -> grade info
+        grades = QuizSlotGrade.objects.filter(
+            attempt_slot__attempt__in=attempts
+        ).prefetch_related('items__rubric_item', 'items__selected_level')
+        
+        grades_map = {}
+        for grade in grades:
+            items_data = {}
+            total_score = 0
+            for item in grade.items.all():
+                items_data[item.rubric_item.id] = item.selected_level.points
+                total_score += item.selected_level.points
+            
+            grades_map[grade.attempt_slot_id] = {
+                'total_score': total_score,
+                'items': items_data
+            }
 
         # Group attempt slots by slot_id
         attempt_slots_by_slot = {}
@@ -1176,6 +1201,17 @@ class QuizAnalyticsView(APIView):
             slot_id = attempt_slot['slot_id']
             if slot_id not in attempt_slots_by_slot:
                 attempt_slots_by_slot[slot_id] = []
+            
+            # Calculate duration
+            start = attempt_slot['attempt__started_at']
+            end = attempt_slot['attempt__completed_at']
+            duration = (end - start).total_seconds() / 60.0 if start and end else None
+            attempt_slot['attempt__duration'] = duration
+            
+            # Attach grade info
+            if attempt_slot['id'] in grades_map:
+                attempt_slot['grade'] = grades_map[attempt_slot['id']]
+            
             attempt_slots_by_slot[slot_id].append(attempt_slot)
 
         # Collect all word counts for global average
@@ -1213,18 +1249,70 @@ class QuizAnalyticsView(APIView):
                 filtered_slot_attempts = slot_attempts_list
             
             # Problem distribution
-            prob_dist = {}
+            prob_stats = {}
             prob_order = {}  # Track order_in_bank for each problem
+            
             for sa in filtered_slot_attempts:
                 order = sa['assigned_problem__order_in_bank']
                 label = f"Problem {order}"
-                prob_dist[label] = prob_dist.get(label, 0) + 1
+                
+                if label not in prob_stats:
+                    prob_stats[label] = {
+                        'count': 0,
+                        'total_score': 0,
+                        'total_time': 0,
+                        'total_words': 0,
+                        'scores_count': 0, # Denominator for score avg (only graded)
+                        'times_count': 0, # Denominator for time avg (only completed attempts)
+                        'words_count': 0, # Denominator for word avg (only text answers)
+                        'criteria_scores': {}, # criterion_id -> {total, count}
+                        'problem_id': sa['assigned_problem__id']
+                    }
+                
+                stats = prob_stats[label]
+                stats['count'] += 1
                 prob_order[label] = order
-            
-            prob_dist_list = [
-                {'label': k, 'count': v} 
-                for k, v in prob_dist.items()
-            ]
+                
+                # Time
+                if sa.get('attempt__duration') is not None:
+                     stats['total_time'] += sa['attempt__duration']
+                     stats['times_count'] += 1
+
+                # Word count
+                if sa['answer_data'] and 'text' in sa['answer_data']:
+                    text = sa['answer_data']['text']
+                    count = len(text.split())
+                    stats['total_words'] += count
+                    stats['words_count'] += 1
+                
+                # Score
+                if 'grade' in sa:
+                    grade = sa['grade']
+                    stats['total_score'] += grade['total_score']
+                    stats['scores_count'] += 1
+                    
+                    for c_id, score in grade['items'].items():
+                        if c_id not in stats['criteria_scores']:
+                            stats['criteria_scores'][c_id] = {'total': 0, 'count': 0}
+                        stats['criteria_scores'][c_id]['total'] += score
+                        stats['criteria_scores'][c_id]['count'] += 1
+
+            prob_dist_list = []
+            for label, stats in prob_stats.items():
+                avg_criteria = {}
+                for c_id, c_stats in stats['criteria_scores'].items():
+                    avg_criteria[c_id] = c_stats['total'] / c_stats['count'] if c_stats['count'] > 0 else 0
+
+                prob_dist_list.append({
+                    'label': label,
+                    'problem_id': stats['problem_id'],
+                    'count': stats['count'],
+                    'avg_score': stats['total_score'] / stats['scores_count'] if stats['scores_count'] > 0 else 0,
+                    'avg_time': stats['total_time'] / stats['times_count'] if stats['times_count'] > 0 else 0,
+                    'avg_words': stats['total_words'] / stats['words_count'] if stats['words_count'] > 0 else 0,
+                    'avg_criteria_scores': avg_criteria
+                })
+
             # Sort by order in bank
             prob_dist_list.sort(key=lambda x: prob_order.get(x['label'], 0))
 
@@ -1320,7 +1408,38 @@ class QuizAnalyticsView(APIView):
             'median': sorted(all_word_counts)[len(all_word_counts) // 2] if all_word_counts else 0,
         }
 
+        # Calculate average quiz score
+        # We need to sum up all grades for each attempt
+        # We already fetched grades in 'grades_map' (attempt_slot_id -> grade info)
+        # But we need to group by attempt
+        
+        attempt_scores = {}
+        for attempt_slot in all_attempt_slots:
+            attempt_id = attempt_slot.get('attempt_id') # We didn't fetch attempt_id explicitly in values() but we can get it
+            # Wait, we fetched 'attempt__student_identifier' etc but not 'attempt_id' directly in the values() call?
+            # Let's check the values() call again.
+            pass
+        
+        # Calculate score stats
+        # We annotate each attempt with its total score, then aggregate min/max/avg
+        from django.db.models.functions import Coalesce
+        
+        score_stats = attempts.annotate(
+            score=Coalesce(models.Sum('attempt_slots__grade__items__selected_level__points'), 0.0)
+        ).aggregate(
+            min_score=models.Min('score'),
+            max_score=models.Max('score'),
+            avg_score=models.Avg('score')
+        )
+        
+        avg_score = score_stats['avg_score'] or 0
+        min_score = score_stats['min_score'] or 0
+        max_score = score_stats['max_score'] or 0
+
         return Response({
+            'avg_score': avg_score,
+            'min_score': min_score,
+            'max_score': max_score,
             'completion_rate': completion_rate,
             'total_attempts': total_attempts,
             'time_distribution': time_stats,
@@ -1329,3 +1448,72 @@ class QuizAnalyticsView(APIView):
             'available_problems': available_problems,
             'word_count_stats': word_count_stats
         })
+class QuizSlotProblemStudentsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, quiz_id, slot_id, problem_id):
+        instructor = ensure_instructor(request.user)
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        if quiz.owner != instructor and not quiz.allowed_instructors.filter(id=instructor.id).exists():
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        slot = get_object_or_404(QuizSlot, id=slot_id, quiz=quiz)
+        
+        # Fetch attempts that have this problem assigned for this slot
+        attempts = QuizAttempt.objects.filter(
+            quiz=quiz,
+            attempt_slots__slot=slot,
+            attempt_slots__assigned_problem_id=problem_id,
+            completed_at__isnull=False
+        ).select_related('quiz').prefetch_related('attempt_slots')
+
+        students_data = []
+        
+        for attempt in attempts:
+            # Find the specific slot attempt
+            # Since we filtered by attempt_slots, we know it exists.
+            # But we need to grab the specific one efficiently.
+            # We can use the prefetch or just query again if list is small.
+            # Let's iterate the prefetched slots.
+            target_slot_attempt = None
+            for sa in attempt.attempt_slots.all():
+                if sa.slot_id == slot.id and sa.assigned_problem_id == problem_id:
+                    target_slot_attempt = sa
+                    break
+            
+            if not target_slot_attempt:
+                continue
+
+            # Calculate duration
+            duration = 0
+            if attempt.started_at and attempt.completed_at:
+                duration = (attempt.completed_at - attempt.started_at).total_seconds() / 60.0
+
+            # Get grade info
+            grade_info = {
+                'total_score': 0,
+                'items': {}
+            }
+            try:
+                grade = QuizSlotGrade.objects.get(attempt_slot=target_slot_attempt)
+                for item in grade.items.all():
+                    grade_info['items'][item.rubric_item.id] = item.selected_level.points
+                    grade_info['total_score'] += item.selected_level.points
+            except QuizSlotGrade.DoesNotExist:
+                pass
+
+            # Word count
+            word_count = 0
+            if target_slot_attempt.answer_data and 'text' in target_slot_attempt.answer_data:
+                word_count = len(target_slot_attempt.answer_data['text'].split())
+
+            students_data.append({
+                'student_identifier': attempt.student_identifier,
+                'attempt_id': attempt.id,
+                'score': grade_info['total_score'],
+                'criteria_scores': grade_info['items'],
+                'time_taken': duration,
+                'word_count': word_count,
+            })
+
+        return Response(students_data)

@@ -82,7 +82,10 @@ const QuizAnalyticsPage = () => {
                     completionStats={{
                         total_attempts: data.total_attempts,
                         completed_count: data.total_attempts, // All attempts in our query are completed
-                        completion_rate: data.completion_rate
+                        completion_rate: data.completion_rate,
+                        avg_score: data.avg_score,
+                        min_score: data.min_score,
+                        max_score: data.max_score
                     }}
                     timeStats={data.time_distribution}
                     word_count_stats={data.word_count_stats}

@@ -36,6 +36,9 @@ class QuizAnalyticsTests(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total_attempts'], 0)
+        self.assertEqual(response.data['avg_score'], 0)
+        self.assertEqual(response.data['min_score'], 0)
+        self.assertEqual(response.data['max_score'], 0)
 
     def test_analytics_data(self):
         # Create a completed attempt

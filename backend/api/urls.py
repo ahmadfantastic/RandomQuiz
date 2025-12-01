@@ -33,6 +33,7 @@ from .views import (
     QuizViewSet,
     DashboardStatsView,
     QuizAnalyticsView,
+    QuizSlotProblemStudentsView,
 )
 
 router = DefaultRouter()
@@ -58,6 +59,11 @@ urlpatterns = [
     path('quizzes/<int:quiz_id>/rubric/', QuizRubricView.as_view(), name='quiz-rubric'),
     path('quizzes/<int:quiz_id>/grading-rubric/', GradingRubricView.as_view(), name='quiz-grading-rubric'),
     path('quizzes/<int:quiz_id>/analytics/', QuizAnalyticsView.as_view(), name='quiz-analytics'),
+    path(
+        'quizzes/<int:quiz_id>/analytics/slots/<int:slot_id>/problems/<int:problem_id>/students/',
+        QuizSlotProblemStudentsView.as_view(),
+        name='quiz-slot-problem-students',
+    ),
     path('quizzes/<int:quiz_id>/attempts/', QuizAttemptList.as_view(), name='quiz-attempts'),
     path(
         'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/',
