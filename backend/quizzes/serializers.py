@@ -55,12 +55,15 @@ class QuizSlotGradeSerializer(serializers.ModelSerializer):
 
 
 class GradingRubricItemLevelSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+
     class Meta:
         model = GradingRubricItemLevel
         fields = ['id', 'order', 'points', 'label', 'description']
 
 
 class GradingRubricItemSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
     levels = GradingRubricItemLevelSerializer(many=True)
 
     class Meta:
@@ -86,18 +89,85 @@ class GradingRubricSerializer(serializers.ModelSerializer):
         return rubric
 
     def update(self, instance, validated_data):
-        items_data = validated_data.pop('items')
+        items_data = validated_data.pop('items', [])
         
-        # Clear existing items and re-create them (simplest approach for full replacement)
-        instance.items.all().delete()
+        existing_items = {item.id: item for item in instance.items.all()}
         
+        # 1. Identify IDs present in the payload
+        payload_ids = set()
         for item_data in items_data:
-            levels_data = item_data.pop('levels')
-            item = GradingRubricItem.objects.create(rubric=instance, **item_data)
-            for level_data in levels_data:
-                GradingRubricItemLevel.objects.create(rubric_item=item, **level_data)
+            if item_data.get('id'):
+                payload_ids.add(item_data.get('id'))
+        
+        # 2. Delete items not in the payload
+        for item_id, item in existing_items.items():
+            if item_id not in payload_ids:
+                item.delete()
+        
+        # 3. Temporarily shift orders of remaining items to avoid collisions
+        remaining_items = instance.items.all()
+        for item in remaining_items:
+            item.order += 10000
+            item.save()
+        
+        # Refresh existing_items map since objects might have changed
+        existing_items = {item.id: item for item in instance.items.all()}
+
+        # 4. Update or Create Items
+        for item_data in items_data:
+            item_id = item_data.get('id')
+            levels_data = item_data.pop('levels', [])
+            
+            if item_id and item_id in existing_items:
+                # Update existing item
+                item = existing_items[item_id]
+                for attr, value in item_data.items():
+                    setattr(item, attr, value)
+                item.save()
+            else:
+                # Create new item
+                item = GradingRubricItem.objects.create(rubric=instance, **item_data)
+
+            # 5. Update or Create Levels for this Item
+            self._update_levels(item, levels_data)
         
         return instance
+
+    def _update_levels(self, item, levels_data):
+        existing_levels = {level.id: level for level in item.levels.all()}
+        
+        # 1. Identify IDs present
+        payload_ids = set()
+        for level_data in levels_data:
+            if level_data.get('id'):
+                payload_ids.add(level_data.get('id'))
+        
+        # 2. Delete missing
+        for level_id, level in existing_levels.items():
+            if level_id not in payload_ids:
+                level.delete()
+        
+        # 3. Shift orders
+        remaining_levels = item.levels.all()
+        for level in remaining_levels:
+            level.order += 10000
+            level.save()
+            
+        existing_levels = {level.id: level for level in item.levels.all()}
+
+        # 4. Update/Create
+        for level_data in levels_data:
+            level_id = level_data.get('id')
+            
+            if level_id and level_id in existing_levels:
+                # Update existing level
+                level = existing_levels[level_id]
+                for attr, value in level_data.items():
+                    setattr(level, attr, value)
+                level.save()
+            else:
+                # Create new level
+                level = GradingRubricItemLevel.objects.create(rubric_item=item, **level_data)
 
 
 class QuizSlotProblemSerializer(serializers.ModelSerializer):
