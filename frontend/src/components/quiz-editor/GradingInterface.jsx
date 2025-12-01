@@ -71,17 +71,12 @@ const GradingInterface = ({ quizId }) => {
             ]);
             setAttempts(attemptsRes.data);
             setRubric(rubricRes.data);
-
-            // Load grades for selected attempt if any
-            if (selectedAttemptId) {
-                // In a real app we might fetch grades here or rely on attempt data if it includes grades
-            }
         } catch (err) {
             console.error('Failed to load grading data', err);
         } finally {
             setIsLoading(false);
         }
-    }, [quizId, selectedAttemptId]);
+    }, [quizId]);
 
     useEffect(() => {
         loadData();
@@ -97,8 +92,26 @@ const GradingInterface = ({ quizId }) => {
                 `/api/quizzes/${quizId}/attempts/${selectedAttemptId}/slots/${slotId}/grade/`,
                 gradeData
             );
-            // Refresh data to show updated status
-            loadData();
+
+            setAttempts(prevAttempts => prevAttempts.map(attempt => {
+                if (attempt.id !== selectedAttemptId) return attempt;
+
+                return {
+                    ...attempt,
+                    attempt_slots: attempt.attempt_slots.map(slot => {
+                        if (slot.slot === slotId) {
+                            return {
+                                ...slot,
+                                grade: {
+                                    ...slot.grade,
+                                    ...gradeData
+                                }
+                            };
+                        }
+                        return slot;
+                    })
+                };
+            }));
         } catch (err) {
             console.error('Failed to save grade', err);
         } finally {
