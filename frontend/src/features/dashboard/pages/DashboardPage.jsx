@@ -46,14 +46,6 @@ const DashboardPage = () => {
     <AppShell
       title="Dashboard"
       description="Monitor your quizzes and track student activity"
-      actions={
-        <>
-          <Button variant="outline" to="/problem-banks">
-            Problem Banks
-          </Button>
-          <Button to="/quizzes/new">New Quiz</Button>
-        </>
-      }
     >
       <div className="space-y-6">
         {error && <p className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">{error}</p>}

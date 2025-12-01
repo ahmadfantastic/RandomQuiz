@@ -1103,18 +1103,6 @@ const QuizEditorPage = () => {
     <AppShell
       title={quiz ? quiz.title : 'Quiz Workspace'}
       description="Configure quiz settings, manage problem slots, and review student responses."
-      actions={
-        <>
-          <Button variant="outline" to="/dashboard">
-            Dashboard
-          </Button>
-          {quiz && (
-            <Button to={quizLink} target="_blank" rel="noreferrer">
-              Preview
-            </Button>
-          )}
-        </>
-      }
     >
       {isLoadingQuiz ? (
         <div className="space-y-6">
@@ -1189,12 +1177,14 @@ const QuizEditorPage = () => {
           </div>
         </div>
       ) : !quiz ? (
-        <Card className="border-destructive/30 bg-destructive/5">
-          <CardContent className="py-8 text-center text-destructive">
-            <p className="text-lg font-semibold">Quiz not found</p>
-            <p className="text-sm">This quiz may have been deleted or you don't have access.</p>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardContent className="py-8 text-center text-destructive">
+              <p className="text-lg font-semibold">Quiz not found</p>
+              <p className="text-sm">This quiz may have been deleted or you don't have access.</p>
+            </CardContent>
+          </Card>
+        </div>
       ) : (
         <div className="space-y-6">
           {pageError && (

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, Edit, User } from 'lucide-react';
+import { Check, Edit, User, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 
+import AttemptTimelineModal from './AttemptTimelineModal';
 import RubricEditorModal from './RubricEditorModal';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -58,6 +59,7 @@ const GradingInterface = ({ quizId }) => {
     const [selectedAttemptId, setSelectedAttemptId] = useState(null);
     const [rubric, setRubric] = useState(null);
     const [isRubricModalOpen, setIsRubricModalOpen] = useState(false);
+    const [isTimelineOpen, setIsTimelineOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [grades, setGrades] = useState({}); // Map of attemptId -> slotId -> grade
     const [isSaving, setIsSaving] = useState(false);
@@ -212,12 +214,22 @@ const GradingInterface = ({ quizId }) => {
             <div className="flex-1 overflow-y-auto pr-2 order-2 md:order-1">
                 {selectedAttempt ? (
                     <div className="space-y-8">
-                        <div className="flex justify-between items-start">
-                            <div>
+                        <div className="flex flex-col gap-1 w-full">
+                            <div className="flex items-center justify-between w-full">
                                 <h2 className="text-2xl font-bold">{selectedAttempt.student_identifier}</h2>
-                                <p className="text-muted-foreground">
-                                    Started: {new Date(selectedAttempt.started_at).toLocaleString()}
-                                </p>
+                                <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
+                                    <History className="h-4 w-4 mr-2" />
+                                    Timeline
+                                </Button>
+                            </div>
+                            <div className="text-muted-foreground text-sm">
+                                <span>Started: {new Date(selectedAttempt.started_at).toLocaleString()}</span>
+                                {selectedAttempt.completed_at && (
+                                    <>
+                                        <span className="mx-2">•</span>
+                                        <span>Completed: {new Date(selectedAttempt.completed_at).toLocaleString()}</span>
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -354,6 +366,14 @@ const GradingInterface = ({ quizId }) => {
                 onOpenChange={setIsRubricModalOpen}
                 quizId={quizId}
                 onSaveSuccess={loadData}
+            />
+
+            <AttemptTimelineModal
+                open={isTimelineOpen}
+                onOpenChange={setIsTimelineOpen}
+                attempt={selectedAttempt}
+                quizId={quizId}
+                ratingRange={{ min: null, max: null }}
             />
         </div >
     );

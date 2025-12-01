@@ -286,7 +286,6 @@ const QuizzesPage = () => {
       <AppShell
         title="Quizzes"
         description="Browse every quiz so you can jump straight into editing or publishing."
-        actions={<Button onClick={openCreateModal}>New quiz</Button>}
       >
         <div className="space-y-6">
           {error && (
