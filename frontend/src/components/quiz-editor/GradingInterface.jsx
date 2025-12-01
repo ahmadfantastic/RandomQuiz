@@ -88,34 +88,43 @@ const GradingInterface = ({ quizId }) => {
 
     const handleGradeSave = async (slotId, gradeData) => {
         if (!selectedAttemptId) return;
+
+        // Optimistic update
+        const previousAttempts = [...attempts];
+
+        // Update local state immediately
+        setAttempts(prevAttempts => prevAttempts.map(attempt => {
+            if (attempt.id !== selectedAttemptId) return attempt;
+
+            return {
+                ...attempt,
+                attempt_slots: attempt.attempt_slots.map(slot => {
+                    if (slot.slot === slotId) {
+                        return {
+                            ...slot,
+                            grade: {
+                                ...slot.grade,
+                                ...gradeData
+                            }
+                        };
+                    }
+                    return slot;
+                })
+            };
+        }));
+
         setIsSaving(true);
         try {
             await api.put(
                 `/api/quizzes/${quizId}/attempts/${selectedAttemptId}/slots/${slotId}/grade/`,
                 gradeData
             );
-
-            setAttempts(prevAttempts => prevAttempts.map(attempt => {
-                if (attempt.id !== selectedAttemptId) return attempt;
-
-                return {
-                    ...attempt,
-                    attempt_slots: attempt.attempt_slots.map(slot => {
-                        if (slot.slot === slotId) {
-                            return {
-                                ...slot,
-                                grade: {
-                                    ...slot.grade,
-                                    ...gradeData
-                                }
-                            };
-                        }
-                        return slot;
-                    })
-                };
-            }));
+            // No need to update state on success as we already did it optimistically
         } catch (err) {
             console.error('Failed to save grade', err);
+            // Revert to previous state on error
+            setAttempts(previousAttempts);
+            // Optional: Add a toast notification here if available
         } finally {
             setIsSaving(false);
         }
@@ -244,7 +253,7 @@ const GradingInterface = ({ quizId }) => {
                                     {/* Problem & Answer */}
                                     <div className="grid gap-6 md:grid-cols-2">
                                         <div className="space-y-2">
-                                            <Label className="text-muted-foreground uppercase text-xs font-bold">Problem {slot.problem_display_label}</Label>
+                                            <Label className="text-muted-foreground uppercase text-xs font-bold">{slot.problem_display_label}</Label>
                                             <div className="p-3 bg-muted/20 rounded-md text-sm prose max-w-none">
                                                 <div dangerouslySetInnerHTML={{ __html: renderProblemMarkupHtml(slot.problem_statement) }} />
                                             </div>
