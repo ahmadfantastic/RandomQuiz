@@ -13,6 +13,7 @@ const QuizResponsesTab = ({
   loadAttempts,
   openAttemptModal,
   requestAttemptDeletion,
+  onAddResponse,
 }) => {
   const { quizId } = useParams();
 
@@ -26,6 +27,9 @@ const QuizResponsesTab = ({
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={onAddResponse}>
+            Add Response
+          </Button>
           <Button variant="outline" asChild>
             <Link to={`/quizzes/${quizId}/analytics`}>Analytics</Link>
           </Button>

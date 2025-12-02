@@ -34,6 +34,7 @@ from .views import (
     DashboardStatsView,
     QuizAnalyticsView,
     QuizSlotProblemStudentsView,
+    ManualResponseView,
 )
 
 router = DefaultRouter()
@@ -64,6 +65,7 @@ urlpatterns = [
         QuizSlotProblemStudentsView.as_view(),
         name='quiz-slot-problem-students',
     ),
+    path('quizzes/<int:quiz_id>/manual-response/', ManualResponseView.as_view(), name='quiz-manual-response'),
     path('quizzes/<int:quiz_id>/attempts/', QuizAttemptList.as_view(), name='quiz-attempts'),
     path(
         'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/',

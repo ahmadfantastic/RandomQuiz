@@ -23,6 +23,7 @@ import RubricCriteriaModal from '@/components/quiz-editor/RubricCriteriaModal';
 import RubricScaleModal from '@/components/quiz-editor/RubricScaleModal';
 import GradingInterface from '@/components/quiz-editor/GradingInterface';
 import QuizPrintModal from '@/components/quiz-editor/QuizPrintModal';
+import ManualResponseModal from '@/components/quiz-editor/ManualResponseModal';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import useProblemStatements from '@/lib/useProblemStatements';
@@ -165,7 +166,10 @@ const QuizEditorPage = () => {
   const [rubricSaveSuccess, setRubricSaveSuccess] = useState('');
   const [isRubricCriteriaOpen, setIsRubricCriteriaOpen] = useState(false);
   const [isRubricScaleOpen, setIsRubricScaleOpen] = useState(false);
+
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isManualResponseModalOpen, setIsManualResponseModalOpen] = useState(false);
+  const [isManualResponseSaving, setIsManualResponseSaving] = useState(false);
   const pendingBankRequests = useRef(new Set());
   const ratingCriteria = useMemo(() => {
     return Array.isArray(rubric?.criteria) ? rubric.criteria : [];
@@ -531,6 +535,22 @@ const QuizEditorPage = () => {
     } catch (error) {
       const detail = error.response?.data?.detail || 'Unable to remove instructor.';
       setInstructorError(detail);
+    }
+  };
+
+
+
+  const handleManualResponseSave = async (data) => {
+    setIsManualResponseSaving(true);
+    try {
+      await api.post(`/api/quizzes/${quizId}/manual-response/`, data);
+      setIsManualResponseModalOpen(false);
+      loadAttempts();
+    } catch (error) {
+      console.error(error);
+      alert('Failed to save response: ' + (error.response?.data?.detail || 'Unknown error'));
+    } finally {
+      setIsManualResponseSaving(false);
     }
   };
 
@@ -1281,6 +1301,7 @@ const QuizEditorPage = () => {
                 loadAttempts={loadAttempts}
                 openAttemptModal={openAttemptModal}
                 requestAttemptDeletion={requestAttemptDeletion}
+                onAddResponse={() => setIsManualResponseModalOpen(true)}
               />
             )}
 
@@ -1686,6 +1707,15 @@ const QuizEditorPage = () => {
           </div>
         </div>
       )}
+      <ManualResponseModal
+        isOpen={isManualResponseModalOpen}
+        onClose={() => setIsManualResponseModalOpen(false)}
+        slots={slots}
+        slotProblemOptions={slotProblemOptions}
+        rubric={rubric}
+        onSave={handleManualResponseSave}
+        isSaving={isManualResponseSaving}
+      />
     </AppShell>
   );
 };
