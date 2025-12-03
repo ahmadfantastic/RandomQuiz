@@ -973,73 +973,101 @@ const QuizEditorPage = () => {
         {isSelectingAllProblems ? 'Selecting…' : 'Select all'}
       </Button>
     ) : null;
+    const groupedProblems = {};
+    groupedProblems[''] = [];
+    problems.forEach((p) => {
+      const g = p.group || '';
+      if (!groupedProblems[g]) groupedProblems[g] = [];
+      groupedProblems[g].push(p);
+    });
+
+    const sortedGroups = Object.entries(groupedProblems).sort((a, b) => {
+      if (a[0] === '') return -1;
+      if (b[0] === '') return 1;
+      return a[0].localeCompare(b[0]);
+    });
+
     return (
-      <div className="space-y-3">
+      <div className="space-y-6">
         {renderHeader(selectAllAction)}
         {disableChanges && (
           <p className="text-sm text-muted-foreground">Save this slot to confirm the bank before selecting problems.</p>
         )}
-        {problems.map((problem, index) => {
-          const linked = slot.slot_problems.find((sp) => sp.problem === problem.id);
-          const displayIndex = problem.order_in_bank ?? index + 1;
-          const displayLabel = `Problem ${displayIndex}`;
-          const expandedIds = new Set(expandedSlotProblems[slot.id] ?? []);
-          const isExpanded = expandedIds.has(problem.id);
-          const entry = slotProblemStatements[problem.id];
-          const hasStatementEntry = entry && 'statement' in entry;
-          const rawStatement = hasStatementEntry ? entry.statement : '';
-          const statementText = rawStatement?.trim();
-          const statementMarkupHtml = statementText ? renderProblemMarkupHtml(rawStatement) : '';
-          const isStatementLoading = !entry || Boolean(entry.loading);
-          const statementError = entry?.error;
+        {sortedGroups.map(([groupName, groupProblems]) => {
+          if (groupProblems.length === 0) return null;
           return (
-            <div key={problem.id} className="space-y-2 rounded-lg border border-muted/40 bg-background/60 p-3">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={Boolean(linked)}
-                  className={cn(
-                    'flex h-6 w-6 items-center justify-center rounded-md border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                    linked
-                      ? 'border-primary/70 bg-primary text-background'
-                      : 'border-border bg-transparent text-muted-foreground',
-                    disableChanges && 'pointer-events-none opacity-50'
-                  )}
-                  onClick={() => toggleSlotProblem(slot, problem)}
-                  disabled={disableChanges}
-                >
-                  {linked && <Check className="h-3 w-3" />}
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 text-left text-sm font-semibold text-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  onClick={() => toggleProblemDetails(slot.id, problem.id)}
-                  aria-expanded={isExpanded}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span>{displayLabel}</span>
-                    <span className="text-xs text-muted-foreground">{isExpanded ? 'Hide details' : 'Show details'}</span>
-                  </div>
-                </button>
-              </div>
-              {isExpanded && (
-                <div className="rounded-md border border-muted/30 bg-muted/10 p-3 text-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Description</p>
-                  {isStatementLoading ? (
-                    <p className="mt-2 text-sm text-muted-foreground">Loading problem markup…</p>
-                  ) : statementError ? (
-                    <p className="mt-2 text-sm text-destructive">{statementError}</p>
-                  ) : statementMarkupHtml ? (
-                    <div
-                      className="mt-2 text-sm text-foreground markup-content"
-                      dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
-                    />
-                  ) : (
-                    <p className="mt-2 text-sm text-muted-foreground">No description provided.</p>
-                  )}
-                </div>
+            <div key={groupName || 'ungrouped'} className="space-y-3">
+              {groupName && (
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-1">
+                  {groupName}
+                </h4>
               )}
+              <div className="space-y-2">
+                {groupProblems.map((problem, index) => {
+                  const linked = slot.slot_problems.find((sp) => sp.problem === problem.id);
+                  const displayIndex = problem.order_in_bank ?? index + 1;
+                  const displayLabel = `Problem ${displayIndex}`;
+                  const expandedIds = new Set(expandedSlotProblems[slot.id] ?? []);
+                  const isExpanded = expandedIds.has(problem.id);
+                  const entry = slotProblemStatements[problem.id];
+                  const hasStatementEntry = entry && 'statement' in entry;
+                  const rawStatement = hasStatementEntry ? entry.statement : '';
+                  const statementText = rawStatement?.trim();
+                  const statementMarkupHtml = statementText ? renderProblemMarkupHtml(rawStatement) : '';
+                  const isStatementLoading = !entry || Boolean(entry.loading);
+                  const statementError = entry?.error;
+                  return (
+                    <div key={problem.id} className="space-y-2 rounded-lg border border-muted/40 bg-background/60 p-3">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={Boolean(linked)}
+                          className={cn(
+                            'flex h-6 w-6 items-center justify-center rounded-md border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                            linked
+                              ? 'border-primary/70 bg-primary text-background'
+                              : 'border-border bg-transparent text-muted-foreground',
+                            disableChanges && 'pointer-events-none opacity-50'
+                          )}
+                          onClick={() => toggleSlotProblem(slot, problem)}
+                          disabled={disableChanges}
+                        >
+                          {linked && <Check className="h-3 w-3" />}
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 text-left text-sm font-semibold text-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          onClick={() => toggleProblemDetails(slot.id, problem.id)}
+                          aria-expanded={isExpanded}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span>{displayLabel}</span>
+                            <span className="text-xs text-muted-foreground">{isExpanded ? 'Hide details' : 'Show details'}</span>
+                          </div>
+                        </button>
+                      </div>
+                      {isExpanded && (
+                        <div className="rounded-md border border-muted/30 bg-muted/10 p-3 text-sm">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Description</p>
+                          {isStatementLoading ? (
+                            <p className="mt-2 text-sm text-muted-foreground">Loading problem markup…</p>
+                          ) : statementError ? (
+                            <p className="mt-2 text-sm text-destructive">{statementError}</p>
+                          ) : statementMarkupHtml ? (
+                            <div
+                              className="mt-2 text-sm text-foreground markup-content"
+                              dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
+                            />
+                          ) : (
+                            <p className="mt-2 text-sm text-muted-foreground">No description provided.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           );
         })}

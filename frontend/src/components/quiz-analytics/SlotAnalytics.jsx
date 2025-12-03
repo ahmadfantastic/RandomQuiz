@@ -53,11 +53,94 @@ const WordCountChart = ({ data }) => {
 
 import RatingChart from './RatingChart';
 
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const RatingAnalysis = ({ title, data, groupedData }) => {
+    const { headers, rows } = useMemo(() => {
+        if (groupedData) {
+            // Pivoted table for Group Comparison
+            // Headers: Criterion | Group A | Group B ...
+            const groups = groupedData.map(g => g.group);
+            const headers = ['Criterion', ...groups];
 
+            // Rows: Criterion Name | Avg A | Avg B ...
+            // Assume all groups have same criteria (or handle missing)
+            const criteriaNames = groupedData[0]?.data?.criteria?.map(c => c.name) || [];
 
+            const rows = criteriaNames.map(cName => {
+                const row = { name: cName, values: [] };
+                groups.forEach((gName, idx) => {
+                    const gData = groupedData[idx];
+                    const criterion = gData.data.criteria.find(c => c.name === cName);
+                    if (criterion) {
+                        let totalScore = 0;
+                        let totalCount = 0;
+                        criterion.distribution.forEach(d => {
+                            totalScore += d.value * d.count;
+                            totalCount += d.count;
+                        });
+                        row.values.push(totalCount > 0 ? (totalScore / totalCount).toFixed(2) : '—');
+                    } else {
+                        row.values.push('—');
+                    }
+                });
+                return row;
+            });
+            return { headers, rows };
+        } else {
+            // Standard table for Overall
+            if (!data?.criteria) return { headers: [], rows: [] };
+            const headers = ['Criterion', 'Average'];
+            const rows = data.criteria.map(c => {
+                let totalScore = 0;
+                let totalCount = 0;
+                c.distribution.forEach(d => {
+                    totalScore += d.value * d.count;
+                    totalCount += d.count;
+                });
+                return {
+                    name: c.name,
+                    values: [totalCount > 0 ? (totalScore / totalCount).toFixed(2) : 'N/A']
+                };
+            });
+            return { headers, rows };
+        }
+    }, [data, groupedData]);
 
-
+    return (
+        <div className="space-y-4">
+            <h4 className="text-sm font-semibold">{title}</h4>
+            <div className="flex flex-col lg:flex-row gap-6">
+                <div className="w-full lg:w-1/3 shrink-0">
+                    <div className="rounded-md border">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    {headers.map((h, i) => (
+                                        <TableHead key={i} className={i > 0 ? "text-right" : ""}>{h}</TableHead>
+                                    ))}
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {rows.map((row, idx) => (
+                                    <TableRow key={idx}>
+                                        <TableCell className="font-medium">{row.name}</TableCell>
+                                        {row.values.map((v, i) => (
+                                            <TableCell key={i} className="text-right">{v}</TableCell>
+                                        ))}
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </div>
+                <div className="w-full lg:w-2/3 min-h-[300px]">
+                    <RatingChart data={data} dense={!!groupedData} />
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const SlotAnalytics = ({ slots }) => {
     const [selectedProblem, setSelectedProblem] = React.useState(null);
@@ -83,7 +166,42 @@ const SlotAnalytics = ({ slots }) => {
                                 {slot.response_type === 'open_text' ? (
                                     <WordCountChart data={slot.data} />
                                 ) : (
-                                    <RatingChart data={slot.data} />
+                                    <div className="space-y-12">
+                                        <RatingAnalysis title="Overall" data={slot.data} />
+
+                                        {slot.data.grouped_data && slot.data.grouped_data.length > 0 && (
+                                            <RatingAnalysis
+                                                title="Group Comparison"
+                                                groupedData={slot.data.grouped_data}
+                                                data={(() => {
+                                                    const combined = [];
+                                                    const criteria = slot.data.criteria || [];
+
+                                                    criteria.forEach((c, idx) => {
+                                                        if (idx > 0) {
+                                                            // Add separator
+                                                            combined.push({
+                                                                name: `__sep__${idx}`,
+                                                                distribution: []
+                                                            });
+                                                        }
+                                                        // Add Groups
+                                                        slot.data.grouped_data.forEach(g => {
+                                                            const gc = g.data.criteria.find(item => item.name === c.name);
+                                                            if (gc) {
+                                                                combined.push({
+                                                                    ...gc,
+                                                                    name: `${c.name} (${g.group})`
+                                                                });
+                                                            }
+                                                        });
+                                                    });
+
+                                                    return { criteria: combined };
+                                                })()}
+                                            />
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             {slot.problem_distribution && slot.problem_distribution.length > 0 && (

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
 
-const RatingChart = ({ data }) => {
+const RatingChart = ({ data, dense = false }) => {
     const criteria = data?.criteria;
 
     // Fallback for empty data
@@ -147,10 +147,11 @@ const RatingChart = ({ data }) => {
             });
         }
 
-        const calcHeight = Math.max(150, criteria.length * 60 + 60);
+        const rowHeight = dense ? 30 : 60;
+        const calcHeight = Math.max(150, criteria.length * rowHeight + 60);
 
         return { processedData: chartData, bars: barConfigs, height: calcHeight, domain: finalDomain, levels, levelColorMap };
-    }, [criteria]);
+    }, [criteria, dense]);
 
     const CustomTooltip = ({ active, payload, label }) => {
         if (!active || !payload || !payload.length) return null;
@@ -213,6 +214,16 @@ const RatingChart = ({ data }) => {
         );
     };
 
+    const ticks = useMemo(() => {
+        if (!domain) return [];
+        const [min, max] = domain;
+        const t = [];
+        for (let i = min; i <= max; i += 10) {
+            t.push(i);
+        }
+        return t;
+    }, [domain]);
+
     return (
         <div style={{ height: height, width: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -228,12 +239,26 @@ const RatingChart = ({ data }) => {
                         domain={domain}
                         hide={false}
                         tick={{ fontSize: 10 }}
+                        ticks={ticks}
                     />
                     <YAxis
                         type="category"
                         dataKey="name"
-                        width={100}
-                        tick={{ fontSize: 11, width: 90 }}
+                        width={150}
+                        tick={({ x, y, payload }) => {
+                            if (payload.value.startsWith('__sep__')) {
+                                return (
+                                    <g transform={`translate(${x},${y})`}>
+                                        <line x1="0" y1="0" x2="100%" y2="0" stroke="#e5e7eb" strokeWidth="1" />
+                                    </g>
+                                );
+                            }
+                            return (
+                                <text x={x} y={y} dy={4} textAnchor="end" fill="#666" fontSize={11} width={140}>
+                                    {payload.value.length > 25 ? `${payload.value.substring(0, 25)}...` : payload.value}
+                                </text>
+                            );
+                        }}
                         interval={0}
                     />
                     <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />

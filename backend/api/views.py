@@ -1453,6 +1453,7 @@ class QuizAnalyticsView(APIView):
             'slot_id',
             'assigned_problem__order_in_bank',
             'assigned_problem__id',
+            'assigned_problem__group',
             'answer_data',
             'attempt__started_at',
             'attempt__completed_at',
@@ -1534,10 +1535,15 @@ class QuizAnalyticsView(APIView):
             # Problem distribution
             prob_stats = {}
             prob_order = {}  # Track order_in_bank for each problem
+            group_stats = {} # group_name -> { criterion_id -> { value -> count } }
             
             for sa in filtered_slot_attempts:
                 order = sa['assigned_problem__order_in_bank']
                 label = f"Problem {order}"
+                group_name = sa.get('assigned_problem__group') or 'Ungrouped'
+                
+                if group_name not in group_stats:
+                    group_stats[group_name] = {}
                 
                 if label not in prob_stats:
                     prob_stats[label] = {
@@ -1595,7 +1601,15 @@ class QuizAnalyticsView(APIView):
                         if c_id not in stats['criteria_scores']:
                             stats['criteria_scores'][c_id] = {'total': 0, 'count': 0}
                         stats['criteria_scores'][c_id]['total'] += val
+                        stats['criteria_scores'][c_id]['total'] += val
                         stats['criteria_scores'][c_id]['count'] += 1
+
+                        # Group aggregation
+                        if c_id not in group_stats[group_name]:
+                            group_stats[group_name][c_id] = {}
+                        if val not in group_stats[group_name][c_id]:
+                            group_stats[group_name][c_id][val] = 0
+                        group_stats[group_name][c_id][val] += 1
 
             prob_dist_list = []
             for label, stats in prob_stats.items():
@@ -1719,9 +1733,44 @@ class QuizAnalyticsView(APIView):
                         'distribution': dist_data,
                         'total': total_responses
                     })
+                
+                # Format group stats
+                grouped_charts_data = []
+                sorted_group_names = sorted(group_stats.keys())
+                for group_name in sorted_group_names:
+                    g_counts = group_stats[group_name]
+                    g_criteria_data = []
+                    for criterion in criteria:
+                        c_id = criterion['id']
+                        c_name = criterion['name']
+                        c_counts = g_counts.get(c_id, {})
+                        
+                        dist_data = []
+                        total_c = sum(c_counts.values())
+                        
+                        for s_opt in scale:
+                            val = s_opt['value']
+                            count = c_counts.get(val, 0)
+                            percentage = (count / total_c * 100) if total_c > 0 else 0
+                            dist_data.append({
+                                'label': s_opt['label'],
+                                'value': val,
+                                'count': count,
+                                'percentage': percentage
+                            })
+                        g_criteria_data.append({
+                            'name': c_name,
+                            'distribution': dist_data
+                        })
+                    grouped_charts_data.append({
+                        'group': group_name,
+                        'data': {'criteria': g_criteria_data}
+                    })
 
-                slot_data['criteria_distributions'] = criteria_stats
-                slot_data['data'] = {'criteria': criteria_stats}
+                slot_data['data'] = {
+                    'criteria': criteria_stats,
+                    'grouped_data': grouped_charts_data
+                }
 
             slots_data.append(slot_data)
 
