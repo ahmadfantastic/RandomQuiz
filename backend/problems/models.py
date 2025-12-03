@@ -14,6 +14,7 @@ class ProblemBank(models.Model):
 class Problem(models.Model):
     problem_bank = models.ForeignKey(ProblemBank, on_delete=models.CASCADE, related_name='problems')
     order_in_bank = models.IntegerField()
+    group = models.CharField(max_length=255, blank=True, null=True)
     statement = models.TextField()
 
     class Meta:

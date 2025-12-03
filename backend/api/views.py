@@ -1381,7 +1381,8 @@ class QuizAnalyticsView(APIView):
         for attempt in attempts:
             if attempt.started_at and attempt.completed_at:
                 diff = (attempt.completed_at - attempt.started_at).total_seconds()
-                durations.append(diff / 60.0) # minutes
+                if diff > 0:
+                    durations.append(diff / 60.0) # minutes
 
         time_stats = {
             'min': min(durations) if durations else 0,
@@ -1548,6 +1549,7 @@ class QuizAnalyticsView(APIView):
                         'times_count': 0, # Denominator for time avg (only completed attempts)
                         'words_count': 0, # Denominator for word avg (only text answers)
                         'criteria_scores': {}, # criterion_id -> {total, count}
+                        'rating_counts': {}, # criterion_id -> {value -> count}
                         'problem_id': sa['assigned_problem__id']
                     }
                 
@@ -1579,6 +1581,22 @@ class QuizAnalyticsView(APIView):
                         stats['criteria_scores'][c_id]['total'] += score
                         stats['criteria_scores'][c_id]['count'] += 1
 
+                # Rating distribution
+                if sa['answer_data'] and 'ratings' in sa['answer_data']:
+                    ratings = sa['answer_data']['ratings']
+                    for c_id, val in ratings.items():
+                        if c_id not in stats['rating_counts']:
+                            stats['rating_counts'][c_id] = {}
+                        if val not in stats['rating_counts'][c_id]:
+                            stats['rating_counts'][c_id][val] = 0
+                        stats['rating_counts'][c_id][val] += 1
+
+                        # Aggregate for average calculation
+                        if c_id not in stats['criteria_scores']:
+                            stats['criteria_scores'][c_id] = {'total': 0, 'count': 0}
+                        stats['criteria_scores'][c_id]['total'] += val
+                        stats['criteria_scores'][c_id]['count'] += 1
+
             prob_dist_list = []
             for label, stats in prob_stats.items():
                 avg_criteria = {}
@@ -1592,8 +1610,41 @@ class QuizAnalyticsView(APIView):
                     'avg_score': stats['total_score'] / stats['scores_count'] if stats['scores_count'] > 0 else 0,
                     'avg_time': stats['total_time'] / stats['times_count'] if stats['times_count'] > 0 else 0,
                     'avg_words': stats['total_words'] / stats['words_count'] if stats['words_count'] > 0 else 0,
-                    'avg_criteria_scores': avg_criteria
+                    'avg_words': stats['total_words'] / stats['words_count'] if stats['words_count'] > 0 else 0,
+                    'avg_criteria_scores': avg_criteria,
+                    'criteria_distributions': []
                 })
+                
+                # Format rating distribution for this problem
+                if stats['rating_counts']:
+                    c_dists = []
+                    for criterion in criteria:
+                        c_id = criterion['id']
+                        c_name = criterion['name']
+                        
+                        counts = stats['rating_counts'].get(c_id, {})
+                        # Ensure all scale values are present
+                        dist_data = []
+                        total_responses = sum(counts.values())
+                        
+                        for val in scale_values:
+                            count = counts.get(val, 0)
+                            percentage = (count / total_responses * 100) if total_responses > 0 else 0
+                            label = next((s['label'] for s in scale if s['value'] == val), str(val))
+                            dist_data.append({
+                                'value': val,
+                                'label': label,
+                                'count': count,
+                                'percentage': percentage
+                            })
+                            
+                        c_dists.append({
+                            'criterion_id': c_id,
+                            'name': c_name,
+                            'distribution': dist_data,
+                            'total': total_responses
+                        })
+                    prob_dist_list[-1]['criteria_distributions'] = c_dists
 
             # Sort by order in bank
             prob_dist_list.sort(key=lambda x: prob_order.get(x['label'], 0))
@@ -1613,8 +1664,9 @@ class QuizAnalyticsView(APIView):
                     if answer_data and 'text' in answer_data:
                         text = answer_data['text']
                         count = len(text.split())
-                        word_counts.append(count)
-                        all_word_counts.append(count)
+                        if count > 0:
+                            word_counts.append(count)
+                            all_word_counts.append(count)
                 
                 slot_data['data'] = {
                     'min': min(word_counts) if word_counts else 0,
@@ -1789,6 +1841,11 @@ class QuizSlotProblemStudentsView(APIView):
             if target_slot_attempt.answer_data and 'text' in target_slot_attempt.answer_data:
                 word_count = len(target_slot_attempt.answer_data['text'].split())
 
+            # Ratings
+            ratings = {}
+            if target_slot_attempt.answer_data and 'ratings' in target_slot_attempt.answer_data:
+                ratings = target_slot_attempt.answer_data['ratings']
+
             students_data.append({
                 'student_identifier': attempt.student_identifier,
                 'attempt_id': attempt.id,
@@ -1796,6 +1853,7 @@ class QuizSlotProblemStudentsView(APIView):
                 'criteria_scores': grade_info['items'],
                 'time_taken': duration,
                 'word_count': word_count,
+                'ratings': ratings,
             })
 
         return Response(students_data)

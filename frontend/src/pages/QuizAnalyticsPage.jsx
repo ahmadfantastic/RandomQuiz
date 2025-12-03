@@ -91,16 +91,20 @@ const QuizAnalyticsPage = () => {
                     word_count_stats={data.word_count_stats}
                 />
 
-                <div className="grid gap-8">
-                    <TimeDistributionChart timeStats={data.time_distribution} />
-                </div>
+                {data.time_distribution && data.time_distribution.raw_values && data.time_distribution.raw_values.length > 0 && (
+                    <div className="grid gap-8">
+                        <TimeDistributionChart timeStats={data.time_distribution} />
+                    </div>
+                )}
 
                 <div>
                     <h2 className="text-xl font-semibold mb-4">Slot Analysis</h2>
                     <SlotAnalytics slots={data.slots} />
                 </div>
 
-                <AllSlotInteractions slots={data.slots} />
+                {data.slots && data.slots.some(s => s.interactions && s.interactions.length > 0) && (
+                    <AllSlotInteractions slots={data.slots} />
+                )}
             </div>
         </AppShell>
     );

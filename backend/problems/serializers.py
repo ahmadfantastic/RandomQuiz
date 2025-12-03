@@ -10,7 +10,7 @@ class ProblemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Problem
-        fields = ['id', 'problem_bank', 'order_in_bank', 'statement', 'display_label']
+        fields = ['id', 'problem_bank', 'order_in_bank', 'group', 'statement', 'display_label']
         extra_kwargs = {
             'order_in_bank': {'required': False, 'allow_null': True},
             'problem_bank': {'read_only': True},
@@ -23,7 +23,7 @@ class ProblemSummarySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Problem
-        fields = ['id', 'problem_bank', 'order_in_bank', 'display_label']
+        fields = ['id', 'problem_bank', 'order_in_bank', 'group', 'display_label']
 
 
 class ProblemBankSerializer(serializers.ModelSerializer):

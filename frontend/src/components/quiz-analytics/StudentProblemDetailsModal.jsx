@@ -11,6 +11,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useParams } from 'react-router-dom';
+import RatingChart from './RatingChart';
 
 const StudentProblemDetailsModal = ({ isOpen, onClose, slotId, problem }) => {
     const { quizId } = useParams();
@@ -40,6 +41,8 @@ const StudentProblemDetailsModal = ({ isOpen, onClose, slotId, problem }) => {
         fetchStudents();
     }, [isOpen, problem, quizId, slotId]);
 
+    const showTimeColumn = students.some(s => s.time_taken > 0);
+
     return (
         <Modal
             open={isOpen}
@@ -54,36 +57,57 @@ const StudentProblemDetailsModal = ({ isOpen, onClose, slotId, problem }) => {
             ) : error ? (
                 <div className="text-destructive text-center py-4">{error}</div>
             ) : (
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Student</TableHead>
-                            <TableHead className="text-right">Score</TableHead>
-                            <TableHead className="text-right">Time Taken</TableHead>
-                            <TableHead className="text-right">Word Count</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {students.map((student) => (
-                            <TableRow key={student.attempt_id}>
-                                <TableCell className="font-medium">
-                                    {student.student_identifier}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    {student.score}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    {student.time_taken ? `${student.time_taken.toFixed(1)} min` : '-'}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    {student.word_count}
-                                </TableCell>
+                <div className="space-y-6">
+                    {problem && problem.criteria_distributions && problem.criteria_distributions.length > 0 && (
+                        <div className="border rounded-md p-4 bg-muted/20">
+                            <h4 className="text-sm font-semibold mb-4">Rating Distribution</h4>
+                            <RatingChart data={{ criteria: problem.criteria_distributions }} />
+                        </div>
+                    )}
+
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Student</TableHead>
+                                <TableHead className="text-right">Score</TableHead>
+                                {showTimeColumn && <TableHead className="text-right">Time Taken</TableHead>}
+                                <TableHead className="text-right">Word Count</TableHead>
+                                <TableHead className="text-right">Ratings</TableHead>
                             </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+                        </TableHeader>
+                        <TableBody>
+                            {students.map((student) => (
+                                <TableRow key={student.attempt_id}>
+                                    <TableCell className="font-medium">
+                                        {student.student_identifier}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        {student.score}
+                                    </TableCell>
+                                    {showTimeColumn && (
+                                        <TableCell className="text-right">
+                                            {student.time_taken ? `${student.time_taken.toFixed(1)} min` : '-'}
+                                        </TableCell>
+                                    )}
+                                    <TableCell className="text-right">
+                                        {student.word_count}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        <div className="inline-flex items-end gap-1">
+                                            {Object.entries(student.ratings).map(([cId, score]) => (
+                                                <span key={cId} className="text-xs text-muted-foreground">
+                                                    {cId}: {score},
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
             )}
-        </Modal>
+        </Modal >
     );
 };
 

@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -33,13 +34,145 @@ const ProblemListPlaceholder = () => (
   </div>
 );
 
+const ProblemItem = ({
+  problem,
+  isOpen,
+  onToggle,
+  onEdit,
+  onDelete,
+  statementEntry,
+  isDeleting,
+  canEdit,
+}) => {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+    id: `problem-${problem.id}`,
+    data: { problem },
+    disabled: !canEdit,
+  });
+
+  const style = transform
+    ? {
+      transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+      zIndex: 50,
+    }
+    : undefined;
+
+  const label = problem.display_label || `Problem ${problem.id}`;
+  const hasStatementEntry = statementEntry && 'statement' in statementEntry;
+  const rawStatement = hasStatementEntry ? statementEntry.statement : '';
+  const hasStatementText = rawStatement?.trim();
+  const statementMarkupHtml = hasStatementText
+    ? DOMPurify.sanitize(marked.parse(rawStatement))
+    : '';
+  const isLoadingStatement = !statementEntry || Boolean(statementEntry.loading);
+  const statementError = statementEntry?.error;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="rounded-lg border bg-card text-card-foreground shadow-sm"
+    >
+      <div className="flex items-center">
+        {canEdit && (
+          <div
+            {...listeners}
+            {...attributes}
+            className="cursor-grab px-3 py-3 text-muted-foreground hover:text-foreground"
+          >
+            <GripVertical className="h-4 w-4" />
+          </div>
+        )}
+        <button
+          type="button"
+          className="flex-1 flex items-center justify-between px-2 py-3 text-left"
+          onClick={() => onToggle(problem.id)}
+          aria-expanded={isOpen}
+        >
+          <span className="text-sm font-semibold">{label}</span>
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : 'rotate-0'}`}
+          />
+        </button>
+      </div>
+      {isOpen && (
+        <div className="px-4 pb-4 space-y-3 border-t pt-3">
+          {isLoadingStatement ? (
+            <p className="text-sm text-muted-foreground">Loading problem markup…</p>
+          ) : statementError ? (
+            <p className="text-sm text-destructive">{statementError}</p>
+          ) : statementMarkupHtml ? (
+            <div
+              className="prose max-w-none text-sm markup-content"
+              dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">No problem statement provided.</p>
+          )}
+          {canEdit && (
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isLoadingStatement}
+                onClick={() => onEdit(problem.id)}
+              >
+                Edit
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={isLoadingStatement || isDeleting}
+                onClick={() => onDelete(problem.id)}
+              >
+                {isDeleting ? 'Deleting…' : 'Delete'}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ProblemGroup = ({ group, children, canEdit }) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `group-${group || 'ungrouped'}`,
+    data: { group },
+    disabled: !canEdit,
+  });
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pl-1">
+        {group || 'Ungrouped Problems'}
+      </h3>
+      <div
+        ref={setNodeRef}
+        className={cn(
+          'space-y-3 min-h-[50px] rounded-lg border-2 border-dashed p-2 transition-colors',
+          isOver ? 'border-primary/50 bg-primary/5' : 'border-transparent'
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
 const ProblemBankManager = () => {
   const [banks, setBanks] = useState([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedBank, setSelectedBank] = useState(null);
   const [problemStatement, setProblemStatement] = useState('');
+  const [problemGroup, setProblemGroup] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [temporaryGroups, setTemporaryGroups] = useState([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importName, setImportName] = useState('');
   const [importDescription, setImportDescription] = useState('');
@@ -50,6 +183,7 @@ const ProblemBankManager = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProblemId, setEditingProblemId] = useState(null);
   const [editingStatement, setEditingStatement] = useState('');
+  const [editingGroup, setEditingGroup] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
   const editStatementSyncedRef = useRef(false);
@@ -130,6 +264,7 @@ const ProblemBankManager = () => {
       return;
     }
     setEditingStatement(entry.statement ?? '');
+    setEditingGroup(entry.group ?? '');
     editStatementSyncedRef.current = true;
   }, [editingProblemId, problemStatements]);
 
@@ -152,8 +287,10 @@ const ProblemBankManager = () => {
     }
     await api.post(`/api/problem-banks/${selectedBank.id}/problems/`, {
       statement: problemStatement,
+      group: problemGroup.trim() || null,
     });
     setProblemStatement('');
+    setProblemGroup('');
     loadBankDetails(selectedBank.id, selectedBank);
   };
 
@@ -161,6 +298,7 @@ const ProblemBankManager = () => {
     setIsEditModalOpen(false);
     setEditingProblemId(null);
     setEditingStatement('');
+    setEditingGroup('');
     setEditError('');
     editStatementSyncedRef.current = false;
   };
@@ -170,6 +308,7 @@ const ProblemBankManager = () => {
     setIsEditModalOpen(true);
     setEditError('');
     setEditingStatement('');
+    setEditingGroup('');
     editStatementSyncedRef.current = false;
     const entry = problemStatements[problemId];
     const hasStatementLoaded = entry && Object.prototype.hasOwnProperty.call(entry, 'statement');
@@ -184,7 +323,10 @@ const ProblemBankManager = () => {
     setIsSavingEdit(true);
     setEditError('');
     try {
-      await api.patch(`/api/problems/${editingProblemId}/`, { statement: editingStatement });
+      await api.patch(`/api/problems/${editingProblemId}/`, {
+        statement: editingStatement,
+        group: editingGroup.trim() || null,
+      });
       await loadProblemStatement(editingProblemId);
       setOpenProblemId(editingProblemId);
       closeEditModal();
@@ -291,6 +433,49 @@ const ProblemBankManager = () => {
       : 'Pick a bank from the list to review it here.';
   const selectedBankProblems = selectedBank?.problems ?? [];
 
+  const groupedProblems = useMemo(() => {
+    const groups = {};
+    groups[''] = [];
+    selectedBankProblems.forEach((p) => {
+      const g = p.group || '';
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(p);
+    });
+    temporaryGroups.forEach((g) => {
+      if (!groups[g]) groups[g] = [];
+    });
+    return groups;
+  }, [selectedBankProblems, temporaryGroups]);
+
+  const handleAddGroup = (e) => {
+    e.preventDefault();
+    if (!newGroupName.trim()) return;
+    setTemporaryGroups((prev) => [...prev, newGroupName.trim()]);
+    setNewGroupName('');
+    setIsAddGroupModalOpen(false);
+  };
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const problemId = active.data.current?.problem?.id;
+    const targetGroup = over.data.current?.group;
+
+    if (!problemId) return;
+
+    const problem = selectedBankProblems.find((p) => p.id === problemId);
+    if (problem && (problem.group || '') === (targetGroup || '')) return;
+
+    try {
+      await api.patch(`/api/problems/${problemId}/`, { group: targetGroup || null });
+      loadBankDetails(selectedBank.id, selectedBank);
+    } catch (error) {
+      console.error('Failed to move problem', error);
+      setProblemActionError('Failed to move problem to new group.');
+    }
+  };
+
   return (
     <AppShell
       title="Problem banks"
@@ -363,169 +548,155 @@ const ProblemBankManager = () => {
             <CardDescription>{bankCardDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-          {problemActionError && (
-            <p className="text-sm text-destructive">{problemActionError}</p>
-          )}
-          {!selectedBank && isBankDetailsLoading ? (
-            <div className="space-y-4 animate-pulse">
-              <div className="h-4 w-3/4 rounded-full bg-muted/40" />
-              <div className="h-3 w-1/2 rounded-full bg-muted/30" />
-              <div className="space-y-3">
-                {[1, 2, 3].map((placeholder) => (
-                  <div key={placeholder} className="rounded-lg border px-4 py-3">
-                    <div className="h-4 w-1/3 rounded-full bg-muted/40" />
-                    <div className="mt-3 space-y-2">
-                      <div className="h-2 rounded bg-muted/20" />
-                      <div className="h-2 w-3/4 rounded bg-muted/20" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-2 rounded-lg border p-4">
-                <div className="h-4 w-1/3 rounded-full bg-muted/40" />
-                <div className="mt-3 space-y-2">
-                  <div className="h-3 rounded bg-muted/30" />
-                  <div className="h-24 rounded bg-muted/10" />
-                </div>
-                <div className="mt-4 h-10 w-32 rounded-full bg-muted/30" />
-              </div>
-            </div>
-          ) : selectedBank ? (
-            <>
-              {selectedBank.description && (
-                <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                  {selectedBank.description}
-                </div>
-              )}
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">Problems</p>
-                {!canEditSelectedBank && (
-                  <p className="text-xs text-muted-foreground">
-                    This bank is read-only. Only {selectedBankOwnerLabel} can manage its problems.
-                  </p>
-                )}
+            {problemActionError && (
+              <p className="text-sm text-destructive">{problemActionError}</p>
+            )}
+            {!selectedBank && isBankDetailsLoading ? (
+              <div className="space-y-4 animate-pulse">
+                <div className="h-4 w-3/4 rounded-full bg-muted/40" />
+                <div className="h-3 w-1/2 rounded-full bg-muted/30" />
                 <div className="space-y-3">
-                  {isBankDetailsLoading ? (
-                    <ProblemListPlaceholder />
-                  ) : selectedBankProblems.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No problems yet. Add one using the form below.</p>
-                  ) : (
-                    selectedBankProblems.map((problem, idx) => {
-                      const label = problem.display_label || `Problem ${idx + 1}`;
-                      const isOpen = openProblemId === problem.id;
-                      const entry = problemStatements[problem.id];
-                      const hasStatementEntry = entry && 'statement' in entry;
-                      const rawStatement = hasStatementEntry ? entry.statement : '';
-                      const hasStatementText = rawStatement?.trim();
-                      const statementMarkupHtml = hasStatementText
-                        ? DOMPurify.sanitize(marked.parse(rawStatement))
-                        : '';
-                      const isLoadingStatement = !entry || Boolean(entry.loading);
-                      const statementError = entry?.error;
-                      const isDeletingProblem = Boolean(deletingProblems[problem.id]);
-                      return (
-                        <div key={problem.id} className="rounded-lg border">
-                          <button
-                            type="button"
-                            className="w-full flex items-center justify-between px-4 py-3 text-left"
-                            onClick={() => handleProblemToggle(problem.id)}
-                            aria-expanded={isOpen}
-                          >
-                            <span className="text-sm font-semibold">{label}</span>
-                            <ChevronDown
-                              className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : 'rotate-0'}`}
-                            />
-                          </button>
-                          {isOpen && (
-                            <div className="px-4 pb-4 space-y-3">
-                              {isLoadingStatement ? (
-                                <p className="text-sm text-muted-foreground">Loading problem markup…</p>
-                              ) : statementError ? (
-                                <p className="text-sm text-destructive">{statementError}</p>
-                              ) : statementMarkupHtml ? (
-                                <div
-                                  className="prose max-w-none text-sm markup-content"
-                                  dangerouslySetInnerHTML={{ __html: statementMarkupHtml }}
-                                />
-                              ) : (
-                                <p className="text-sm text-muted-foreground">No problem statement provided.</p>
-                              )}
-                              {canEditSelectedBank && (
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={isLoadingStatement}
-                                    onClick={() => handleOpenEditModal(problem.id)}
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="destructive"
-                                    size="sm"
-                                    disabled={isLoadingStatement || isDeletingProblem}
-                                    onClick={() => handleDeleteProblem(problem.id)}
-                                  >
-                                    {isDeletingProblem ? 'Deleting…' : 'Delete'}
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
+                  {[1, 2, 3].map((placeholder) => (
+                    <div key={placeholder} className="rounded-lg border px-4 py-3">
+                      <div className="h-4 w-1/3 rounded-full bg-muted/40" />
+                      <div className="mt-3 space-y-2">
+                        <div className="h-2 rounded bg-muted/20" />
+                        <div className="h-2 w-3/4 rounded bg-muted/20" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-              {isBankDetailsLoading ? (
                 <div className="space-y-2 rounded-lg border p-4">
-                  <div className="h-4 w-2/5 rounded-full bg-muted/40" />
+                  <div className="h-4 w-1/3 rounded-full bg-muted/40" />
                   <div className="mt-3 space-y-2">
                     <div className="h-3 rounded bg-muted/30" />
                     <div className="h-24 rounded bg-muted/10" />
                   </div>
                   <div className="mt-4 h-10 w-32 rounded-full bg-muted/30" />
                 </div>
-              ) : canEditSelectedBank ? (
-                <div className="space-y-4 rounded-lg border p-4">
-                  <p className="text-sm font-medium">Add a new problem</p>
-                  <form className="space-y-4" onSubmit={handleAddProblem}>
-                    <div className="space-y-2">
-                      <Label htmlFor="problem-statement">Statement (Markdown)</Label>
-                      <div id="problem-statement">
-                        <MDEditor
-                          value={problemStatement}
-                          onChange={(value) => setProblemStatement(value ?? '')}
-                          height={240}
-                          preview="edit"
+              </div>
+            ) : selectedBank ? (
+              <>
+                {selectedBank.description && (
+                  <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+                    {selectedBank.description}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground">Problems</p>
+                    {canEditSelectedBank && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setIsAddGroupModalOpen(true)}
+                      >
+                        + Add Group
+                      </Button>
+                    )}
+                  </div>
+                  {!canEditSelectedBank && (
+                    <p className="text-xs text-muted-foreground">
+                      This bank is read-only. Only {selectedBankOwnerLabel} can manage its problems.
+                    </p>
+                  )}
+                  <div className="space-y-3">
+                    {isBankDetailsLoading ? (
+                      <ProblemListPlaceholder />
+                    ) : selectedBankProblems.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No problems yet. Add one using the form below.</p>
+                    ) : (
+                      <DndContext onDragEnd={handleDragEnd}>
+                        <div className="space-y-6">
+                          {Object.entries(groupedProblems)
+                            .sort((a, b) => {
+                              if (a[0] === '') return -1;
+                              if (b[0] === '') return 1;
+                              return a[0].localeCompare(b[0]);
+                            })
+                            .map(([groupName, problems]) => (
+                              <ProblemGroup
+                                key={groupName}
+                                group={groupName}
+                                canEdit={canEditSelectedBank}
+                              >
+                                {problems.map((problem) => (
+                                  <ProblemItem
+                                    key={problem.id}
+                                    problem={problem}
+                                    isOpen={openProblemId === problem.id}
+                                    onToggle={handleProblemToggle}
+                                    onEdit={handleOpenEditModal}
+                                    onDelete={handleDeleteProblem}
+                                    statementEntry={problemStatements[problem.id]}
+                                    isDeleting={Boolean(deletingProblems[problem.id])}
+                                    canEdit={canEditSelectedBank}
+                                  />
+                                ))}
+                              </ProblemGroup>
+                            ))}
+                        </div>
+                      </DndContext>
+                    )}
+                  </div>
+                </div>
+                {isBankDetailsLoading ? (
+                  <div className="space-y-2 rounded-lg border p-4">
+                    <div className="h-4 w-2/5 rounded-full bg-muted/40" />
+                    <div className="mt-3 space-y-2">
+                      <div className="h-3 rounded bg-muted/30" />
+                      <div className="h-24 rounded bg-muted/10" />
+                    </div>
+                    <div className="mt-4 h-10 w-32 rounded-full bg-muted/30" />
+                  </div>
+                ) : canEditSelectedBank ? (
+                  <div className="space-y-4 rounded-lg border p-4">
+                    <p className="text-sm font-medium">Add a new problem</p>
+                    <form className="space-y-4" onSubmit={handleAddProblem}>
+                      <div className="space-y-2">
+                        <Label htmlFor="problem-statement">Statement (Markdown)</Label>
+                        <div id="problem-statement">
+                          <MDEditor
+                            value={problemStatement}
+                            onChange={(value) => setProblemStatement(value ?? '')}
+                            height={240}
+                            preview="edit"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="problem-group">Group (Optional)</Label>
+                        <Input
+                          id="problem-group"
+                          value={problemGroup}
+                          onChange={(e) => setProblemGroup(e.target.value)}
+                          placeholder="e.g. Multiple Choice, Section A"
                         />
                       </div>
-                    </div>
-                    <Button type="submit" disabled={!problemStatement.trim()}>
-                      Add problem
-                    </Button>
-                  </form>
-                </div>
-              ) : (
-                <div className="space-y-2 rounded-lg border p-4">
-                  <p className="text-sm font-medium">Read-only bank</p>
-                  <p className="text-sm text-muted-foreground">
-                    Only {selectedBankOwnerLabel} can add or edit problems in this bank.
-                  </p>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Choose a problem bank from the left to start managing its questions.
-            </p>
-          )}
+                      <Button type="submit" disabled={!problemStatement.trim()}>
+                        Add problem
+                      </Button>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-lg border p-4">
+                    <p className="text-sm font-medium">Read-only bank</p>
+                    <p className="text-sm text-muted-foreground">
+                      Only {selectedBankOwnerLabel} can add or edit problems in this bank.
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Choose a problem bank from the left to start managing its questions.
+              </p>
+            )}
           </CardContent>
         </Card>
-      </div>
+      </div >
       <Modal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
@@ -631,6 +802,15 @@ const ProblemBankManager = () => {
               )}
             </div>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-problem-group">Group (Optional)</Label>
+            <Input
+              id="edit-problem-group"
+              value={editingGroup}
+              onChange={(e) => setEditingGroup(e.target.value)}
+              placeholder="e.g. Multiple Choice, Section A"
+            />
+          </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={closeEditModal}>
               Cancel
@@ -641,7 +821,33 @@ const ProblemBankManager = () => {
           </div>
         </form>
       </Modal>
-    </AppShell>
+      <Modal
+        open={isAddGroupModalOpen}
+        onOpenChange={setIsAddGroupModalOpen}
+        title="Add a group"
+        description="Create a new group to organize your problems."
+      >
+        <form className="space-y-4" onSubmit={handleAddGroup}>
+          <div className="space-y-2">
+            <Label htmlFor="new-group-name">Group Name</Label>
+            <Input
+              id="new-group-name"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="e.g. Section B"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setIsAddGroupModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!newGroupName.trim()}>
+              Add Group
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </AppShell >
   );
 };
 
