@@ -1,7 +1,14 @@
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
-from .models import ProblemBank, Problem
+from .models import (
+    ProblemBank,
+    Problem,
+    ProblemBankRatingScaleOption,
+    ProblemBankRatingCriterion,
+    InstructorProblemRating,
+    InstructorProblemRatingEntry,
+)
 
 
 class ProblemSerializer(serializers.ModelSerializer):
@@ -47,3 +54,48 @@ class ProblemBankSerializer(serializers.ModelSerializer):
         except ObjectDoesNotExist:
             return False
         return bool(instructor and obj.owner_id == instructor.id)
+
+
+class ProblemBankRatingScaleOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProblemBankRatingScaleOption
+        fields = ['order', 'value', 'label']
+
+
+class ProblemBankRatingCriterionSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source='criterion_id')
+
+    class Meta:
+        model = ProblemBankRatingCriterion
+        fields = ['order', 'id', 'name', 'description']
+
+
+class InstructorProblemRatingEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstructorProblemRatingEntry
+        fields = ['criterion_id', 'value']
+
+
+class InstructorProblemRatingSerializer(serializers.ModelSerializer):
+    entries = InstructorProblemRatingEntrySerializer(many=True)
+    instructor_name = serializers.CharField(source='instructor.user.get_full_name', read_only=True)
+
+    class Meta:
+        model = InstructorProblemRating
+        fields = ['id', 'problem', 'instructor', 'instructor_name', 'entries', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'problem', 'instructor', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        entries_data = validated_data.pop('entries')
+        rating = InstructorProblemRating.objects.create(**validated_data)
+        for entry_data in entries_data:
+            InstructorProblemRatingEntry.objects.create(rating=rating, **entry_data)
+        return rating
+
+    def update(self, instance, validated_data):
+        entries_data = validated_data.pop('entries', None)
+        if entries_data is not None:
+            instance.entries.all().delete()
+            for entry_data in entries_data:
+                InstructorProblemRatingEntry.objects.create(rating=instance, **entry_data)
+        return super().update(instance, validated_data)

@@ -16,6 +16,9 @@ import '@uiw/react-markdown-preview/markdown.css';
 import '@uiw/react-md-editor/markdown-editor.css';
 import { cn } from '@/lib/utils';
 import AppShell from '@/components/layout/AppShell';
+import ProblemBankRubricEditor from '@/components/problem-bank/ProblemBankRubricEditor';
+import RatingModal from '@/components/problem-bank/RatingModal';
+import ImportRatingsModal from '@/components/problem-bank/ImportRatingsModal';
 
 const ProblemListPlaceholder = () => (
   <div className="space-y-3 animate-pulse">
@@ -40,6 +43,7 @@ const ProblemItem = ({
   onToggle,
   onEdit,
   onDelete,
+  onRate,
   statementEntry,
   isDeleting,
   canEdit,
@@ -109,28 +113,38 @@ const ProblemItem = ({
           ) : (
             <p className="text-sm text-muted-foreground">No problem statement provided.</p>
           )}
-          {canEdit && (
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isLoadingStatement}
-                onClick={() => onEdit(problem.id)}
-              >
-                Edit
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={isLoadingStatement || isDeleting}
-                onClick={() => onDelete(problem.id)}
-              >
-                {isDeleting ? 'Deleting…' : 'Delete'}
-              </Button>
-            </div>
-          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onRate(problem.id, label)}
+            >
+              Rate
+            </Button>
+            {canEdit && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isLoadingStatement}
+                  onClick={() => onEdit(problem.id)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={isLoadingStatement || isDeleting}
+                  onClick={() => onDelete(problem.id)}
+                >
+                  {isDeleting ? 'Deleting…' : 'Delete'}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -196,6 +210,9 @@ const ProblemBankManager = () => {
   const [deletingProblems, setDeletingProblems] = useState({});
   const canEditSelectedBank = Boolean(selectedBank?.is_owner);
   const selectedBankOwnerLabel = selectedBank?.owner_username || 'the owner';
+  const [isRubricModalOpen, setIsRubricModalOpen] = useState(false);
+  const [isImportRatingsModalOpen, setIsImportRatingsModalOpen] = useState(false);
+  const [ratingModalState, setRatingModalState] = useState({ open: false, problemId: null, problemLabel: '' });
 
   const loadBanks = async () => {
     setIsLoadingBanks(true);
@@ -366,6 +383,10 @@ const ProblemBankManager = () => {
         return next;
       });
     }
+  };
+
+  const handleOpenRatingModal = (problemId, label) => {
+    setRatingModalState({ open: true, problemId, problemLabel: label });
   };
 
   const resetImportForm = () => {
@@ -595,6 +616,26 @@ const ProblemBankManager = () => {
                         + Add Group
                       </Button>
                     )}
+                    {canEditSelectedBank && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs ml-2"
+                        onClick={() => setIsRubricModalOpen(true)}
+                      >
+                        Edit Rubric
+                      </Button>
+                    )}
+                    {canEditSelectedBank && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs ml-2"
+                        onClick={() => setIsImportRatingsModalOpen(true)}
+                      >
+                        Import Ratings
+                      </Button>
+                    )}
                   </div>
                   {!canEditSelectedBank && (
                     <p className="text-xs text-muted-foreground">
@@ -629,6 +670,7 @@ const ProblemBankManager = () => {
                                     onToggle={handleProblemToggle}
                                     onEdit={handleOpenEditModal}
                                     onDelete={handleDeleteProblem}
+                                    onRate={handleOpenRatingModal}
                                     statementEntry={problemStatements[problem.id]}
                                     isDeleting={Boolean(deletingProblems[problem.id])}
                                     canEdit={canEditSelectedBank}
@@ -847,6 +889,24 @@ const ProblemBankManager = () => {
           </div>
         </form>
       </Modal>
+      <ProblemBankRubricEditor
+        open={isRubricModalOpen}
+        onOpenChange={setIsRubricModalOpen}
+        bankId={selectedBank?.id}
+      />
+      <RatingModal
+        open={ratingModalState.open}
+        onOpenChange={(open) => setRatingModalState(prev => ({ ...prev, open }))}
+        problemId={ratingModalState.problemId}
+        bankId={selectedBank?.id}
+        problemLabel={ratingModalState.problemLabel}
+      />
+      <ImportRatingsModal
+        open={isImportRatingsModalOpen}
+        onOpenChange={setIsImportRatingsModalOpen}
+        bankId={selectedBank?.id}
+        onImportSuccess={() => loadBankDetails(selectedBank?.id, selectedBank)}
+      />
     </AppShell >
   );
 };

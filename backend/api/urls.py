@@ -37,6 +37,8 @@ from .views import (
     ManualResponseView,
     ResponseImportTemplateView,
     ResponseImportView,
+    ProblemBankRubricView,
+    InstructorProblemRatingView,
 )
 
 router = DefaultRouter()
@@ -52,6 +54,8 @@ urlpatterns = [
     path('auth/logout/', LogoutView.as_view(), name='api-logout'),
     path('', include(router.urls)),
     path('problem-banks/<int:bank_id>/problems/', ProblemBankProblemListCreate.as_view(), name='bank-problems'),
+    path('problem-banks/<int:bank_id>/rubric/', ProblemBankRubricView.as_view(), name='bank-rubric'),
+    path('problems/<int:problem_id>/rate/', InstructorProblemRatingView.as_view(), name='problem-rate'),
     path('quizzes/<int:quiz_id>/slots/', QuizSlotListCreate.as_view(), name='quiz-slots'),
     path('quizzes/<int:quiz_id>/allowed-instructors/', QuizAllowedInstructorList.as_view(), name='quiz-allowed-list'),
     path(

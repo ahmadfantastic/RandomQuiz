@@ -46,6 +46,17 @@ from quizzes.serializers import (
     GradingRubricSerializer,
     QuizSlotGradeSerializer,
 )
+from problems.models import (
+    ProblemBankRatingScaleOption,
+    ProblemBankRatingCriterion,
+    InstructorProblemRating,
+    InstructorProblemRatingEntry,
+)
+from problems.serializers import (
+    ProblemBankRatingScaleOptionSerializer,
+    ProblemBankRatingCriterionSerializer,
+    InstructorProblemRatingSerializer,
+)
 
 
 class QuizSlotGradeView(APIView):
@@ -270,6 +281,96 @@ class ProblemBankViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(bank)
         return Response({'bank': serializer.data, 'problem_count': len(problems)}, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['post'], url_path='import-ratings', parser_classes=[parsers.MultiPartParser, parsers.FormParser])
+    def import_ratings(self, request, pk=None):
+        bank = self.get_object()
+        self._ensure_owner(bank)
+        instructor = ensure_instructor(request.user)
+        
+        upload = request.FILES.get('file')
+        if not upload:
+            return Response({'detail': 'Upload a CSV file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            decoded = upload.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            return Response({'detail': 'CSV must be UTF-8 encoded.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        csv_stream = StringIO(decoded)
+        try:
+            reader = csv.DictReader(csv_stream)
+        except csv.Error:
+            return Response({'detail': 'Could not read the CSV file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not reader.fieldnames:
+             return Response({'detail': 'CSV is empty.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalized_headers = {name.strip(): name for name in reader.fieldnames if name}
+        if 'order' not in [h.lower() for h in normalized_headers.keys()]:
+            return Response({'detail': 'CSV must have an "order" column.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        order_header = next(h for h in normalized_headers.keys() if h.lower() == 'order')
+        real_order_header = normalized_headers[order_header]
+
+        # Identify criterion columns
+        # We assume any other column that matches a criterion ID in the bank's rubric is a rating
+        rubric = bank.get_rubric()
+        valid_criterion_ids = {c['id'] for c in rubric.get('criteria', [])}
+        
+        criterion_map = {} # header -> criterion_id
+        for header, real_header in normalized_headers.items():
+            if header in valid_criterion_ids:
+                criterion_map[real_header] = header
+        
+        if not criterion_map:
+             return Response({'detail': 'No matching criterion columns found in CSV.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch all problems for this bank to map order -> problem_id
+        problems = {p.order_in_bank: p for p in bank.problems.all()}
+        
+        ratings_created = 0
+        ratings_updated = 0
+        
+        with transaction.atomic():
+            for row in reader:
+                try:
+                    order_val = int(row.get(real_order_header, '').strip())
+                except ValueError:
+                    continue # Skip invalid orders
+                
+                problem = problems.get(order_val)
+                if not problem:
+                    continue # Skip if problem not found
+                
+                # Get or create rating object
+                rating, _ = InstructorProblemRating.objects.get_or_create(
+                    problem=problem,
+                    instructor=instructor
+                )
+                
+                for col_header, criterion_id in criterion_map.items():
+                    val_str = row.get(col_header, '').strip()
+                    if not val_str:
+                        continue
+                    try:
+                        value = float(val_str)
+                    except ValueError:
+                        continue # Skip invalid values
+                    
+                    entry, created = InstructorProblemRatingEntry.objects.update_or_create(
+                        rating=rating,
+                        criterion_id=criterion_id,
+                        defaults={'value': value}
+                    )
+                    if created:
+                        ratings_created += 1
+                    else:
+                        ratings_updated += 1
+                        
+        return Response({
+            'detail': f'Processed ratings. Created: {ratings_created}, Updated: {ratings_updated}.'
+        })
+
 
 class ProblemViewSet(viewsets.ModelViewSet):
     serializer_class = ProblemSerializer
@@ -336,6 +437,85 @@ class ProblemBankProblemListCreate(generics.ListCreateAPIView):
         return self._bank_cache
 
 
+class ProblemBankRubricView(APIView):
+    permission_classes = [IsInstructor]
+
+    def _get_bank(self, request, bank_id):
+        instructor = ensure_instructor(request.user)
+        return get_object_or_404(ProblemBank, id=bank_id, owner=instructor)
+
+    def get(self, request, bank_id):
+        bank = get_object_or_404(ProblemBank, id=bank_id)
+        # Check if user is owner or has access (for now just owner for editing, but maybe public for viewing?)
+        # The requirement says "Add feature for instructors to rate problems in problem bank".
+        # Assuming the owner sets the rubric.
+        return Response(bank.get_rubric())
+
+    def put(self, request, bank_id):
+        bank = self._get_bank(request, bank_id)
+        serializer = ProblemBankRubricPayloadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        with transaction.atomic():
+            bank.rating_scale_options.all().delete()
+            bank.rating_criteria.all().delete()
+            scale_objects = [
+                ProblemBankRatingScaleOption(
+                    problem_bank=bank,
+                    order=index,
+                    value=option['value'],
+                    label=option['label'],
+                )
+                for index, option in enumerate(payload['scale'])
+            ]
+            criterion_objects = [
+                ProblemBankRatingCriterion(
+                    problem_bank=bank,
+                    order=index,
+                    criterion_id=criterion['id'],
+                    name=criterion['name'],
+                    description=criterion['description'],
+                )
+                for index, criterion in enumerate(payload['criteria'])
+            ]
+            if scale_objects:
+                ProblemBankRatingScaleOption.objects.bulk_create(scale_objects)
+            if criterion_objects:
+                ProblemBankRatingCriterion.objects.bulk_create(criterion_objects)
+        return Response(bank.get_rubric())
+
+
+class InstructorProblemRatingView(APIView):
+    permission_classes = [IsInstructor]
+
+    def get(self, request, problem_id):
+        instructor = ensure_instructor(request.user)
+        problem = get_object_or_404(Problem, id=problem_id)
+        
+        # Check if rating exists
+        try:
+            rating = InstructorProblemRating.objects.get(problem=problem, instructor=instructor)
+            serializer = InstructorProblemRatingSerializer(rating)
+            return Response(serializer.data)
+        except InstructorProblemRating.DoesNotExist:
+            return Response({'entries': []})
+
+    def put(self, request, problem_id):
+        instructor = ensure_instructor(request.user)
+        problem = get_object_or_404(Problem, id=problem_id)
+        
+        try:
+            rating = InstructorProblemRating.objects.get(problem=problem, instructor=instructor)
+            serializer = InstructorProblemRatingSerializer(rating, data=request.data)
+        except InstructorProblemRating.DoesNotExist:
+            serializer = InstructorProblemRatingSerializer(data=request.data)
+            
+        serializer.is_valid(raise_exception=True)
+        serializer.save(problem=problem, instructor=instructor)
+        return Response(serializer.data)
+
+
+
 class QuizRubricScaleSerializer(serializers.Serializer):
     value = serializers.IntegerField()
     label = serializers.CharField()
@@ -349,6 +529,38 @@ class QuizRubricCriterionSerializer(serializers.Serializer):
 
 class QuizRubricPayloadSerializer(serializers.Serializer):
     scale = QuizRubricScaleSerializer(many=True)
+    criteria = QuizRubricCriterionSerializer(many=True)
+
+    def validate_scale(self, value):
+        seen = set()
+        for option in value:
+            val = option['value']
+            if val in seen:
+                raise serializers.ValidationError('Duplicate rating values are not allowed.')
+            seen.add(val)
+        return value
+
+    def validate_criteria(self, value):
+        seen = set()
+        normalized = []
+        for criterion in value:
+            criterion_id = str(criterion.get('id') or '').strip()
+            if not criterion_id:
+                raise serializers.ValidationError('Each criterion must include an id.')
+            if criterion_id in seen:
+                raise serializers.ValidationError(f'Duplicate criterion id: {criterion_id}')
+            seen.add(criterion_id)
+            normalized.append({**criterion, 'id': criterion_id})
+        return normalized
+
+
+class ProblemBankRubricScaleSerializer(serializers.Serializer):
+    value = serializers.FloatField()
+    label = serializers.CharField()
+
+
+class ProblemBankRubricPayloadSerializer(serializers.Serializer):
+    scale = ProblemBankRubricScaleSerializer(many=True)
     criteria = QuizRubricCriterionSerializer(many=True)
 
     def validate_scale(self, value):
