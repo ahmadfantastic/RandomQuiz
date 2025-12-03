@@ -89,6 +89,7 @@ const QuizAnalyticsPage = () => {
                     }}
                     timeStats={data.time_distribution}
                     word_count_stats={data.word_count_stats}
+                    cronbach_alpha={data.cronbach_alpha}
                 />
 
                 {data.time_distribution && data.time_distribution.raw_values && data.time_distribution.raw_values.length > 0 && (
