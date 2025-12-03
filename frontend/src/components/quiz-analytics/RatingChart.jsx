@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceLine, LabelList } from 'recharts';
 
 const RatingChart = ({ data, dense = false }) => {
     const criteria = data?.criteria;
@@ -273,7 +273,17 @@ const RatingChart = ({ data, dense = false }) => {
                             fill={bar.color}
                             name={bar.name}
                             legendType={bar.hideLegend ? 'none' : undefined}
-                        />
+                        >
+                            <LabelList
+                                dataKey={bar.dataKey}
+                                position="center"
+                                formatter={(val) => {
+                                    const absVal = Math.abs(val);
+                                    return absVal >= 5 ? `${Math.round(absVal)}%` : '';
+                                }}
+                                style={{ fill: '#fff', fontSize: '10px', fontWeight: 'bold', textShadow: '0px 0px 2px rgba(0,0,0,0.5)' }}
+                            />
+                        </Bar>
                     ))}
                 </BarChart>
             </ResponsiveContainer>

@@ -55,35 +55,128 @@ import RatingChart from './RatingChart';
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const calculateStats = (distribution) => {
+    let totalScore = 0;
+    let totalCount = 0;
+    let sumSq = 0;
+
+    distribution.forEach(d => {
+        const val = d.value;
+        const count = d.count;
+        totalScore += val * count;
+        totalCount += count;
+        sumSq += val * val * count;
+    });
+
+    if (totalCount === 0) return { mean: 0, variance: 0, n: 0 };
+
+    const mean = totalScore / totalCount;
+    // Sample variance
+    const variance = totalCount > 1
+        ? (sumSq - (totalScore * totalScore) / totalCount) / (totalCount - 1)
+        : 0;
+
+    return { mean, variance, n: totalCount };
+};
+
+// Welch's t-test
+const calculateTTest = (stats1, stats2) => {
+    if (stats1.n < 2 || stats2.n < 2) return null;
+    if (stats1.variance === 0 && stats2.variance === 0) return null;
+
+    const num = stats1.mean - stats2.mean;
+    const denom = Math.sqrt((stats1.variance / stats1.n) + (stats2.variance / stats2.n));
+
+    if (denom === 0) return null;
+
+    const t = num / denom;
+
+    // Degrees of freedom
+    const v1 = stats1.variance / stats1.n;
+    const v2 = stats2.variance / stats2.n;
+    const df = Math.pow(v1 + v2, 2) / ((Math.pow(v1, 2) / (stats1.n - 1)) + (Math.pow(v2, 2) / (stats2.n - 1)));
+
+    return { t, df };
+};
+
+function normalCDF(x) {
+    var t = 1 / (1 + .2316419 * Math.abs(x));
+    var d = .3989423 * Math.exp(-x * x / 2);
+    var prob = d * t * (.3193815 + t * (-.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+    if (x > 0) prob = 1 - prob;
+    return prob;
+}
+
+function getPValue(t, df) {
+    // Approximation using Normal distribution
+    // Note: This underestimates p-value for small df (increases Type I error risk)
+    // but is acceptable for a general overview without heavy libraries.
+    // We could use a correction for better accuracy if needed.
+    return 2 * (1 - normalCDF(Math.abs(t)));
+}
+
 const RatingAnalysis = ({ title, data, groupedData }) => {
     const { headers, rows } = useMemo(() => {
         if (groupedData) {
             // Pivoted table for Group Comparison
-            // Headers: Criterion | Group A | Group B ...
             const groups = groupedData.map(g => g.group);
-            const headers = ['Criterion', ...groups];
+            let headers = ['Criterion', ...groups];
+            const isTwoGroups = groups.length === 2;
 
-            // Rows: Criterion Name | Avg A | Avg B ...
-            // Assume all groups have same criteria (or handle missing)
+            if (isTwoGroups) {
+                headers.push('Sig. (2-tailed)');
+                headers.push('Sig. (1-tailed)');
+            }
+
             const criteriaNames = groupedData[0]?.data?.criteria?.map(c => c.name) || [];
 
             const rows = criteriaNames.map(cName => {
                 const row = { name: cName, values: [] };
+                const groupStats = [];
+
                 groups.forEach((gName, idx) => {
                     const gData = groupedData[idx];
                     const criterion = gData.data.criteria.find(c => c.name === cName);
                     if (criterion) {
-                        let totalScore = 0;
-                        let totalCount = 0;
-                        criterion.distribution.forEach(d => {
-                            totalScore += d.value * d.count;
-                            totalCount += d.count;
-                        });
-                        row.values.push(totalCount > 0 ? (totalScore / totalCount).toFixed(2) : '—');
+                        const stats = calculateStats(criterion.distribution);
+                        groupStats.push(stats);
+                        row.values.push(stats.n > 0 ? stats.mean.toFixed(2) : '—');
                     } else {
+                        groupStats.push({ mean: 0, variance: 0, n: 0 });
                         row.values.push('—');
                     }
                 });
+
+                if (isTwoGroups) {
+                    const tResult = calculateTTest(groupStats[0], groupStats[1]);
+                    if (tResult) {
+                        const pVal2Tailed = getPValue(tResult.t, tResult.df);
+                        const pVal1Tailed = pVal2Tailed / 2;
+
+                        const isSig2 = pVal2Tailed < 0.05;
+                        const pDisplay2 = pVal2Tailed < 0.001 ? '< 0.001' : pVal2Tailed.toFixed(3);
+
+                        const isSig1 = pVal1Tailed < 0.05;
+                        const pDisplay1 = pVal1Tailed < 0.001 ? '< 0.001' : pVal1Tailed.toFixed(3);
+
+                        row.values.push(
+                            <span className={isSig2 ? "font-bold text-primary" : "text-muted-foreground"}>
+                                {pDisplay2}
+                                {isSig2 && "*"}
+                            </span>
+                        );
+                        row.values.push(
+                            <span className={isSig1 ? "font-bold text-primary" : "text-muted-foreground"}>
+                                {pDisplay1}
+                                {isSig1 && "*"}
+                            </span>
+                        );
+                    } else {
+                        row.values.push('—');
+                        row.values.push('—');
+                    }
+                }
+
                 return row;
             });
             return { headers, rows };
@@ -92,15 +185,10 @@ const RatingAnalysis = ({ title, data, groupedData }) => {
             if (!data?.criteria) return { headers: [], rows: [] };
             const headers = ['Criterion', 'Average'];
             const rows = data.criteria.map(c => {
-                let totalScore = 0;
-                let totalCount = 0;
-                c.distribution.forEach(d => {
-                    totalScore += d.value * d.count;
-                    totalCount += d.count;
-                });
+                const stats = calculateStats(c.distribution);
                 return {
                     name: c.name,
-                    values: [totalCount > 0 ? (totalScore / totalCount).toFixed(2) : 'N/A']
+                    values: [stats.n > 0 ? stats.mean.toFixed(2) : 'N/A']
                 };
             });
             return { headers, rows };
