@@ -35,6 +35,8 @@ from .views import (
     QuizAnalyticsView,
     QuizSlotProblemStudentsView,
     ManualResponseView,
+    ResponseImportTemplateView,
+    ResponseImportView,
 )
 
 router = DefaultRouter()
@@ -66,6 +68,8 @@ urlpatterns = [
         name='quiz-slot-problem-students',
     ),
     path('quizzes/<int:quiz_id>/manual-response/', ManualResponseView.as_view(), name='quiz-manual-response'),
+    path('quizzes/<int:quiz_id>/import-template/', ResponseImportTemplateView.as_view(), name='quiz-import-template'),
+    path('quizzes/<int:quiz_id>/import-responses/', ResponseImportView.as_view(), name='quiz-import-responses'),
     path('quizzes/<int:quiz_id>/attempts/', QuizAttemptList.as_view(), name='quiz-attempts'),
     path(
         'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/',

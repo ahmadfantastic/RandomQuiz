@@ -7,3 +7,4 @@ psycopg2-binary
 dj-database-url
 Pillow
 python-dotenv
+openpyxl==3.1.5
