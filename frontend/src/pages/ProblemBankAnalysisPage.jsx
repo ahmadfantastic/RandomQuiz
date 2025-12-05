@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
@@ -14,17 +14,21 @@ const ProblemBankAnalysisPage = () => {
     const [error, setError] = useState(null);
     const [data, setData] = useState(null);
     const [bank, setBank] = useState(null);
+    const [allBanks, setAllBanks] = useState([]);
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchData = async () => {
             try {
                 setLoading(true);
-                const [analysisRes, bankRes] = await Promise.all([
+                const [analysisRes, bankRes, allBanksRes] = await Promise.all([
                     api.get(`/api/problem-banks/${bankId}/analysis/`),
-                    api.get(`/api/problem-banks/${bankId}/`)
+                    api.get(`/api/problem-banks/${bankId}/`),
+                    api.get('/api/problem-banks/')
                 ]);
                 setData(analysisRes.data);
                 setBank(bankRes.data);
+                setAllBanks(allBanksRes.data);
             } catch (err) {
                 setError('Failed to load analysis data.');
                 console.error(err);
@@ -66,15 +70,32 @@ const ProblemBankAnalysisPage = () => {
     return (
         <AppShell>
             <div className="space-y-8 pb-12">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" to={`/problem-banks`}>
-                        <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Analysis: {bank.name}</h1>
-                        <p className="text-muted-foreground">
-                            Detailed rating analysis and inter-rater reliability
-                        </p>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <Button variant="ghost" size="icon" to={`/problem-banks`}>
+                            <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                        <div>
+                            <h1 className="text-2xl font-bold tracking-tight">Analysis: {bank.name}</h1>
+                            <p className="text-muted-foreground">
+                                Detailed rating analysis and inter-rater reliability
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Switch Bank:</span>
+                        <select
+                            className="h-10 w-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            value={bankId}
+                            onChange={(e) => navigate(`/problem-banks/${e.target.value}/analysis`)}
+                        >
+                            {allBanks.map(b => (
+                                <option key={b.id} value={b.id}>
+                                    {b.name}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 
@@ -230,7 +251,7 @@ const ProblemBankAnalysisPage = () => {
                     </TabsContent>
                 </Tabs>
             </div>
-        </AppShell>
+        </AppShell >
     );
 };
 

@@ -100,7 +100,7 @@ class ProblemBankRatingImportView(APIView):
 
     def post(self, request, bank_id):
         instructor = ensure_instructor(request.user)
-        bank = get_object_or_404(ProblemBank, id=bank_id, owner=instructor)
+        bank = get_object_or_404(ProblemBank, id=bank_id)
         
         file_obj = request.FILES.get('file')
         if not file_obj:

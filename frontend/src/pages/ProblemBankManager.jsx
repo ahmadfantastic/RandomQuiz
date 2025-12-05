@@ -1034,7 +1034,10 @@ const ProblemBankManager = () => {
         open={isImportRatingsModalOpen}
         onOpenChange={setIsImportRatingsModalOpen}
         bankId={selectedBank?.id}
-        onImportSuccess={() => loadBankDetails(selectedBank?.id, selectedBank, true)}
+        onImportSuccess={() => {
+          loadBankDetails(selectedBank?.id, selectedBank, true);
+          loadBanks();
+        }}
       />
       <RubricManagerModal
         open={isRubricManagerOpen}
