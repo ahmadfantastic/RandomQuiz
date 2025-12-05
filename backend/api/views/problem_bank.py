@@ -106,62 +106,112 @@ class ProblemBankRatingImportView(APIView):
         if not file_obj:
             return Response({'detail': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        is_preview = request.data.get('preview') == 'true'
+
         try:
-            decoded_file = file_obj.read().decode('utf-8')
-            io_string = StringIO(decoded_file)
-            reader = csv.DictReader(io_string)
+            # Read and decode file
+            # Use utf-8-sig to handle BOM
+            content = file_obj.read().decode('utf-8-sig')
             
-            # Expected columns: Problem ID (or Label?), Rater Name (optional), Criterion 1, Criterion 2...
-            # Actually, we probably want a format where each row is a rating for a problem.
-            # Let's assume: Problem Label, Criterion Name, Rating Value
-            # Or: Problem Label, <Criterion 1>, <Criterion 2>...
+
             
-            # Since this is a custom import, let's stick to a simple format:
-            # Problem Label, Criterion Name, Value
+            # Helper to check if a dialect/delimiter yields valid headers
+            def get_valid_reader(content, dialect_or_delimiter):
+                try:
+                    io_string = StringIO(content)
+                    reader = csv.DictReader(io_string, dialect=dialect_or_delimiter)
+                    if not reader.fieldnames:
+                        return None, None
+                    
+                    # Normalize headers
+                    original_headers = reader.fieldnames
+                    header_map = {h.strip().lower(): h for h in original_headers}
+                    
+                    if 'problem' in header_map:
+                        return reader, header_map
+                    return None, None
+                except csv.Error:
+                    return None, None
+
+            reader = None
+            header_map = None
             
-            # But wait, the requirement might be different. 
-            # "Add feature for instructors to rate problems in problem bank"
-            # This is likely for importing EXISTING ratings from external sources?
-            # Or maybe importing the rubric itself? No, "Rating Import".
+            # 1. Try Sniffer
+            try:
+                dialect = csv.Sniffer().sniff(content[:1024])
+                reader, header_map = get_valid_reader(content, dialect)
+            except csv.Error:
+                pass
             
-            # Let's implement a flexible importer.
-            # Headers: Problem, <Criterion Name 1>, <Criterion Name 2>...
+            # 2. If Sniffer failed or didn't yield "Problem" column, try explicit delimiters
+            if not reader:
+                delimiters = [',', ';', '\t']
+                for d in delimiters:
+                    # Create a simple dialect with this delimiter
+                    class SimpleDialect(csv.Dialect):
+                        delimiter = d
+                        quotechar = '"'
+                        doublequote = True
+                        skipinitialspace = True
+                        lineterminator = '\r\n'
+                        quoting = csv.QUOTE_MINIMAL
+                    
+                    reader, header_map = get_valid_reader(content, SimpleDialect)
+                    if reader:
+                        break
             
-            headers = reader.fieldnames
-            if not headers or 'Problem' not in headers:
-                 return Response({'detail': 'CSV must have a "Problem" column.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not reader or not header_map:
+                 return Response({'detail': 'CSV must have a "Problem" column. Could not detect valid CSV format.'}, status=status.HTTP_400_BAD_REQUEST)
             
-            criterion_names = [h for h in headers if h != 'Problem']
-            
-            # Find or create rubric criteria if they don't exist?
-            # Or assume they match the bank's rubric?
-            # Let's assume they match the bank's rubric or we create a new one if none exists?
-            # For simplicity, let's assume we are just storing raw ratings for now, 
-            # but we need a structure.
-            
-            # Actually, we have InstructorProblemRating model.
-            # It links Instructor -> Problem.
-            # But if we import, who is the instructor? The current user?
-            # Yes, let's assign to current user.
-            
+            original_headers = reader.fieldnames
+            problem_col = header_map['problem']
+
+            # If preview, return first 5 rows
+            if is_preview:
+                preview_rows = []
+                for i, row in enumerate(reader):
+                    if i >= 5:
+                        break
+                    preview_rows.append(row)
+                
+                return Response({
+                    'preview': True,
+                    'headers': original_headers,
+                    'rows': preview_rows
+                })
+
+            # Import logic
             imported_count = 0
             
+            # Identify criterion columns
+            # All columns except the problem column are treated as criteria
+            criterion_names = [h for h in original_headers if h != problem_col]
+            
             for row in reader:
-                problem_label = row.get('Problem')
+                problem_label = row.get(problem_col)
                 if not problem_label:
                     continue
                 
                 # Find problem by label (display_label) or order?
-                # Let's try display_label first, then order if integer
-                problem = bank.problems.filter(display_label=problem_label).first()
-                if not problem:
-                    # Try order
-                    try:
-                        order = int(problem_label)
-                        problem = bank.problems.filter(order_in_bank=order).first()
-                    except ValueError:
-                        pass
+                # display_label is a property, so we can't filter by it.
+                # We expect the label to be the order number or "Problem X".
                 
+                problem = None
+                
+                # Try to parse order from label
+                try:
+                    # If label is just a number
+                    order = int(problem_label)
+                    problem = bank.problems.filter(order_in_bank=order).first()
+                except ValueError:
+                    # If label is "Problem X"
+                    if problem_label.lower().startswith('problem '):
+                        try:
+                            order = int(problem_label.split(' ')[1])
+                            problem = bank.problems.filter(order_in_bank=order).first()
+                        except (ValueError, IndexError):
+                            pass
+
                 if not problem:
                     continue
                 
@@ -170,17 +220,6 @@ class ProblemBankRatingImportView(APIView):
                     problem=problem,
                     instructor=instructor
                 )
-                
-                # Update entries
-                # We need to store the ratings. 
-                # Our model InstructorProblemRating has entries?
-                # Let's check models... 
-                # Assuming InstructorProblemRating has a JSON field or related model for entries.
-                # Based on serializers import: InstructorProblemRatingEntrySerializer
-                # It seems we have a separate model InstructorProblemRatingEntry.
-                
-                # We need to clear old entries for these criteria or update them?
-                # Let's update/create.
                 
                 for c_name in criterion_names:
                     val_str = row.get(c_name)
@@ -191,26 +230,14 @@ class ProblemBankRatingImportView(APIView):
                     except ValueError:
                         continue
                         
-                    # Find criterion ID? 
-                    # If the rubric is defined on the bank, we should map names to IDs.
-                    # If not, maybe we just store the name?
-                    # The Entry model likely links to a RubricCriterion or just stores name?
-                    # Let's assume it links to RubricCriterion if possible, or we need to look it up.
-                    
-                    # For now, let's assume the bank has a rubric and we match by name.
+                    # Find criterion ID
                     rubric = bank.get_rubric() # Returns dict
                     criteria = rubric.get('criteria', [])
-                    c_id = next((c['id'] for c in criteria if c['name'] == c_name), None)
+                    # Match by name (case-insensitive?) - Let's stick to exact or stripped match for now
+                    # The c_name comes from the CSV header.
+                    c_id = next((c['id'] for c in criteria if c['name'].strip().lower() == c_name.strip().lower()), None)
                     
                     if c_id:
-                        # We need to save this.
-                        # Since we don't have direct access to the Entry model here easily without importing it,
-                        # let's assume we can use the serializer or model if imported.
-                        # We imported InstructorProblemRatingEntry? No, let's check imports.
-                        # We imported InstructorProblemRating, but not Entry model explicitly in the top list?
-                        # Wait, line 32 of original file: InstructorProblemRatingEntry
-                        # So we have it.
-                        
                         from problems.models import InstructorProblemRatingEntry
                         
                         InstructorProblemRatingEntry.objects.update_or_create(
