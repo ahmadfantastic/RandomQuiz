@@ -18,8 +18,64 @@ const QuizStatusBanner = ({
   handleCopyLink,
   copyMessage,
   statusKey,
+  compact = false,
+  customAction,
 }) => {
   const toneClass = STATUS_CARD_TONES[statusKey] ?? 'border-slate-200 bg-background/80';
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'flex h-8 w-8 items-center justify-center rounded-full',
+              readyForStudents ? 'bg-emerald-500/20' : 'bg-amber-500/20'
+            )}
+          >
+            {readyForStudents ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            )}
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold leading-none">{schedulePreview.status}</span>
+            <span className="text-[10px] text-muted-foreground">{schedulePreview.description}</span>
+          </div>
+        </div>
+
+        <div className="h-8 w-px bg-border" />
+
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold leading-none">{slotReadiness.ready}/{slotReadiness.total}</span>
+            <span className="text-xs text-muted-foreground">Slots ready</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold leading-none">{attemptsSummary.completed}/{attemptsSummary.total}</span>
+            <span className="text-xs text-muted-foreground">Completed</span>
+          </div>
+        </div>
+
+        <div className="h-8 w-px bg-border" />
+
+        <div className="flex items-center gap-2">
+          {customAction ? (
+            customAction
+          ) : (
+            <>
+              <Button onClick={handleCopyLink} size="sm" variant="outline" className="h-8">
+                Copy Link
+              </Button>
+              {copyMessage && <span className="text-xs text-muted-foreground animate-fade-in">{copyMessage}</span>}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Card className={cn('border-2', toneClass)}>
       <CardContent className="py-4">

@@ -2,11 +2,14 @@ import csv
 import random
 from datetime import timedelta
 from io import StringIO
+import numpy as np
+from scipy import stats
 from django.contrib.auth import authenticate, login, logout
 from django.db import models, transaction
 from django.db.models import Count, Avg, Min, Max, StdDev
 from django.db.models.functions import TruncDate
 from django.middleware.csrf import get_token
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, parsers, serializers, status, viewsets
@@ -17,10 +20,25 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import Instructor, ensure_instructor
-from accounts.permissions import IsAdminInstructor, IsInstructor
+from accounts.permissions import IsAdminInstructor, IsInstructor, IsSelfOrAdmin
 from accounts.serializers import InstructorSerializer
-from problems.models import ProblemBank, Problem
-from problems.serializers import ProblemBankSerializer, ProblemSerializer, ProblemSummarySerializer
+from problems.models import (
+    ProblemBank, 
+    Problem, 
+    Rubric,
+    RubricScaleOption,
+    RubricCriterion,
+    InstructorProblemRating,
+    InstructorProblemRatingEntry,
+)
+from problems.serializers import (
+    ProblemBankSerializer, 
+    ProblemSerializer, 
+    ProblemSummarySerializer,
+    RubricSerializer,
+    InstructorProblemRatingSerializer,
+    InstructorProblemRatingEntrySerializer,
+)
 from quizzes.models import (
     Quiz,
     QuizSlot,
@@ -45,17 +63,6 @@ from quizzes.serializers import (
     QuizAttemptInteractionSerializer,
     GradingRubricSerializer,
     QuizSlotGradeSerializer,
-)
-from problems.models import (
-    ProblemBankRatingScaleOption,
-    ProblemBankRatingCriterion,
-    InstructorProblemRating,
-    InstructorProblemRatingEntry,
-)
-from problems.serializers import (
-    ProblemBankRatingScaleOptionSerializer,
-    ProblemBankRatingCriterionSerializer,
-    InstructorProblemRatingSerializer,
 )
 
 
@@ -154,6 +161,8 @@ class InstructorViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         if action == 'me':
             return [IsInstructor()]
+        if action in ['update', 'partial_update']:
+            return [IsSelfOrAdmin()]
         return [IsAdminInstructor()]
 
     @action(detail=False, methods=['get'], permission_classes=[IsInstructor], url_path='me')
@@ -281,10 +290,13 @@ class ProblemBankViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(bank)
         return Response({'bank': serializer.data, 'problem_count': len(problems)}, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['post'], url_path='import-ratings', parser_classes=[parsers.MultiPartParser, parsers.FormParser])
-    def import_ratings(self, request, pk=None):
-        bank = self.get_object()
-        self._ensure_owner(bank)
+
+class ProblemBankRatingImportView(APIView):
+    permission_classes = [IsInstructor]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def post(self, request, bank_id):
+        bank = get_object_or_404(ProblemBank, id=bank_id)
         instructor = ensure_instructor(request.user)
         
         upload = request.FILES.get('file')
@@ -313,9 +325,13 @@ class ProblemBankViewSet(viewsets.ModelViewSet):
         real_order_header = normalized_headers[order_header]
 
         # Identify criterion columns
-        # We assume any other column that matches a criterion ID in the bank's rubric is a rating
-        rubric = bank.get_rubric()
-        valid_criterion_ids = {c['id'] for c in rubric.get('criteria', [])}
+        rubric = bank.rubric
+        if not rubric:
+             return Response({'detail': 'Problem bank has no rubric assigned.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        criteria_map = {c.criterion_id: c for c in rubric.criteria.all()}
+        options_map = {o.value: o for o in rubric.scale_options.all()}
+        valid_criterion_ids = set(criteria_map.keys())
         
         criterion_map = {} # header -> criterion_id
         for header, real_header in normalized_headers.items():
@@ -357,10 +373,16 @@ class ProblemBankViewSet(viewsets.ModelViewSet):
                     except ValueError:
                         continue # Skip invalid values
                     
+                    criterion = criteria_map.get(criterion_id)
+                    scale_option = options_map.get(value)
+                    
+                    if not criterion or not scale_option:
+                        continue
+
                     entry, created = InstructorProblemRatingEntry.objects.update_or_create(
                         rating=rating,
-                        criterion_id=criterion_id,
-                        defaults={'value': value}
+                        criterion=criterion,
+                        defaults={'scale_option': scale_option}
                     )
                     if created:
                         ratings_created += 1
@@ -369,6 +391,560 @@ class ProblemBankViewSet(viewsets.ModelViewSet):
                         
         return Response({
             'detail': f'Processed ratings. Created: {ratings_created}, Updated: {ratings_updated}.'
+        })
+
+
+class ProblemBankAnalysisView(APIView):
+    permission_classes = [IsInstructor]
+
+    def get(self, request, bank_id):
+        bank = get_object_or_404(ProblemBank, id=bank_id)
+        # Allow any instructor to view analysis
+        ensure_instructor(request.user)
+
+        rubric = bank.get_rubric()
+        criteria = rubric.get('criteria', [])
+        criteria_ids = [c['id'] for c in criteria]
+        criteria_weights = {c['id']: c.get('weight', 1) for c in criteria}
+        
+        # Fetch all ratings
+        ratings = InstructorProblemRating.objects.filter(problem__problem_bank=bank).select_related('instructor__user', 'problem').prefetch_related('entries__criterion', 'entries__scale_option')
+        
+        # Organize data
+        # instructors_data: { instructor_id: { name: str, ratings: { problem_id: { criteria_id: value } } } }
+        instructors_data = {}
+        problem_groups = {} # problem_id -> group
+        
+        for p in bank.problems.all():
+            problem_groups[p.id] = p.group
+            
+        for rating in ratings:
+            inst_id = rating.instructor.id
+            if inst_id not in instructors_data:
+                instructors_data[inst_id] = {
+                    'id': inst_id,
+                    'name': rating.instructor.user.get_full_name() or rating.instructor.user.username,
+                    'ratings': {}
+                }
+            
+            entry_map = {e.criterion.criterion_id: e.scale_option.value for e in rating.entries.all()}
+            instructors_data[inst_id]['ratings'][rating.problem.id] = entry_map
+
+        # Calculate stats per instructor
+        results = {'instructors': [], 'inter_rater': {}}
+        
+        for inst_id, data in instructors_data.items():
+            inst_result = {
+                'id': inst_id,
+                'name': data['name'],
+                'ratings': [], # List of { problem_id, order, group, values: {cid: val} }
+                'group_comparisons': []
+            }
+            
+            # Flatten ratings for response and stats
+            # Group values for t-test: { criteria_id: { group_name: [values] } }
+            group_values = {cid: {} for cid in criteria_ids}
+            
+            for problem_id, values in data['ratings'].items():
+                group = problem_groups.get(problem_id)
+                # We need problem order too, let's fetch it or put it in map
+                # Optimization: we already iterated problems to get groups, could store order there too.
+                # Let's just assume we have it or fetch it.
+                # Actually we can get it from the problem object in the rating loop if we stored it, 
+                # but we iterated ratings.
+                # Let's rebuild problem map with order.
+                pass 
+
+            results['instructors'].append(inst_result)
+            
+        # Re-iterate to fill details properly
+        problems_map = {p.id: {'order': p.order_in_bank, 'group': p.group, 'label': p.display_label} for p in bank.problems.all()}
+        
+        for inst_id, data in instructors_data.items():
+            inst_result = next(r for r in results['instructors'] if r['id'] == inst_id)
+            
+            group_values = {cid: {} for cid in criteria_ids}
+            
+            for problem_id, values in data['ratings'].items():
+                p_info = problems_map.get(problem_id)
+                if not p_info: continue
+                
+                inst_result['ratings'].append({
+                    'problem_id': problem_id,
+                    'order': p_info['order'],
+                    'label': p_info['label'],
+                    'group': p_info['group'],
+                    'values': values
+                })
+                
+                group = p_info['group'] or 'Ungrouped'
+                
+                # Calculate weighted score for this rating
+                weighted_sum = 0
+                total_weight = 0
+                for cid, val in values.items():
+                    if cid in criteria_ids:
+                        weight = criteria_weights.get(cid, 1)
+                        weighted_sum += val * weight
+                        total_weight += weight
+                        
+                        if group not in group_values[cid]:
+                            group_values[cid][group] = []
+                        group_values[cid][group].append(val)
+                
+                weighted_score = weighted_sum / total_weight if total_weight > 0 else None
+                
+                inst_result['ratings'].append({
+                    'problem_id': problem_id,
+                    'order': p_info['order'],
+                    'label': p_info['label'],
+                    'group': p_info['group'],
+                    'values': values,
+                    'weighted_score': weighted_score
+                })
+
+            # Sort ratings by order
+            inst_result['ratings'].sort(key=lambda x: x['order'])
+
+            # T-tests between groups
+            # Compare every pair of groups for each criteria
+            for cid in criteria_ids:
+                groups = list(group_values[cid].keys())
+                for i in range(len(groups)):
+                    for j in range(i + 1, len(groups)):
+                        g1 = groups[i]
+                        g2 = groups[j]
+                        vals1 = group_values[cid][g1]
+                        vals2 = group_values[cid][g2]
+                        
+                        if len(vals1) > 1 and len(vals2) > 1:
+                            # Welch's t-test
+                            t_stat, p_val = stats.ttest_ind(vals1, vals2, equal_var=False)
+                            inst_result['group_comparisons'].append({
+                                'criteria_id': cid,
+                                'group1': g1,
+                                'group2': g2,
+                                't_stat': float(t_stat) if not np.isnan(t_stat) else None,
+                                'p_value': float(p_val) if not np.isnan(p_val) else None,
+                                'mean1': float(np.mean(vals1)),
+                                'mean2': float(np.mean(vals2))
+                            })
+
+        # Inter-rater reliability (Kappa)
+        # Pairwise between all instructors
+        # Create weight map
+        criteria_weights = {c['id']: c.get('weight', 1) for c in criteria}
+
+        pairwise_kappa = []
+        
+        # Get list of instructor IDs
+        instructor_ids = list(instructors_data.keys())
+        
+        for i in range(len(instructor_ids)):
+            for j in range(i + 1, len(instructor_ids)):
+                id1 = instructor_ids[i]
+                id2 = instructor_ids[j]
+                name1 = instructors_data[id1]['name']
+                name2 = instructors_data[id2]['name']
+                
+                # Find common problems rated by both
+                probs1 = set(instructors_data[id1]['ratings'].keys())
+                probs2 = set(instructors_data[id2]['ratings'].keys())
+                common_probs = probs1.intersection(probs2)
+                
+                if not common_probs:
+                    continue
+                    
+                y1_all = []
+                y2_all = []
+                for cid in criteria_ids:
+                    y1 = []
+                    y2 = []
+                    for pid in common_probs:
+                        v1 = instructors_data[id1]['ratings'][pid].get(cid)
+                        v2 = instructors_data[id2]['ratings'][pid].get(cid)
+                        if v1 is not None and v2 is not None:
+                            y1.append(v1)
+                            y2.append(v2)
+                    
+                    if len(y1) > 1:
+                        # Calculate Cohen's Kappa
+                        # Since ratings are floats (0.5 steps), we treat them as categorical for Kappa?
+                        # Or use weighted Kappa? Cohen's Kappa is for categorical.
+                        # If we treat 1.0, 1.5, 2.0 as categories, it works.
+                        # But we need to ensure the set of categories is consistent.
+                        # Let's use a simple implementation or check if we can use something else.
+                        # For continuous data, ICC (Intraclass Correlation Coefficient) is often better, 
+                        # but user asked for Kappa.
+                        # I will implement a simple Cohen's Kappa for the observed categories.
+                        kappa = calculate_weighted_kappa(y1, y2)
+                        pairwise_kappa.append({
+                            'instructor1': name1,
+                            'instructor2': name2,
+                            'criteria_id': cid,
+                            'kappa': float(kappa),
+                            'n': len(y1)
+                        })
+                        
+                        # Add to overall list, repeated by weight
+                        weight = criteria_weights.get(cid, 1)
+                        # Ensure weight is at least 1
+                        weight = max(1, weight)
+                        for _ in range(weight):
+                            y1_all.extend(y1)
+                            y2_all.extend(y2)
+
+                # Calculate overall Kappa across all criteria
+                if len(y1_all) > 1:
+                    kappa_all = calculate_weighted_kappa(y1_all, y2_all)
+                    pairwise_kappa.append({
+                        'instructor1': name1,
+                        'instructor2': name2,
+                        'criteria_id': 'Overall',
+                        'kappa': float(kappa_all),
+                        'n': len(y1_all)
+                    })
+
+        results['inter_rater'] = {'pairwise': pairwise_kappa}
+        results['rubric'] = bank.get_rubric()
+        return Response(results)
+
+def calculate_weighted_kappa(y1, y2):
+    # Use unique labels from both
+    labels = sorted(list(set(y1 + y2)))
+    if len(labels) < 2:
+         return 1.0 if y1 == y2 else 0.0 # Perfect agreement if all same
+    
+    # Construct confusion matrix
+    label_to_idx = {l: idx for idx, l in enumerate(labels)}
+    k = len(labels)
+    cm = np.zeros((k, k), dtype=int)
+    for a, b in zip(y1, y2):
+        cm[label_to_idx[a]][label_to_idx[b]] += 1
+    
+    n = len(y1)
+    
+    # Quadratic weights: (i-j)^2
+    weights = np.zeros((k, k))
+    for i_idx in range(k):
+        for j_idx in range(k):
+            weights[i_idx][j_idx] = (i_idx - j_idx) ** 2
+            
+    # Observed disagreement
+    observed_disagreement = np.sum(cm * weights) / n
+    
+    # Expected disagreement
+    row_sums = np.sum(cm, axis=1)
+    col_sums = np.sum(cm, axis=0)
+    expected_cm = np.outer(row_sums, col_sums) / n
+    expected_disagreement = np.sum(expected_cm * weights) / n
+    
+    if expected_disagreement == 0:
+        return 1.0
+    else:
+        return 1.0 - (observed_disagreement / expected_disagreement)
+
+        results['inter_rater'] = {'pairwise': pairwise_kappa}
+        return Response(results)
+
+
+class GlobalAnalysisView(APIView):
+    permission_classes = [IsInstructor]
+
+    def get(self, request):
+        ensure_instructor(request.user)
+
+        # Fetch all banks with a rubric
+        banks = ProblemBank.objects.filter(rubric__isnull=False).select_related('rubric')
+        
+        results = []
+        
+        for bank in banks:
+            rubric = bank.get_rubric()
+            criteria_ids = [c['id'] for c in rubric['criteria']]
+            criteria_weights = {c['id']: c.get('weight', 1) for c in rubric['criteria']}
+            
+            # Fetch ratings for this bank
+            ratings = InstructorProblemRating.objects.filter(problem__problem_bank=bank).prefetch_related('entries__criterion', 'entries__scale_option', 'instructor__user')
+            
+            # Group by problem
+            problems_data = {} # problem_id -> { criteria_id: [values] }
+            instructors_ratings = {} # instructor_id -> { problem_id: { criteria_id: value } }
+            
+            for rating in ratings:
+                pid = rating.problem_id
+                inst_id = rating.instructor_id
+                
+                if pid not in problems_data:
+                    problems_data[pid] = {cid: [] for cid in criteria_ids}
+                
+                if inst_id not in instructors_ratings:
+                    instructors_ratings[inst_id] = {}
+                if pid not in instructors_ratings[inst_id]:
+                    instructors_ratings[inst_id][pid] = {}
+
+                for entry in rating.entries.all():
+                    cid = entry.criterion.criterion_id
+                    if cid in problems_data[pid]:
+                        val = entry.scale_option.value
+                        problems_data[pid][cid].append(val)
+                        instructors_ratings[inst_id][pid][cid] = val
+            
+            # Calculate per-problem averages and weighted scores
+            problem_averages = [] # List of { criteria_id: avg_val, weighted_score: val }
+            
+            for pid, criteria_vals in problems_data.items():
+                p_avg = {}
+                total_weighted_score = 0
+                total_weight = 0
+                
+                for cid, vals in criteria_vals.items():
+                    if vals:
+                        avg = float(np.mean(vals))
+                        p_avg[cid] = avg
+                        
+                        weight = criteria_weights.get(cid, 1)
+                        total_weighted_score += avg * weight
+                        total_weight += weight
+                    else:
+                        p_avg[cid] = None
+                
+                if total_weight > 0:
+                    p_avg['weighted_score'] = total_weighted_score / total_weight
+                else:
+                    p_avg['weighted_score'] = None
+                    
+                problem_averages.append(p_avg)
+            
+            # Aggregate bank means from problem averages
+            bank_means = {cid: [] for cid in criteria_ids}
+            bank_means['weighted_score'] = []
+            
+            for p_avg in problem_averages:
+                for cid in criteria_ids:
+                    if p_avg.get(cid) is not None:
+                        bank_means[cid].append(p_avg[cid])
+                if p_avg.get('weighted_score') is not None:
+                    bank_means['weighted_score'].append(p_avg['weighted_score'])
+            
+            final_means = {}
+            for key, vals in bank_means.items():
+                if vals:
+                    final_means[key] = float(np.mean(vals))
+                else:
+                    final_means[key] = None
+            
+            # Calculate Inter-rater Reliability (Average Pairwise Kappa)
+            instructor_ids = list(instructors_ratings.keys())
+            kappas = []
+            
+            for i in range(len(instructor_ids)):
+                for j in range(i + 1, len(instructor_ids)):
+                    id1 = instructor_ids[i]
+                    id2 = instructor_ids[j]
+                    
+                    # Common problems
+                    probs1 = set(instructors_ratings[id1].keys())
+                    probs2 = set(instructors_ratings[id2].keys())
+                    common_probs = probs1.intersection(probs2)
+                    
+                    if not common_probs:
+                        continue
+                        
+                    y1_all = []
+                    y2_all = []
+                    
+                    for pid in common_probs:
+                        for cid in criteria_ids:
+                            v1 = instructors_ratings[id1][pid].get(cid)
+                            v2 = instructors_ratings[id2][pid].get(cid)
+                            if v1 is not None and v2 is not None:
+                                weight = criteria_weights.get(cid, 1)
+                                for _ in range(max(1, weight)):
+                                    y1_all.append(v1)
+                                    y2_all.append(v2)
+                    
+                    if len(y1_all) > 1:
+                        kappas.append(calculate_weighted_kappa(y1_all, y2_all))
+            
+            avg_kappa = float(np.mean(kappas)) if kappas else None
+
+            results.append({
+                'id': bank.id,
+                'name': bank.name,
+                'means': final_means,
+                'inter_rater_reliability': avg_kappa,
+                'criteria_values': bank_means # Store raw problem averages for ANOVA
+            })
+
+        # ANOVA Test
+        # Collect all criteria info for ordering
+        criteria_order_map = {} # id -> min_order
+        for bank in banks:
+            rubric = bank.get_rubric()
+            for i, c in enumerate(rubric['criteria']):
+                cid = c['id']
+                # Use the order from the rubric, or index if not available
+                # The get_rubric method returns criteria list which is already sorted by order if model Meta ordering is set
+                # But let's rely on the list index as a proxy for order if we assume they are sorted
+                # Or better, if we can get the actual order field. get_rubric returns dicts.
+                # Looking at models.py, RubricCriterion has 'order' field.
+                # But get_rubric doesn't seem to include 'order' in the dict, only id, name, description, weight.
+                # Let's assume the list in get_rubric is sorted by order (it is, via related manager).
+                # We'll assign a global order. If multiple banks have same criterion, we take the minimum index?
+                # Or maybe we just collect all unique criteria and sort them by ID if order is ambiguous?
+                # User wants "in order".
+                # Let's try to preserve the order from the rubrics.
+                if cid not in criteria_order_map:
+                    criteria_order_map[cid] = i
+                else:
+                    criteria_order_map[cid] = min(criteria_order_map[cid], i)
+
+        # Sort criteria by order
+        sorted_criteria_ids = sorted(criteria_order_map.keys(), key=lambda x: criteria_order_map[x])
+        
+        # Prepare data for ANOVA
+        # We need a list of values for each bank for each criterion
+        # And also for the weighted score
+        
+        anova_results = []
+        
+        # Helper for one-way ANOVA
+        def run_anova(key):
+            # Collect arrays
+            groups = []
+            for bank in results:
+                vals = bank['criteria_values'].get(key)
+                if vals and len(vals) > 1:
+                    groups.append(vals)
+            
+            if len(groups) < 2:
+                return None
+                
+            f_stat, p_val = stats.f_oneway(*groups)
+            return {'f_stat': float(f_stat), 'p_value': float(p_val)}
+
+        # Run ANOVA for each criterion
+        for cid in sorted_criteria_ids:
+            # Find name
+            name = cid
+            # Ideally we'd have the name map, but we can find it from the first bank that has it
+            for bank in banks:
+                rubric = bank.get_rubric()
+                found = next((c for c in rubric['criteria'] if c['id'] == cid), None)
+                if found:
+                    name = found['name']
+                    break
+            
+            res = run_anova(cid)
+            if res:
+                anova_results.append({
+                    'id': cid,
+                    'name': name,
+                    'is_weighted_score': False,
+                    **res
+                })
+                
+        # Run ANOVA for weighted score
+        res_score = run_anova('weighted_score')
+        if res_score:
+            anova_results.append({
+                'id': 'weighted_score',
+                'name': 'Weighted Score',
+                'is_weighted_score': True,
+                **res_score
+            })
+            
+        return Response({
+            'banks': results,
+            'anova': anova_results
+        })
+
+
+class QuizGradeExportView(APIView):
+    permission_classes = [IsInstructor]
+
+    def get(self, request, quiz_id):
+        instructor = ensure_instructor(request.user)
+        quiz = get_object_or_404(
+            Quiz.objects.filter(models.Q(owner=instructor) | models.Q(allowed_instructors=instructor)).distinct(),
+            id=quiz_id,
+        )
+
+        attempts = QuizAttempt.objects.filter(quiz=quiz).prefetch_related(
+            'attempt_slots__grade__items__selected_level',
+            'attempt_slots__grade__items__rubric_item__levels'
+        )
+
+        # Prepare CSV
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{quiz.title}_grades.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow(['Student Identifier', 'Grade'])
+
+        rubric = quiz.grading_rubric if hasattr(quiz, 'grading_rubric') else None
+        
+        for attempt in attempts:
+            total_score = 0
+            # Calculate score
+            # We can reuse logic similar to frontend or re-implement robustly
+            # Iterate through slots
+            for slot in attempt.attempt_slots.all():
+                if hasattr(slot, 'grade'):
+                    for item in slot.grade.items.all():
+                        total_score += item.selected_level.points
+
+            writer.writerow([attempt.student_identifier, total_score])
+
+        return response
+
+        all_criteria = set()
+        for res in results:
+            all_criteria.update(res['means'].keys())
+            
+        # Sort all_criteria based on the collected order
+        sorted_criteria = sorted([c for c in all_criteria if c != 'weighted_score'], key=lambda x: (criteria_order_map.get(x, 999), x))
+
+        anova_results = []
+        
+        for cid in sorted_criteria:
+            groups = []
+            group_names = []
+            
+            for res in results:
+                if cid in res['criteria_values'] and len(res['criteria_values'][cid]) > 1:
+                    groups.append(res['criteria_values'][cid])
+                    group_names.append(res['name'])
+            
+            if len(groups) > 1:
+                try:
+                    f_stat, p_val = stats.f_oneway(*groups)
+                except Exception:
+                    f_stat, p_val = None, None
+
+                if f_stat is not None and (np.isinf(f_stat) or np.isnan(f_stat)):
+                    f_stat = None
+                if p_val is not None and (np.isinf(p_val) or np.isnan(p_val)):
+                    p_val = None
+                
+                anova_results.append({
+                    'criterion_id': cid,
+                    'f_stat': float(f_stat) if f_stat is not None else None,
+                    'p_value': float(p_val) if p_val is not None else None,
+                    'significant': p_val < 0.05 if p_val is not None else False,
+                    'banks_included': group_names
+                })
+
+        return Response({
+            'banks': [{
+                'id': r['id'], 
+                'name': r['name'], 
+                'means': r['means'],
+                'inter_rater_reliability': r['inter_rater_reliability']
+            } for r in results],
+            'anova': anova_results,
+            'criteria_order': sorted_criteria
         })
 
 
@@ -453,36 +1029,32 @@ class ProblemBankRubricView(APIView):
 
     def put(self, request, bank_id):
         bank = self._get_bank(request, bank_id)
-        serializer = ProblemBankRubricPayloadSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        payload = serializer.validated_data
-        with transaction.atomic():
-            bank.rating_scale_options.all().delete()
-            bank.rating_criteria.all().delete()
-            scale_objects = [
-                ProblemBankRatingScaleOption(
-                    problem_bank=bank,
-                    order=index,
-                    value=option['value'],
-                    label=option['label'],
-                )
-                for index, option in enumerate(payload['scale'])
-            ]
-            criterion_objects = [
-                ProblemBankRatingCriterion(
-                    problem_bank=bank,
-                    order=index,
-                    criterion_id=criterion['id'],
-                    name=criterion['name'],
-                    description=criterion['description'],
-                )
-                for index, criterion in enumerate(payload['criteria'])
-            ]
-            if scale_objects:
-                ProblemBankRatingScaleOption.objects.bulk_create(scale_objects)
-            if criterion_objects:
-                ProblemBankRatingCriterion.objects.bulk_create(criterion_objects)
-        return Response(bank.get_rubric())
+        
+        rubric_id = request.data.get('rubric_id')
+        if rubric_id is not None:
+            if rubric_id == '':
+                bank.rubric = None
+            else:
+                rubric = get_object_or_404(Rubric, id=rubric_id)
+                bank.rubric = rubric
+            bank.save()
+            return Response(bank.get_rubric())
+        
+        return Response({'detail': 'Rubric ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class RubricViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsInstructor]
+    serializer_class = RubricSerializer
+
+    def get_queryset(self):
+        # Return all rubrics
+        return Rubric.objects.all()
+
+    def perform_create(self, serializer):
+        instructor = ensure_instructor(self.request.user)
+        serializer.save(owner=instructor)
 
 
 class InstructorProblemRatingView(APIView):
@@ -529,38 +1101,6 @@ class QuizRubricCriterionSerializer(serializers.Serializer):
 
 class QuizRubricPayloadSerializer(serializers.Serializer):
     scale = QuizRubricScaleSerializer(many=True)
-    criteria = QuizRubricCriterionSerializer(many=True)
-
-    def validate_scale(self, value):
-        seen = set()
-        for option in value:
-            val = option['value']
-            if val in seen:
-                raise serializers.ValidationError('Duplicate rating values are not allowed.')
-            seen.add(val)
-        return value
-
-    def validate_criteria(self, value):
-        seen = set()
-        normalized = []
-        for criterion in value:
-            criterion_id = str(criterion.get('id') or '').strip()
-            if not criterion_id:
-                raise serializers.ValidationError('Each criterion must include an id.')
-            if criterion_id in seen:
-                raise serializers.ValidationError(f'Duplicate criterion id: {criterion_id}')
-            seen.add(criterion_id)
-            normalized.append({**criterion, 'id': criterion_id})
-        return normalized
-
-
-class ProblemBankRubricScaleSerializer(serializers.Serializer):
-    value = serializers.FloatField()
-    label = serializers.CharField()
-
-
-class ProblemBankRubricPayloadSerializer(serializers.Serializer):
-    scale = ProblemBankRubricScaleSerializer(many=True)
     criteria = QuizRubricCriterionSerializer(many=True)
 
     def validate_scale(self, value):

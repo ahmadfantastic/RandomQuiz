@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Check, Edit, User, History } from 'lucide-react';
+import { Check, Edit, User, History, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -130,15 +130,37 @@ const GradingInterface = ({ quizId }) => {
         }
     };
 
+    const handleDownloadGrades = async () => {
+        try {
+            const response = await api.get(`/api/quizzes/${quizId}/grades/export/`, {
+                responseType: 'blob',
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `quiz_${quizId}_grades.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+        } catch (err) {
+            console.error('Failed to download grades', err);
+        }
+    };
+
     return (
         <div className="flex flex-col md:flex-row h-[calc(100vh-200px)] gap-4">
             {/* Sidebar - Student List */}
             <div className="w-full md:w-64 flex-shrink-0 border-b md:border-b-0 md:border-l md:pl-4 overflow-y-auto max-h-[200px] md:max-h-full order-1 md:order-2">
                 <div className="mb-4 flex justify-between items-center">
                     <h3 className="font-semibold">Students</h3>
-                    <Button variant="outline" size="sm" onClick={() => setIsRubricModalOpen(true)}>
-                        <Edit className="h-3 w-3 mr-1" /> Rubric
-                    </Button>
+                    <div className="flex gap-1">
+                        <Button variant="outline" size="sm" onClick={handleDownloadGrades} title="Download Grades">
+                            <Download className="h-3 w-3" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setIsRubricModalOpen(true)}>
+                            <Edit className="h-3 w-3 mr-1" /> Rubric
+                        </Button>
+                    </div>
                 </div>
                 <div className="space-y-2">
                     {isLoading ? (

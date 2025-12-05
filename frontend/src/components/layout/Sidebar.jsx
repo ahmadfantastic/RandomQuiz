@@ -25,6 +25,11 @@ const navItems = [
     to: '/admin/instructors',
     icon: <Users className="h-5 w-5" />,
   },
+  {
+    label: 'Global Analysis',
+    to: '/analysis/global',
+    icon: <Sparkles className="h-5 w-5" />,
+  },
 ];
 
 const Sidebar = ({ isOpen, onClose }) => {

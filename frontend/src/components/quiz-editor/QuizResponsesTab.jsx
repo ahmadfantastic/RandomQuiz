@@ -109,9 +109,7 @@ const QuizResponsesTab = ({
           <Button variant="outline" onClick={onAddResponse}>
             Add Response
           </Button>
-          <Button variant="outline" asChild>
-            <Link to={`/quizzes/${quizId}/analytics`}>Analytics</Link>
-          </Button>
+
           <Button variant="outline" onClick={loadAttempts}>Refresh</Button>
         </div>
       </div>

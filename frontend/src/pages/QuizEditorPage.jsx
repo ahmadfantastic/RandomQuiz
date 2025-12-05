@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
@@ -14,19 +14,21 @@ import { getQuizStatus } from '@/lib/quizStatus';
 import { RESPONSE_TYPE_OPTIONS, getResponseTypeLabel } from '@/lib/responseTypes';
 import DateBadge from '@/components/ui/date-badge';
 import QuizStatusBanner from '@/components/quiz-editor/QuizStatusBanner';
-import QuizOverviewTab from '@/components/quiz-editor/QuizOverviewTab';
-import QuizSlotsTab from '@/components/quiz-editor/QuizSlotsTab';
 import AttemptTimelineModal from '@/components/quiz-editor/AttemptTimelineModal';
-import QuizResponsesTab from '@/components/quiz-editor/QuizResponsesTab';
-import QuizAllowedInstructorsTab from '@/components/quiz-editor/QuizAllowedInstructorsTab';
 import RubricCriteriaModal from '@/components/quiz-editor/RubricCriteriaModal';
 import RubricScaleModal from '@/components/quiz-editor/RubricScaleModal';
-import GradingInterface from '@/components/quiz-editor/GradingInterface';
 import QuizPrintModal from '@/components/quiz-editor/QuizPrintModal';
 import ManualResponseModal from '@/components/quiz-editor/ManualResponseModal';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import useProblemStatements from '@/lib/useProblemStatements';
+
+const QuizOverviewTab = React.lazy(() => import('@/components/quiz-editor/QuizOverviewTab'));
+const QuizSlotsTab = React.lazy(() => import('@/components/quiz-editor/QuizSlotsTab'));
+const QuizResponsesTab = React.lazy(() => import('@/components/quiz-editor/QuizResponsesTab'));
+const QuizAllowedInstructorsTab = React.lazy(() => import('@/components/quiz-editor/QuizAllowedInstructorsTab'));
+const GradingInterface = React.lazy(() => import('@/components/quiz-editor/GradingInterface'));
+
 
 const TABS = {
   OVERVIEW: 'overview',
@@ -1151,6 +1153,25 @@ const QuizEditorPage = () => {
     <AppShell
       title={quiz ? quiz.title : 'Quiz Workspace'}
       description="Configure quiz settings, manage problem slots, and review student responses."
+      headerContent={
+        quiz && (
+          <QuizStatusBanner
+            readyForStudents={readyForStudents}
+            schedulePreview={schedulePreview}
+            slotReadiness={slotReadiness}
+            attemptsSummary={attemptsSummary}
+            handleCopyLink={handleCopyLink}
+            copyMessage={copyMessage}
+            statusKey={quizStatusKey}
+            compact={true}
+            customAction={
+              <Button variant="outline" size="sm" className="h-8" asChild>
+                <Link to={`/quizzes/${quizId}/analytics`}>Analytics</Link>
+              </Button>
+            }
+          />
+        )
+      }
     >
       {isLoadingQuiz ? (
         <div className="space-y-6">
@@ -1241,16 +1262,8 @@ const QuizEditorPage = () => {
             </Card>
           )}
 
-          {/* Status Banner */}
-          <QuizStatusBanner
-            readyForStudents={readyForStudents}
-            schedulePreview={schedulePreview}
-            slotReadiness={slotReadiness}
-            attemptsSummary={attemptsSummary}
-            handleCopyLink={handleCopyLink}
-            copyMessage={copyMessage}
-            statusKey={quizStatusKey}
-          />
+          {/* Status Banner - now in header via AppShell */}
+          {/* <QuizStatusBanner ... /> */}
 
           {/* Tab Navigation */}
           <div className="-mx-4 px-4 border-b overflow-x-auto">
@@ -1286,68 +1299,74 @@ const QuizEditorPage = () => {
 
           {/* Tab Content */}
           <div className="min-h-[400px]">
-            {activeTab === TABS.OVERVIEW && (
-              <QuizOverviewTab
-                quiz={quiz}
-                details={details}
-                onDetailChange={handleDetailChange}
-                onSaveDetails={handleSaveDetails}
-                detailsSaving={detailsSaving}
-                detailsError={detailsError}
-                quizLink={quizLink}
-                handleCopyLink={handleCopyLink}
-                copyMessage={copyMessage}
-                readyForStudents={readyForStudents}
-                scheduleState={scheduleState}
-                onOpenQuiz={handleOpenQuiz}
-                onCloseQuiz={handleCloseQuiz}
-                scheduleActionLoading={scheduleActionLoading}
-                scheduleActionError={scheduleActionError}
-                onOpenQuizPrint={() => setIsPrintModalOpen(true)}
-              />
-            )}
+            <Suspense
+              fallback={
+                <div className="flex h-64 items-center justify-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                </div>
+              }
+            >
+              {activeTab === TABS.OVERVIEW && (
+                <QuizOverviewTab
+                  quiz={quiz}
+                  details={details}
+                  onDetailChange={handleDetailChange}
+                  onSaveDetails={handleSaveDetails}
+                  detailsSaving={detailsSaving}
+                  detailsError={detailsError}
+                  quizLink={quizLink}
+                  handleCopyLink={handleCopyLink}
+                  copyMessage={copyMessage}
+                  readyForStudents={readyForStudents}
+                  scheduleState={scheduleState}
+                  onOpenQuiz={handleOpenQuiz}
+                  onCloseQuiz={handleCloseQuiz}
+                  scheduleActionLoading={scheduleActionLoading}
+                  scheduleActionError={scheduleActionError}
+                  onOpenQuizPrint={() => setIsPrintModalOpen(true)}
+                />
+              )}
 
-            {activeTab === TABS.SLOTS && (
-              <QuizSlotsTab
-                slots={slots}
-                banks={banks}
-                isLoadingBanks={isLoadingBanks}
-                slotError={slotError}
-                openSlotModal={openSlotModal}
-                openSlotDetailModal={openSlotDetailModal}
-                loadSlots={loadSlots}
-                slotProblemOptions={slotProblemOptions}
-                openRubricCriteria={() => setIsRubricCriteriaOpen(true)}
-                openRubricScale={() => setIsRubricScaleOpen(true)}
-              />
-            )}
+              {activeTab === TABS.SLOTS && (
+                <QuizSlotsTab
+                  slots={slots}
+                  banks={banks}
+                  isLoadingBanks={isLoadingBanks}
+                  slotError={slotError}
+                  openSlotModal={openSlotModal}
+                  openSlotDetailModal={openSlotDetailModal}
+                  loadSlots={loadSlots}
+                  slotProblemOptions={slotProblemOptions}
+                  openRubricCriteria={() => setIsRubricCriteriaOpen(true)}
+                  openRubricScale={() => setIsRubricScaleOpen(true)}
+                />
+              )}
 
-            {activeTab === TABS.RESPONSES && (
-              <QuizResponsesTab
-                attempts={attempts}
-                attemptError={attemptError}
-                loadAttempts={loadAttempts}
-                openAttemptModal={openAttemptModal}
-                requestAttemptDeletion={requestAttemptDeletion}
-                onAddResponse={() => setIsManualResponseModalOpen(true)}
-              />
-            )}
+              {activeTab === TABS.RESPONSES && (
+                <QuizResponsesTab
+                  attempts={attempts}
+                  attemptError={attemptError}
+                  loadAttempts={loadAttempts}
+                  openAttemptModal={openAttemptModal}
+                  requestAttemptDeletion={requestAttemptDeletion}
+                  onAddResponse={() => setIsManualResponseModalOpen(true)}
+                />
+              )}
 
-            {activeTab === TABS.INSTRUCTORS && (
-              <QuizAllowedInstructorsTab
-                allowedInstructors={allowedInstructors}
-                canManageCollaborators={canManageAllowedInstructors}
-                handleAddInstructor={handleAddInstructor}
-                handleRemoveInstructor={handleRemoveInstructor}
-                instructorId={instructorId}
-                setInstructorId={setInstructorId}
-                instructorError={instructorError}
-                loadInstructors={loadAllowedInstructors}
-              />
-            )}
-            {activeTab === TABS.GRADING_RUBRIC && <GradingInterface quizId={quizIdNumber} />}
-
-
+              {activeTab === TABS.INSTRUCTORS && (
+                <QuizAllowedInstructorsTab
+                  allowedInstructors={allowedInstructors}
+                  canManageCollaborators={canManageAllowedInstructors}
+                  handleAddInstructor={handleAddInstructor}
+                  handleRemoveInstructor={handleRemoveInstructor}
+                  instructorId={instructorId}
+                  setInstructorId={setInstructorId}
+                  instructorError={instructorError}
+                  loadInstructors={loadAllowedInstructors}
+                />
+              )}
+              {activeTab === TABS.GRADING_RUBRIC && <GradingInterface quizId={quizIdNumber} />}
+            </Suspense>
           </div>
 
 

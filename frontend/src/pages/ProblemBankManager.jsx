@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -19,6 +20,7 @@ import AppShell from '@/components/layout/AppShell';
 import ProblemBankRubricEditor from '@/components/problem-bank/ProblemBankRubricEditor';
 import RatingModal from '@/components/problem-bank/RatingModal';
 import ImportRatingsModal from '@/components/problem-bank/ImportRatingsModal';
+import RubricManagerModal from '@/components/problem-bank/RubricManagerModal';
 
 const ProblemListPlaceholder = () => (
   <div className="space-y-3 animate-pulse">
@@ -214,6 +216,11 @@ const ProblemBankManager = () => {
   const [isImportRatingsModalOpen, setIsImportRatingsModalOpen] = useState(false);
   const [ratingModalState, setRatingModalState] = useState({ open: false, problemId: null, problemLabel: '' });
 
+  // New state for rubric management
+  const [rubricId, setRubricId] = useState('');
+  const [availableRubrics, setAvailableRubrics] = useState([]);
+  const [isRubricManagerOpen, setIsRubricManagerOpen] = useState(false);
+
   const loadBanks = async () => {
     setIsLoadingBanks(true);
     setBankListError('');
@@ -226,6 +233,15 @@ const ProblemBankManager = () => {
       setBanks([]);
     } finally {
       setIsLoadingBanks(false);
+    }
+  };
+
+  const loadRubrics = async () => {
+    try {
+      const res = await api.get('/api/rubrics/');
+      setAvailableRubrics(res.data);
+    } catch (error) {
+      console.error('Failed to load rubrics', error);
     }
   };
 
@@ -263,6 +279,7 @@ const ProblemBankManager = () => {
 
   useEffect(() => {
     loadBanks();
+    loadRubrics();
   }, []);
 
   useEffect(() => {
@@ -288,9 +305,10 @@ const ProblemBankManager = () => {
   const handleCreateBank = async (event) => {
     event.preventDefault();
     if (!name.trim()) return;
-    await api.post('/api/problem-banks/', { name, description });
+    await api.post('/api/problem-banks/', { name, description, rubric_id: rubricId || null });
     setName('');
     setDescription('');
+    setRubricId('');
     loadBanks();
     setIsCreateModalOpen(false);
   };
@@ -507,6 +525,9 @@ const ProblemBankManager = () => {
           <p className="text-sm font-medium text-muted-foreground">Create and manage reusable problem libraries.</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setIsRubricManagerOpen(true)}>
+            Manage Rubrics
+          </Button>
           <Button variant="outline" onClick={() => setIsImportModalOpen(true)}>
             Import from CSV
           </Button>
@@ -626,16 +647,23 @@ const ProblemBankManager = () => {
                         Edit Rubric
                       </Button>
                     )}
-                    {canEditSelectedBank && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs ml-2"
+                      onClick={() => setIsImportRatingsModalOpen(true)}
+                    >
+                      Import Ratings
+                    </Button>
+                    <Link to={`/problem-banks/${selectedBank.id}/analysis`}>
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-8 text-xs ml-2"
-                        onClick={() => setIsImportRatingsModalOpen(true)}
                       >
-                        Import Ratings
+                        Analysis
                       </Button>
-                    )}
+                    </Link>
                   </div>
                   {!canEditSelectedBank && (
                     <p className="text-xs text-muted-foreground">
@@ -758,6 +786,20 @@ const ProblemBankManager = () => {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What makes this bank different?"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="bank-rubric">Rubric (Optional)</Label>
+            <select
+              id="bank-rubric"
+              className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              value={rubricId}
+              onChange={(e) => setRubricId(e.target.value)}
+            >
+              <option value="">No Rubric</option>
+              {availableRubrics.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setIsCreateModalOpen(false)}>
@@ -906,6 +948,11 @@ const ProblemBankManager = () => {
         onOpenChange={setIsImportRatingsModalOpen}
         bankId={selectedBank?.id}
         onImportSuccess={() => loadBankDetails(selectedBank?.id, selectedBank)}
+      />
+      <RubricManagerModal
+        open={isRubricManagerOpen}
+        onOpenChange={setIsRubricManagerOpen}
+        onRubricCreated={loadRubrics}
       />
     </AppShell >
   );

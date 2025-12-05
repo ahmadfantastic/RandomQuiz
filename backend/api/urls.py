@@ -39,6 +39,11 @@ from .views import (
     ResponseImportView,
     ProblemBankRubricView,
     InstructorProblemRatingView,
+    ProblemBankAnalysisView,
+    ProblemBankRatingImportView,
+    RubricViewSet,
+    GlobalAnalysisView,
+    QuizGradeExportView,
 )
 
 router = DefaultRouter()
@@ -47,6 +52,7 @@ router.register('problem-banks', ProblemBankViewSet, basename='problem-bank')
 router.register('problems', ProblemViewSet, basename='problem')
 router.register('quizzes', QuizViewSet, basename='quiz')
 router.register('slots', QuizSlotViewSet, basename='slot')
+router.register('rubrics', RubricViewSet, basename='rubric')
 
 urlpatterns = [
     path('auth/csrf/', CSRFTokenView.as_view(), name='api-csrf'),
@@ -55,6 +61,9 @@ urlpatterns = [
     path('', include(router.urls)),
     path('problem-banks/<int:bank_id>/problems/', ProblemBankProblemListCreate.as_view(), name='bank-problems'),
     path('problem-banks/<int:bank_id>/rubric/', ProblemBankRubricView.as_view(), name='bank-rubric'),
+    path('problem-banks/<int:bank_id>/analysis/', ProblemBankAnalysisView.as_view(), name='bank-analysis'),
+    path('problem-banks/analysis/global/', GlobalAnalysisView.as_view(), name='global-analysis'),
+    path('problem-banks/<int:bank_id>/import-ratings/', ProblemBankRatingImportView.as_view(), name='bank-import-ratings'),
     path('problems/<int:problem_id>/rate/', InstructorProblemRatingView.as_view(), name='problem-rate'),
     path('quizzes/<int:quiz_id>/slots/', QuizSlotListCreate.as_view(), name='quiz-slots'),
     path('quizzes/<int:quiz_id>/allowed-instructors/', QuizAllowedInstructorList.as_view(), name='quiz-allowed-list'),
@@ -89,6 +98,11 @@ urlpatterns = [
         'quizzes/<int:quiz_id>/attempts/<int:attempt_id>/slots/<int:slot_id>/grade/',
         QuizSlotGradeView.as_view(),
         name='quiz-slot-grade',
+    ),
+    path(
+        'quizzes/<int:quiz_id>/grades/export/',
+        QuizGradeExportView.as_view(),
+        name='quiz-grade-export',
     ),
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('slots/<int:slot_id>/slot-problems/', SlotProblemListCreate.as_view(), name='slot-problem-list'),

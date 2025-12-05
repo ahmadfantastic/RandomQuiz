@@ -3,7 +3,7 @@ import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { cn } from '@/lib/utils';
 
-const AppShell = ({ title, description, children, actions }) => {
+const AppShell = ({ title, description, children, actions, headerContent }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
@@ -11,18 +11,21 @@ const AppShell = ({ title, description, children, actions }) => {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <div className="flex flex-1 flex-col ml-0 lg:ml-64">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-4 lg:px-10">
-          <div className="flex items-center">
-            <button
-              className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-md border lg:hidden"
-              onClick={() => setIsSidebarOpen(true)}
-              aria-label="Open navigation"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="text-xl font-semibold lg:text-2xl">{title}</h1>
-              {description && <p className="text-sm text-muted-foreground">{description}</p>}
+          <div className="flex items-center gap-4 flex-1">
+            <div className="flex items-center">
+              <button
+                className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-md border lg:hidden"
+                onClick={() => setIsSidebarOpen(true)}
+                aria-label="Open navigation"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <div>
+                <h1 className="text-xl font-semibold lg:text-2xl">{title}</h1>
+                {description && <p className="text-sm text-muted-foreground">{description}</p>}
+              </div>
             </div>
+            {headerContent && <div className="flex-1 flex justify-center">{headerContent}</div>}
           </div>
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </header>

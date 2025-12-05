@@ -11,6 +11,8 @@ import ThankYouPage from '@/pages/ThankYouPage';
 import QuizzesPage from '@/pages/QuizzesPage';
 import ProfilePage from '@/pages/ProfilePage';
 import QuizAnalyticsPage from '@/pages/QuizAnalyticsPage';
+import ProblemBankAnalysisPage from '@/pages/ProblemBankAnalysisPage';
+import GlobalAnalysisPage from '@/pages/GlobalAnalysisPage';
 
 const App = () => (
   <Router>
@@ -23,6 +25,8 @@ const App = () => (
       <Route path="/quizzes/:quizId/edit" element={<QuizEditorPage />} />
       <Route path="/quizzes/:quizId/analytics" element={<QuizAnalyticsPage />} />
       <Route path="/problem-banks" element={<ProblemBankManager />} />
+      <Route path="/problem-banks/:bankId/analysis" element={<ProblemBankAnalysisPage />} />
+      <Route path="/analysis/global" element={<GlobalAnalysisPage />} />
       <Route path="/admin/instructors" element={<AdminInstructorManager />} />
       <Route path="/q/:publicId" element={<PublicQuizLandingPage />} />
       <Route path="/attempts/:attemptToken" element={<QuizAttemptPage />} />
