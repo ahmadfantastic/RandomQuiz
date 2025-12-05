@@ -3,7 +3,7 @@ import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import api from '@/lib/api';
-import OverviewCards from '@/features/dashboard/components/OverviewCards';
+import OverviewCards from '@/components/dashboard/OverviewCards';
 import QuizStatusIcon from '@/components/quiz/QuizStatusIcon';
 import { getQuizStatus } from '@/lib/quizStatus';
 import { hasAuthFlag } from '@/lib/auth';

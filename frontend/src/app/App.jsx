@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import LoginPage from '@/features/auth/pages/LoginPage';
-import DashboardPage from '@/features/dashboard/pages/DashboardPage';
+import LoginPage from '@/pages/LoginPage';
+import DashboardPage from '@/pages/DashboardPage';
 import QuizEditorPage from '@/pages/QuizEditorPage';
 import ProblemBankManager from '@/pages/ProblemBankManager';
 import AdminInstructorManager from '@/pages/AdminInstructorManager';

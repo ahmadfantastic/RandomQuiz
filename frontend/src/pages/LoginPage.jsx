@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import LoginForm from '@/features/auth/components/LoginForm';
+import LoginForm from '@/components/auth/LoginForm';
 import { hasAuthFlag } from '@/lib/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
