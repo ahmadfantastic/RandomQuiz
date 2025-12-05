@@ -213,6 +213,7 @@ class QuizSlotSerializer(serializers.ModelSerializer):
 class QuizSerializer(serializers.ModelSerializer):
     owner_username = serializers.CharField(source='owner.user.username', read_only=True)
     allowed_instructors = serializers.PrimaryKeyRelatedField(queryset=Instructor.objects.all(), many=True, required=False)
+    slots = QuizSlotSerializer(many=True, read_only=True)
 
     class Meta:
         model = Quiz
@@ -227,6 +228,7 @@ class QuizSerializer(serializers.ModelSerializer):
             'end_time',
             'public_id',
             'allowed_instructors',
+            'slots',
         ]
         read_only_fields = ['owner']
 
@@ -271,6 +273,18 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
             'grade',
         ]
         read_only_fields = ['attempt', 'slot', 'assigned_problem', 'answered_at', 'grade']
+
+
+class QuizAttemptSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuizAttempt
+        fields = [
+            'id',
+            'student_identifier',
+            'started_at',
+            'completed_at',
+            'extra_info',
+        ]
 
 
 class QuizAttemptSerializer(serializers.ModelSerializer):

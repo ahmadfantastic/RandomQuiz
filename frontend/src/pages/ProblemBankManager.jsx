@@ -7,6 +7,7 @@ import { ChevronDown, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Modal } from '@/components/ui/modal';
@@ -49,6 +50,8 @@ const ProblemItem = ({
   statementEntry,
   isDeleting,
   canEdit,
+  isSelected,
+  onSelect,
 }) => {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `problem-${problem.id}`,
@@ -81,12 +84,19 @@ const ProblemItem = ({
     >
       <div className="flex items-center">
         {canEdit && (
-          <div
-            {...listeners}
-            {...attributes}
-            className="cursor-grab px-3 py-3 text-muted-foreground hover:text-foreground"
-          >
-            <GripVertical className="h-4 w-4" />
+          <div className="flex items-center pl-2">
+            <div
+              {...listeners}
+              {...attributes}
+              className="cursor-grab p-2 text-muted-foreground hover:text-foreground"
+            >
+              <GripVertical className="h-4 w-4" />
+            </div>
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={(checked) => onSelect(problem.id, checked)}
+              className="mr-2"
+            />
           </div>
         )}
         <button
@@ -220,6 +230,19 @@ const ProblemBankManager = () => {
   const [rubricId, setRubricId] = useState('');
   const [availableRubrics, setAvailableRubrics] = useState([]);
   const [isRubricManagerOpen, setIsRubricManagerOpen] = useState(false);
+  const [selectedProblems, setSelectedProblems] = useState(new Set());
+
+  const handleSelectProblem = (problemId, isSelected) => {
+    setSelectedProblems((prev) => {
+      const next = new Set(prev);
+      if (isSelected) {
+        next.add(problemId);
+      } else {
+        next.delete(problemId);
+      }
+      return next;
+    });
+  };
 
   const loadBanks = async () => {
     setIsLoadingBanks(true);
@@ -249,6 +272,7 @@ const ProblemBankManager = () => {
     setProblemActionError('');
     resetStatements();
     setOpenProblemId(null);
+    setSelectedProblems(new Set());
     setIsBankDetailsLoading(true);
     if (bankMeta) {
       setSelectedBank((prev) => (prev?.id === bankId ? prev : { ...bankMeta, problems: [] }));
@@ -503,15 +527,33 @@ const ProblemBankManager = () => {
 
     if (!problemId) return;
 
-    const problem = selectedBankProblems.find((p) => p.id === problemId);
-    if (problem && (problem.group || '') === (targetGroup || '')) return;
+    // If the dragged problem is part of the selection, move all selected problems
+    const problemsToMove = selectedProblems.has(problemId)
+      ? Array.from(selectedProblems)
+      : [problemId];
+
+    // Filter out problems that are already in the target group
+    const validMoves = problemsToMove.filter((pid) => {
+      const problem = selectedBankProblems.find((p) => p.id === pid);
+      return problem && (problem.group || '') !== (targetGroup || '');
+    });
+
+    if (validMoves.length === 0) return;
 
     try {
-      await api.patch(`/api/problems/${problemId}/`, { group: targetGroup || null });
+      await Promise.all(
+        validMoves.map((pid) =>
+          api.patch(`/api/problems/${pid}/`, { group: targetGroup || null })
+        )
+      );
       loadBankDetails(selectedBank.id, selectedBank);
+      // Clear selection after successful move
+      if (selectedProblems.has(problemId)) {
+        setSelectedProblems(new Set());
+      }
     } catch (error) {
-      console.error('Failed to move problem', error);
-      setProblemActionError('Failed to move problem to new group.');
+      console.error('Failed to move problems', error);
+      setProblemActionError('Failed to move problems to new group.');
     }
   };
 
@@ -684,28 +726,33 @@ const ProblemBankManager = () => {
                               if (b[0] === '') return 1;
                               return a[0].localeCompare(b[0]);
                             })
-                            .map(([groupName, problems]) => (
-                              <ProblemGroup
-                                key={groupName}
-                                group={groupName}
-                                canEdit={canEditSelectedBank}
-                              >
-                                {problems.map((problem) => (
-                                  <ProblemItem
-                                    key={problem.id}
-                                    problem={problem}
-                                    isOpen={openProblemId === problem.id}
-                                    onToggle={handleProblemToggle}
-                                    onEdit={handleOpenEditModal}
-                                    onDelete={handleDeleteProblem}
-                                    onRate={handleOpenRatingModal}
-                                    statementEntry={problemStatements[problem.id]}
-                                    isDeleting={Boolean(deletingProblems[problem.id])}
-                                    canEdit={canEditSelectedBank}
-                                  />
-                                ))}
-                              </ProblemGroup>
-                            ))}
+                            .map(([groupName, problems]) => {
+                              if (groupName === '' && problems.length === 0) return null;
+                              return (
+                                <ProblemGroup
+                                  key={groupName}
+                                  group={groupName}
+                                  canEdit={canEditSelectedBank}
+                                >
+                                  {problems.map((problem) => (
+                                    <ProblemItem
+                                      key={problem.id}
+                                      problem={problem}
+                                      isOpen={openProblemId === problem.id}
+                                      onToggle={handleProblemToggle}
+                                      onEdit={handleOpenEditModal}
+                                      onDelete={handleDeleteProblem}
+                                      onRate={handleOpenRatingModal}
+                                      statementEntry={problemStatements[problem.id]}
+                                      isDeleting={Boolean(deletingProblems[problem.id])}
+                                      canEdit={canEditSelectedBank}
+                                      isSelected={selectedProblems.has(problem.id)}
+                                      onSelect={handleSelectProblem}
+                                    />
+                                  ))}
+                                </ProblemGroup>
+                              );
+                            })}
                         </div>
                       </DndContext>
                     )}
