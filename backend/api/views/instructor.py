@@ -27,7 +27,7 @@ class InstructorViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get', 'put', 'patch'])
     def me(self, request):
-        instructor = getattr(request.user, 'instructor_profile', None)
+        instructor = getattr(request.user, 'instructor', None)
         if not instructor:
             return Response({'detail': 'Not an instructor'}, status=403)
         
