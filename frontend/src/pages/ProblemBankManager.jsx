@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Modal } from '@/components/ui/modal';
@@ -67,6 +68,17 @@ const ProblemItem = ({
     : undefined;
 
   const label = problem.display_label || `Problem ${problem.id}`;
+  const ratingStatus = problem.rating_status;
+
+  let statusBadge = null;
+  if (ratingStatus === 'complete') {
+    statusBadge = <Badge className="bg-green-600 hover:bg-green-700 ml-2">Rated</Badge>;
+  } else if (ratingStatus === 'partial') {
+    statusBadge = <Badge variant="secondary" className="bg-yellow-500 hover:bg-yellow-600 text-white ml-2">Partial</Badge>;
+  } else {
+    statusBadge = <Badge variant="outline" className="text-muted-foreground ml-2">Not Rated</Badge>;
+  }
+
   const hasStatementEntry = statementEntry && 'statement' in statementEntry;
   const rawStatement = hasStatementEntry ? statementEntry.statement : '';
   const hasStatementText = rawStatement?.trim();
@@ -105,7 +117,10 @@ const ProblemItem = ({
           onClick={() => onToggle(problem.id)}
           aria-expanded={isOpen}
         >
-          <span className="text-sm font-semibold">{label}</span>
+          <div className="flex items-center">
+            <span className="text-sm font-semibold">{label}</span>
+            {statusBadge}
+          </div>
           <ChevronDown
             className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : 'rotate-0'}`}
           />
@@ -268,11 +283,13 @@ const ProblemBankManager = () => {
     }
   };
 
-  const loadBankDetails = async (bankId, bankMeta = null) => {
+  const loadBankDetails = async (bankId, bankMeta = null, preserveState = false) => {
     setProblemActionError('');
-    resetStatements();
-    setOpenProblemId(null);
-    setSelectedProblems(new Set());
+    if (!preserveState) {
+      resetStatements();
+      setOpenProblemId(null);
+      setSelectedProblems(new Set());
+    }
     setIsBankDetailsLoading(true);
     if (bankMeta) {
       setSelectedBank((prev) => (prev?.id === bankId ? prev : { ...bankMeta, problems: [] }));
@@ -602,6 +619,8 @@ const ProblemBankManager = () => {
                   const ownerLabel = bank.is_owner
                     ? 'You own this bank'
                     : `Owned by ${bank.owner_username || 'another instructor'}`;
+                  const stats = bank.completion_stats || { rated: 0, total: 0, status: 'incomplete' };
+
                   return (
                     <button
                       key={bank.id}
@@ -613,11 +632,26 @@ const ProblemBankManager = () => {
                       )}
                     >
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-medium">{bank.name}</span>
+                        <div className="flex justify-between items-start">
+                          <span className="font-medium">{bank.name}</span>
+                          {stats.status === 'complete' && (
+                            <Badge className="bg-green-600 hover:bg-green-700 text-[10px] px-1.5 py-0 h-5">Done</Badge>
+                          )}
+                        </div>
                         {bank.description && (
                           <span className="text-sm text-muted-foreground">{bank.description}</span>
                         )}
-                        <span className="text-xs text-muted-foreground">{ownerLabel}</span>
+                        <div className="flex justify-between items-center mt-1">
+                          <span className="text-xs text-muted-foreground">{ownerLabel}</span>
+                          {stats.total > 0 && (
+                            <span className={cn(
+                              "text-xs font-medium",
+                              stats.status === 'complete' ? "text-green-600" : "text-muted-foreground"
+                            )}>
+                              {stats.rated}/{stats.total} rated
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -985,7 +1019,13 @@ const ProblemBankManager = () => {
       />
       <RatingModal
         open={ratingModalState.open}
-        onOpenChange={(open) => setRatingModalState(prev => ({ ...prev, open }))}
+        onOpenChange={(open) => {
+          setRatingModalState(prev => ({ ...prev, open }));
+          if (!open) {
+            // Refresh data when modal closes to update badges
+            loadBankDetails(selectedBank?.id, selectedBank, true);
+          }
+        }}
         problemId={ratingModalState.problemId}
         bankId={selectedBank?.id}
         problemLabel={ratingModalState.problemLabel}
@@ -994,7 +1034,7 @@ const ProblemBankManager = () => {
         open={isImportRatingsModalOpen}
         onOpenChange={setIsImportRatingsModalOpen}
         bankId={selectedBank?.id}
-        onImportSuccess={() => loadBankDetails(selectedBank?.id, selectedBank)}
+        onImportSuccess={() => loadBankDetails(selectedBank?.id, selectedBank, true)}
       />
       <RubricManagerModal
         open={isRubricManagerOpen}

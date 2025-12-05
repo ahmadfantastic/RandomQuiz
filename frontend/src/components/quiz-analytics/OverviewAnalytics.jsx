@@ -17,6 +17,7 @@ const OverviewAnalytics = ({ data }) => {
                     max_score: data.max_score
                 }}
                 timeStats={data.time_distribution}
+                word_count_stats={data.word_count_stats}
             />
             <TimeDistributionChart timeStats={data.time_distribution} />
         </div>

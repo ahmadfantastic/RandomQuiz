@@ -680,6 +680,29 @@ class QuizOverviewAnalyticsView(APIView):
             'raw_values': durations
         }
 
+        # Calculate word count stats for open text responses
+        all_word_counts = []
+        text_slots_data = QuizAttemptSlot.objects.filter(
+            attempt__quiz=quiz,
+            attempt__completed_at__isnull=False,
+            slot__response_type=QuizSlot.ResponseType.OPEN_TEXT
+        ).values_list('answer_data', flat=True)
+        
+        for data in text_slots_data:
+            if data and 'text' in data:
+                text = data['text']
+                count = len(text.split())
+                if count > 0:
+                    all_word_counts.append(count)
+
+        word_count_stats = {
+            'min': min(all_word_counts) if all_word_counts else 0,
+            'max': max(all_word_counts) if all_word_counts else 0,
+            'mean': sum(all_word_counts) / len(all_word_counts) if all_word_counts else 0,
+            'median': sorted(all_word_counts)[len(all_word_counts) // 2] if all_word_counts else 0,
+            'count': len(all_word_counts),
+        }
+
         return Response({
             'total_attempts': total_attempts,
             'completion_rate': completion_rate,
@@ -687,6 +710,7 @@ class QuizOverviewAnalyticsView(APIView):
             'min_score': attempts.aggregate(Min('score'))['score__min'] or 0,
             'max_score': attempts.aggregate(Max('score'))['score__max'] or 0,
             'time_distribution': time_stats,
+            'word_count_stats': word_count_stats,
         })
 
 

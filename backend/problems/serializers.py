@@ -28,21 +28,98 @@ class ProblemSerializer(serializers.ModelSerializer):
 class ProblemSummarySerializer(serializers.ModelSerializer):
     display_label = serializers.CharField(read_only=True)
     problem_bank = serializers.PrimaryKeyRelatedField(read_only=True)
+    rating_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Problem
-        fields = ['id', 'problem_bank', 'order_in_bank', 'group', 'display_label']
+        fields = ['id', 'problem_bank', 'order_in_bank', 'group', 'display_label', 'rating_status']
+
+    def get_rating_status(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return 'unrated'
+        
+        try:
+            # Efficiently check if rating exists
+            # For "completely rated", we'd ideally check entry count vs rubric criteria count.
+            # Assuming if InstructorProblemRating exists, it's at least partially rated.
+            # To be more precise, we can check if it has entries.
+            # But let's start with checking existence of the rating object.
+            # AND ideally checking if it matches the number of criteria in the bank's rubric.
+            
+            # Simple version: Check if rating exists
+            # rating_exists = obj.instructor_ratings.filter(instructor__user=request.user).exists()
+            # return 'complete' if rating_exists else 'unrated'
+
+            # Better version: Check entries?
+            # This might be N+1 if not prefetched.
+            # But usually we load one bank's problems, so we could prefetch ratings.
+            
+            rating = obj.instructor_ratings.filter(instructor__user=request.user).first()
+            if not rating:
+                return 'unrated'
+            
+            # If rating exists, check entries count
+            rubric = obj.problem_bank.rubric
+            if not rubric:
+                return 'unrated'
+                
+            criteria_count = rubric.criteria.count()
+            entries_count = rating.entries.count()
+            
+            if entries_count >= criteria_count and criteria_count > 0:
+                return 'complete'
+            elif entries_count > 0:
+                return 'partial'
+            else:
+                return 'unrated' # Rating object exists but no entries? Treated as unrated/partial.
+
+        except Exception:
+            return 'unrated'
 
 
 class ProblemBankSerializer(serializers.ModelSerializer):
     owner_username = serializers.CharField(source='owner.user.username', read_only=True)
     is_owner = serializers.SerializerMethodField()
     rubric_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    completion_stats = serializers.SerializerMethodField()
 
     class Meta:
         model = ProblemBank
-        fields = ['id', 'name', 'description', 'owner', 'owner_username', 'is_owner', 'rubric_id']
+        fields = ['id', 'name', 'description', 'owner', 'owner_username', 'is_owner', 'rubric_id', 'completion_stats']
         read_only_fields = ['owner']
+
+    def get_completion_stats(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return {'rated': 0, 'total': 0, 'status': 'incomplete'}
+            
+        total = obj.problems.count()
+        if total == 0:
+            return {'rated': 0, 'total': 0, 'status': 'empty'}
+
+        # Calculate rated count
+        # A problem is rated if... logic should match get_rating_status ideally.
+        # But for list view efficiency, let's say "has a rating entry" or "has rating object".
+        # Checking strictly "complete" for ALL problems is expensive without complex annotations.
+        # Let's count how many problems have at least one rating entry from this user?
+        # Or just "InstructorProblemRating exists".
+        
+        # Using "InstructorProblemRating exists" for now for efficiency.
+        # FIX: Ensure it has entries so it matches ProblemSummary logic (at least partial).
+        rated_count = InstructorProblemRating.objects.filter(
+            problem__problem_bank=obj, 
+            instructor__user=request.user,
+            entries__isnull=False
+        ).distinct().count()
+        
+        status = 'incomplete'
+        if rated_count == total:
+            status = 'complete'
+        elif rated_count > 0:
+            status = 'partial'
+            
+        return {'rated': rated_count, 'total': total, 'status': status}
 
     def get_is_owner(self, obj):
         request = self.context.get('request')
@@ -111,8 +188,14 @@ class InstructorProblemRatingSerializer(serializers.ModelSerializer):
 
         new_entries = []
         for entry_data in entries_data:
-            cid = entry_data['criterion_id']
-            val = entry_data['value']
+            # entries_data structure is nested due to 'source' in Serializer
+            # e.g. {'criterion': {'criterion_id': '...'}, 'scale_option': {'value': ...}}
+            cid = entry_data.get('criterion', {}).get('criterion_id')
+            val = entry_data.get('scale_option', {}).get('value')
+            
+            # Fallback if structure changes (though unlikely with current serializer)
+            if cid is None: cid = entry_data.get('criterion_id')
+            if val is None: val = entry_data.get('value')
             
             criterion = criteria_map.get(cid)
             scale_option = options_map.get(val)

@@ -11,7 +11,7 @@ from accounts.permissions import IsInstructor
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import ensure_instructor
+from accounts.models import ensure_instructor, Instructor
 from problems.models import ProblemBank, Problem, Rubric, InstructorProblemRating
 from problems.serializers import (
     ProblemBankSerializer, 
@@ -27,8 +27,8 @@ class ProblemBankViewSet(viewsets.ModelViewSet):
     permission_classes = [IsInstructor]
 
     def get_queryset(self):
-        instructor = ensure_instructor(self.request.user)
-        return ProblemBank.objects.filter(owner=instructor)
+        # Allow all instructors to see all banks (for rating/sharing purposes)
+        return ProblemBank.objects.all()
 
     def perform_create(self, serializer):
         serializer.save(owner=ensure_instructor(self.request.user))
@@ -226,24 +226,45 @@ class ProblemBankRatingImportView(APIView):
                     if not val_str:
                         continue
                     try:
-                        val = int(float(val_str))
+                        # Support floats (e.g. 0.5)
+                        val = float(val_str)
                     except ValueError:
                         continue
                         
                     # Find criterion ID
                     rubric = bank.get_rubric() # Returns dict
                     criteria = rubric.get('criteria', [])
-                    # Match by name (case-insensitive?) - Let's stick to exact or stripped match for now
-                    # The c_name comes from the CSV header.
-                    c_id = next((c['id'] for c in criteria if c['name'].strip().lower() == c_name.strip().lower()), None)
                     
-                    if c_id:
-                        from problems.models import InstructorProblemRatingEntry
-                        
+                    # Match by name OR id (case-insensitive)
+                    c_id = None
+                    c_name_clean = c_name.strip().lower()
+                    
+                    for c in criteria:
+                        if c['name'].strip().lower() == c_name_clean:
+                            c_id = c['id']
+                            break
+                        if str(c['id']).strip().lower() == c_name_clean:
+                            c_id = c['id']
+                            break
+                            
+                    if not c_id:
+                        continue
+                    
+                    from problems.models import InstructorProblemRatingEntry, RubricCriterion, RubricScaleOption
+                    
+                    # We need the actual RubricCriterion model instance
+                    criterion_obj = RubricCriterion.objects.filter(rubric__id=bank.rubric.id, criterion_id=c_id).first()
+
+                    # Find the scale option
+                    # We have `val` which is the value.
+                    # Handle float comparison carefully? Exact match for now.
+                    scale_option = RubricScaleOption.objects.filter(rubric__id=bank.rubric.id, value=val).first()
+                    
+                    if criterion_obj and scale_option:
                         InstructorProblemRatingEntry.objects.update_or_create(
                             rating=rating,
-                            criterion_id=c_id,
-                            defaults={'value': val}
+                            criterion=criterion_obj,
+                            defaults={'scale_option': scale_option}
                         )
                         
                 imported_count += 1
@@ -314,7 +335,7 @@ class ProblemBankAnalysisView(APIView):
         # 1. Get all ratings for problems in this bank.
         ratings = InstructorProblemRating.objects.filter(
             problem__problem_bank=bank
-        ).select_related('problem', 'instructor').prefetch_related('entries')
+        ).select_related('problem', 'instructor').prefetch_related('entries', 'entries__scale_option', 'entries__criterion')
         
         # Structure: Problem -> { Instructor -> { Criterion -> Value } }
         data = {}
@@ -332,6 +353,8 @@ class ProblemBankAnalysisView(APIView):
             if pid not in data:
                 data[pid] = {
                     'problem_label': r.problem.display_label,
+                    'order': r.problem.order_in_bank,
+                    'group': r.problem.group,
                     'ratings': {}
                 }
             
@@ -339,101 +362,186 @@ class ProblemBankAnalysisView(APIView):
                 data[pid]['ratings'][iid] = {}
                 
             for entry in r.entries.all():
-                c_id = entry.criterion_id
-                c_name = rubric_criteria.get(c_id, c_id)
-                criteria.add(c_name)
-                data[pid]['ratings'][iid][c_name] = entry.value
+                c_id = entry.criterion.criterion_id
+                # c_name = rubric_criteria.get(c_id, c_id) # Name logic removed for key
+                criteria.add(c_id) # Store ID
+                data[pid]['ratings'][iid][c_id] = entry.scale_option.value # Use ID as key
 
-        # Calculate statistics
-        # For each problem, calculate mean/std per criterion
-        # Calculate Inter-Rater Reliability (IRR) if multiple raters
+        # Prepare response structure
+        instructors_data = []
+        raters_list = sorted(list(instructors))
         
-        problem_stats = []
+        # Helper to get full instructor object/name. 
+        # r.instructor gave us the Instructor model.
+        # We need to map username -> {id, name}
+        # Let's fetch Instructor objects for these usernames
+        instructor_objs = {i.user.username: i for i in Instructor.objects.filter(user__username__in=raters_list).select_related('user')}
         
-        for pid, p_data in data.items():
-            p_stats = {
-                'id': pid,
-                'label': p_data['problem_label'],
-                'criteria_stats': {},
-                'irr': {}
+        for iid in raters_list:
+            inst_obj = instructor_objs.get(iid)
+            if not inst_obj: continue
+            
+            inst_data = {
+                'id': inst_obj.id,
+                'name': inst_obj.user.username, # Or inst_obj.user.get_full_name()
+                'ratings': [],
+                'group_comparisons': []
             }
             
-            p_ratings = p_data['ratings']
-            raters = list(p_ratings.keys())
+            # 1. Collect ratings
+            inst_ratings_values = [] # For group comparisons later
             
-            for c in criteria:
-                values = []
-                for rater in raters:
-                    val = p_ratings[rater].get(c)
-                    if val is not None:
-                        values.append(val)
-                
-                if values:
-                    p_stats['criteria_stats'][c] = {
-                        'mean': np.mean(values),
-                        'std': np.std(values),
-                        'count': len(values)
-                    }
+            for pid, p_data in data.items():
+                if iid in p_data['ratings']:
+                    ratings_dict = p_data['ratings'][iid]
+                    # Calculate weighted score? (Assuming simple sum or average for now as not specified)
+                    # Frontend expects 'weighted_score'.
+                    # Let's sum values for now.
+                    weighted_score = sum(ratings_dict.values())
                     
-                # IRR (Weighted Kappa) - Pairwise average
-                if len(raters) > 1:
-                    kappas = []
-                    for i in range(len(raters)):
-                        for j in range(i + 1, len(raters)):
-                            r1 = raters[i]
-                            r2 = raters[j]
-                            v1 = p_ratings[r1].get(c)
-                            v2 = p_ratings[r2].get(c)
-                            
-                            if v1 is not None and v2 is not None:
-                                # We can only calculate kappa if we have a set of items, 
-                                # but here we are looking at ONE problem.
-                                # Kappa is usually calculated across multiple items.
-                                # For a single item, we can just look at absolute difference?
-                                # Or maybe we want IRR across the whole BANK?
-                                pass
+                    inst_data['ratings'].append({
+                        'problem_id': pid,
+                        'order': p_data['order'],
+                        'label': p_data['problem_label'],
+                        'group': p_data['group'],
+                        'values': ratings_dict,
+                        'weighted_score': weighted_score
+                    })
+                    
+                    # Collect for group stats
+                    if p_data['group']:
+                         inst_ratings_values.append({
+                             'group': p_data['group'],
+                             'values': ratings_dict
+                         })
+
+            inst_data['ratings'].sort(key=lambda x: x['order'])
+            instructors_data.append(inst_data)
             
-            problem_stats.append(p_stats)
+            # 2. Group Comparisons (Pairwise t-tests between groups)
+            # Find unique groups
+            groups = set(r['group'] for r in inst_ratings_values)
+            group_list = sorted(list(groups))
             
-        # Calculate Bank-wide IRR per criterion
-        bank_irr = {}
-        if len(instructors) > 1:
-            raters_list = sorted(list(instructors))
-            
-            for c in criteria:
-                # Collect paired ratings across all problems
-                # We need common problems rated by pairs
-                
-                pairwise_kappas = []
-                
-                for i in range(len(raters_list)):
-                    for j in range(i + 1, len(raters_list)):
-                        r1 = raters_list[i]
-                        r2 = raters_list[j]
+            if len(group_list) >= 2:
+                import itertools
+                for g1, g2 in itertools.combinations(group_list, 2):
+                    g1_vals = [r['values'] for r in inst_ratings_values if r['group'] == g1]
+                    g2_vals = [r['values'] for r in inst_ratings_values if r['group'] == g2]
+                    
+                    # Start with Overall (sum of all criteria)? Or per criterion?
+                    # Frontend shows 'Criteria' column. Let's do per-criterion + Overall used.
+                    
+                    # For simplicty, let's just do per-criterion
+                    param_criteria_ids = rubric_criteria.keys()
+                    for c_id in param_criteria_ids:
+                        v1 = [d[c_id] for d in g1_vals if c_id in d]
+                        v2 = [d[c_id] for d in g2_vals if c_id in d]
                         
+                        if not v1 and not v2:
+                            continue
+                            
+                        mean1 = np.mean(v1) if v1 else 0.0
+                        mean2 = np.mean(v2) if v2 else 0.0
+                        
+                        t_stat = None
+                        p_val = None
+                        
+                        if len(v1) > 1 and len(v2) > 1:
+                            try:
+                                # Check for zero variance to avoid warnings or useless calcs if possible,
+                                # but scipy usually handles it (returns nan).
+                                # However, sometimes we want to be explicit.
+                                if np.var(v1) == 0 and np.var(v2) == 0:
+                                    # Both constant. 
+                                    if mean1 == mean2:
+                                        p_val = 1.0
+                                        t_stat = 0.0
+                                    else:
+                                        # Distinct constants. t-value is inf, p is 0.
+                                        p_val = 0.0
+                                        t_stat = 0.0 # Representation choice? Or None.
+                                else:
+                                    t, p = stats.ttest_ind(v1, v2, equal_var=False)
+                                    if not np.isnan(p):
+                                        t_stat = t
+                                        p_val = p
+                            except Exception:
+                                pass
+                                
+                        inst_data['group_comparisons'].append({
+                            'criteria_id': c_id,
+                            'group1': g1,
+                            'group2': g2,
+                            'mean1': mean1,
+                            'mean2': mean2,
+                            't_stat': t_stat,
+                            'p_value': p_val
+                        })
+
+
+        # 3. Inter-Rater Reliability (Pairwise)
+        pairwise_irr = []
+        if len(raters_list) > 1:
+             for i in range(len(raters_list)):
+                for j in range(i + 1, len(raters_list)):
+                    r1 = raters_list[i]
+                    r2 = raters_list[j]
+                    
+                    # Per criterion
+                    for c_id in criteria: # Iterating IDs
                         y1 = []
                         y2 = []
-                        
                         for pid, p_data in data.items():
-                            v1 = p_data['ratings'].get(r1, {}).get(c)
-                            v2 = p_data['ratings'].get(r2, {}).get(c)
-                            
+                            v1 = p_data['ratings'].get(r1, {}).get(c_id)
+                            v2 = p_data['ratings'].get(r2, {}).get(c_id)
                             if v1 is not None and v2 is not None:
                                 y1.append(v1)
                                 y2.append(v2)
                         
-                        if len(y1) >= 5: # Minimum sample size
-                            k = calculate_weighted_kappa(y1, y2)
-                            pairwise_kappas.append(k)
-                            
-                if pairwise_kappas:
-                    bank_irr[c] = np.mean(pairwise_kappas)
-        
+                        count = len(y1)
+                        if count >= 3:
+                             k = calculate_weighted_kappa(y1, y2)
+                             pairwise_irr.append({
+                                 'instructor1': r1,
+                                 'instructor2': r2,
+                                 'criteria_id': c_id,
+                                 'n': count,
+                                 'kappa': k
+                             })
+
+                    # Overall (concatenate all ratings)
+                    all_y1 = []
+                    all_y2 = []
+                    for c_id in criteria: # Iterating IDs
+                         for pid, p_data in data.items():
+                            v1 = p_data['ratings'].get(r1, {}).get(c_id)
+                            v2 = p_data['ratings'].get(r2, {}).get(c_id)
+                            if v1 is not None and v2 is not None:
+                                all_y1.append(v1)
+                                all_y2.append(v2)
+                    
+                    if len(all_y1) >= 5:
+                         k = calculate_weighted_kappa(all_y1, all_y2)
+                         pairwise_irr.append({
+                             'instructor1': r1,
+                             'instructor2': r2,
+                             'criteria_id': 'Overall',
+                             'n': len(all_y1),
+                             'kappa': k
+                         })
+
         return Response({
-            'bank_id': bank.id,
-            'problem_stats': problem_stats,
-            'bank_irr': bank_irr,
-            'raters': list(instructors)
+            'bank': {
+                'id': bank.id,
+                'name': bank.name,
+                'description': bank.description,
+            },
+            'rubric': bank.get_rubric(),
+            'instructors': instructors_data,
+            'inter_rater': {
+                'pairwise': pairwise_irr
+            }
         })
 
 
@@ -452,7 +560,7 @@ class GlobalAnalysisView(APIView):
             # Similar logic to ProblemBankAnalysisView but summarized
             ratings = InstructorProblemRating.objects.filter(
                 problem__problem_bank=bank
-            ).prefetch_related('entries')
+            ).prefetch_related('entries', 'entries__scale_option', 'entries__criterion')
             
             if not ratings.exists():
                 continue
@@ -480,17 +588,17 @@ class GlobalAnalysisView(APIView):
                     data[pid][iid] = {}
                 
                 for entry in r.entries.all():
-                    c_id = entry.criterion_id
+                    c_id = entry.criterion.criterion_id
                     c_name = rubric_criteria.get(c_id, c_id)
                     
                     if c_name not in c_totals:
                         c_totals[c_name] = 0
                         c_counts[c_name] = 0
                     
-                    c_totals[c_name] += entry.value
+                    c_totals[c_name] += entry.scale_option.value
                     c_counts[c_name] += 1
                     
-                    data[pid][iid][c_name] = entry.value
+                    data[pid][iid][c_name] = entry.scale_option.value
             
             means = {c: c_totals[c]/c_counts[c] for c in c_totals}
             
@@ -521,11 +629,11 @@ class GlobalAnalysisView(APIView):
             criteria_values = {} # criterion -> list of all values
             for r in ratings:
                 for entry in r.entries.all():
-                    c_id = entry.criterion_id
+                    c_id = entry.criterion.criterion_id
                     c_name = rubric_criteria.get(c_id, c_id)
                     if c_name not in criteria_values:
                         criteria_values[c_name] = []
-                    criteria_values[c_name].append(entry.value)
+                    criteria_values[c_name].append(entry.scale_option.value)
 
             results.append({
                 'id': bank.id,

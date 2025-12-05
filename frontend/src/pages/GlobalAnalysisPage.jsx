@@ -121,9 +121,18 @@ const GlobalAnalysisPage = () => {
                                                     : '-'}
                                             </TableCell>
                                             <TableCell>
-                                                {bank.inter_rater_reliability !== undefined && bank.inter_rater_reliability !== null
-                                                    ? bank.inter_rater_reliability.toFixed(3)
-                                                    : '-'}
+                                                {(() => {
+                                                    const irr = bank.inter_rater_reliability;
+                                                    if (irr === undefined || irr === null) return '-';
+                                                    if (typeof irr === 'number') return irr.toFixed(3);
+                                                    if (typeof irr === 'object') {
+                                                        const values = Object.values(irr);
+                                                        if (values.length === 0) return '-';
+                                                        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+                                                        return mean.toFixed(3);
+                                                    }
+                                                    return '-';
+                                                })()}
                                             </TableCell>
                                         </TableRow>
                                     ))}
