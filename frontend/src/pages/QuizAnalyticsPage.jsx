@@ -3,32 +3,71 @@ import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/lib/api';
-import AnalyticsSummary from '@/components/quiz-analytics/AnalyticsSummary';
-import TimeDistributionChart from '@/components/quiz-analytics/TimeDistributionChart';
+import OverviewAnalytics from '@/components/quiz-analytics/OverviewAnalytics';
+import InteractionAnalytics from '@/components/quiz-analytics/InteractionAnalytics';
 import SlotAnalytics from '@/components/quiz-analytics/SlotAnalytics';
-import AllSlotInteractions from '@/components/quiz-analytics/AllSlotInteractions';
 
-
-const QuizAnalyticsPage = () => {
-    const { quizId } = useParams();
+const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [data, setData] = useState(null);
-    const [quizTitle, setQuizTitle] = useState('');
 
     useEffect(() => {
         const fetchData = async () => {
             try {
                 setLoading(true);
-                const [analyticsRes, quizRes] = await Promise.all([
-                    api.get(`/api/quizzes/${quizId}/analytics/`),
-                    api.get(`/api/quizzes/${quizId}/`)
-                ]);
-                setData(analyticsRes.data);
-                setQuizTitle(quizRes.data.title);
+                const res = await api.get(endpoint);
+                setData(res.data);
             } catch (err) {
-                setError('Failed to load analytics data.');
+                setError('Failed to load data.');
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [endpoint]);
+
+    if (loading) {
+        return (
+            <div className="flex h-64 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return <div className="text-destructive p-4">{error}</div>;
+    }
+
+    return renderContent(data);
+};
+
+const QuizAnalyticsPage = () => {
+    const { quizId } = useParams();
+    const [loading, setLoading] = useState(true);
+    const [quiz, setQuiz] = useState(null);
+    const [slots, setSlots] = useState([]);
+    const [activeTab, setActiveTab] = useState('overview');
+
+    useEffect(() => {
+        const fetchQuizInfo = async () => {
+            try {
+                setLoading(true);
+                // Fetch quiz details to get title and slots structure
+                // We might need a specific endpoint or just use the detail endpoint
+                // The detail endpoint usually returns slots.
+                const res = await api.get(`/api/quizzes/${quizId}/`);
+                setQuiz(res.data);
+                // Extract slots from quiz data
+                // Assuming res.data.slots is available and ordered
+                if (res.data.slots) {
+                    setSlots(res.data.slots);
+                }
+            } catch (err) {
                 console.error(err);
             } finally {
                 setLoading(false);
@@ -36,7 +75,7 @@ const QuizAnalyticsPage = () => {
         };
 
         if (quizId) {
-            fetchData();
+            fetchQuizInfo();
         }
     }, [quizId]);
 
@@ -50,13 +89,13 @@ const QuizAnalyticsPage = () => {
         );
     }
 
-    if (error) {
+    if (!quiz) {
         return (
             <AppShell>
-                <div className="p-8 text-center text-destructive">
-                    <p>{error}</p>
-                    <Button variant="link" className="mt-4" to={`/quizzes/${quizId}/edit`}>
-                        Back to Quiz
+                <div className="p-8 text-center">
+                    <p>Quiz not found.</p>
+                    <Button variant="link" className="mt-4" to="/quizzes">
+                        Back to Quizzes
                     </Button>
                 </div>
             </AppShell>
@@ -71,41 +110,51 @@ const QuizAnalyticsPage = () => {
                         <ChevronLeft className="h-5 w-5" />
                     </Button>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Analytics: {quizTitle}</h1>
+                        <h1 className="text-2xl font-bold tracking-tight">Analytics: {quiz.title}</h1>
                         <p className="text-muted-foreground">
                             Detailed insights into student performance and engagement
                         </p>
                     </div>
                 </div>
 
-                <AnalyticsSummary
-                    completionStats={{
-                        total_attempts: data.total_attempts,
-                        completed_count: data.total_attempts, // All attempts in our query are completed
-                        completion_rate: data.completion_rate,
-                        avg_score: data.avg_score,
-                        min_score: data.min_score,
-                        max_score: data.max_score
-                    }}
-                    timeStats={data.time_distribution}
-                    word_count_stats={data.word_count_stats}
-                    cronbach_alpha={data.cronbach_alpha}
-                />
-
-                {data.time_distribution && data.time_distribution.raw_values && data.time_distribution.raw_values.length > 0 && (
-                    <div className="grid gap-8">
-                        <TimeDistributionChart timeStats={data.time_distribution} />
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <div className="overflow-x-auto pb-2">
+                        <TabsList className="w-full justify-start">
+                            <TabsTrigger value="overview">Overview</TabsTrigger>
+                            <TabsTrigger value="interaction">Interactions</TabsTrigger>
+                            {slots.map(slot => (
+                                <TabsTrigger key={slot.id} value={`slot-${slot.id}`}>
+                                    {slot.label || `Slot ${slot.order}`}
+                                </TabsTrigger>
+                            ))}
+                        </TabsList>
                     </div>
-                )}
 
-                <div>
-                    <h2 className="text-xl font-semibold mb-4">Slot Analysis</h2>
-                    <SlotAnalytics slots={data.slots} />
-                </div>
+                    <div className="mt-6">
+                        <TabsContent value="overview">
+                            <AnalyticsTabContent
+                                endpoint={`/api/quizzes/${quizId}/analytics/overview/`}
+                                renderContent={(data) => <OverviewAnalytics data={data} />}
+                            />
+                        </TabsContent>
 
-                {data.slots && data.slots.some(s => s.interactions && s.interactions.length > 0) && (
-                    <AllSlotInteractions slots={data.slots} />
-                )}
+                        <TabsContent value="interaction">
+                            <AnalyticsTabContent
+                                endpoint={`/api/quizzes/${quizId}/analytics/interactions/`}
+                                renderContent={(data) => <InteractionAnalytics data={data} />}
+                            />
+                        </TabsContent>
+
+                        {slots.map(slot => (
+                            <TabsContent key={slot.id} value={`slot-${slot.id}`}>
+                                <AnalyticsTabContent
+                                    endpoint={`/api/quizzes/${quizId}/analytics/slots/${slot.id}/`}
+                                    renderContent={(data) => <SlotAnalytics slot={data} />}
+                                />
+                            </TabsContent>
+                        ))}
+                    </div>
+                </Tabs>
             </div>
         </AppShell>
     );

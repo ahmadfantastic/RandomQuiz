@@ -6,7 +6,7 @@ import numpy as np
 from scipy import stats
 from django.contrib.auth import authenticate, login, logout
 from django.db import models, transaction
-from django.db.models import Count, Avg, Min, Max, StdDev
+from django.db.models import Count, Avg, Min, Max, StdDev, Sum
 from django.db.models.functions import TruncDate
 from django.middleware.csrf import get_token
 from django.http import HttpResponse
@@ -2722,3 +2722,404 @@ class QuizSlotProblemStudentsView(APIView):
             })
 
         return Response(students_data)
+
+
+class QuizOverviewAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, quiz_id):
+        instructor = ensure_instructor(request.user)
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        if quiz.owner != instructor and not quiz.allowed_instructors.filter(id=instructor.id).exists():
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False).annotate(
+            score=Sum('attempt_slots__grade__items__selected_level__points')
+        )
+        total_attempts = attempts.count()
+        
+        all_attempts = QuizAttempt.objects.filter(quiz=quiz).count()
+        completion_rate = (total_attempts / all_attempts * 100) if all_attempts > 0 else 0
+        
+        durations = []
+        for attempt in attempts:
+            if attempt.started_at and attempt.completed_at:
+                diff = (attempt.completed_at - attempt.started_at).total_seconds()
+                if diff > 0:
+                    durations.append(diff / 60.0) # minutes
+
+        time_stats = {
+            'min': min(durations) if durations else 0,
+            'max': max(durations) if durations else 0,
+            'mean': sum(durations) / len(durations) if durations else 0,
+            'median': sorted(durations)[len(durations) // 2] if durations else 0,
+            'count': len(durations),
+            'raw_values': durations
+        }
+
+        return Response({
+            'total_attempts': total_attempts,
+            'completion_rate': completion_rate,
+            'avg_score': attempts.aggregate(Avg('score'))['score__avg'] or 0,
+            'min_score': attempts.aggregate(Min('score'))['score__min'] or 0,
+            'max_score': attempts.aggregate(Max('score'))['score__max'] or 0,
+            'time_distribution': time_stats,
+        })
+
+
+class QuizInteractionAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, quiz_id):
+        instructor = ensure_instructor(request.user)
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        if quiz.owner != instructor and not quiz.allowed_instructors.filter(id=instructor.id).exists():
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+        
+        # Optional problem filter
+        problem_id = request.query_params.get('problem_id')
+        if problem_id:
+            attempts = attempts.filter(attempt_slots__assigned_problem_id=problem_id).distinct()
+
+        quiz_slots = quiz.slots.all().order_by('order')
+        
+        interactions_by_slot = {}
+        all_interactions = QuizAttemptInteraction.objects.filter(
+            attempt_slot__attempt__in=attempts
+        ).values(
+            'attempt_slot__slot_id',
+            'event_type',
+            'created_at',
+            'metadata',
+            'attempt_slot__attempt__student_identifier',
+            'attempt_slot__attempt__started_at',
+            'attempt_slot__attempt__completed_at'
+        )
+        
+        for interaction in all_interactions:
+            slot_id = interaction['attempt_slot__slot_id']
+            if slot_id not in interactions_by_slot:
+                interactions_by_slot[slot_id] = []
+            
+            start = interaction['attempt_slot__attempt__started_at']
+            end = interaction['attempt_slot__attempt__completed_at']
+            created_at = interaction['created_at']
+            position = 0
+            if start and end and created_at:
+                total_duration = (end - start).total_seconds()
+                if total_duration > 0:
+                    event_time = (created_at - start).total_seconds()
+                    position = min(max(event_time / total_duration, 0), 1) * 100
+
+            interactions_by_slot[slot_id].append({
+                'event_type': interaction['event_type'],
+                'created_at': created_at,
+                'metadata': interaction['metadata'],
+                'position': position,
+                'student_id': interaction['attempt_slot__attempt__student_identifier'],
+                'attempt_started_at': start,
+                'attempt_completed_at': end
+            })
+
+        slots_data = []
+        for slot in quiz_slots:
+            if slot.id in interactions_by_slot:
+                slots_data.append({
+                    'id': slot.id,
+                    'label': slot.label,
+                    'interactions': interactions_by_slot[slot.id]
+                })
+
+        return Response(slots_data)
+
+
+class QuizSlotAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, quiz_id, slot_id):
+        instructor = ensure_instructor(request.user)
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        if quiz.owner != instructor and not quiz.allowed_instructors.filter(id=instructor.id).exists():
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        slot = get_object_or_404(QuizSlot, id=slot_id, quiz=quiz)
+        
+        attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+        
+        # Optional problem filter
+        problem_id = request.query_params.get('problem_id')
+        if problem_id:
+            attempts = attempts.filter(attempt_slots__assigned_problem_id=problem_id).distinct()
+
+        # Fetch attempt slots for this slot
+        attempt_slots = QuizAttemptSlot.objects.filter(
+            attempt__in=attempts,
+            slot=slot
+        ).select_related('assigned_problem')
+        
+        # Problem distribution
+        problem_counts = {}
+        problem_details = {}
+        problem_stats = {} # pid -> {total_score, total_time, total_words, total_ratings, count}
+        
+        for attempt_slot in attempt_slots:
+            problem = attempt_slot.assigned_problem
+            if problem:
+                pid = problem.id
+                if pid not in problem_counts:
+                    problem_counts[pid] = 0
+                    problem_details[pid] = {
+                        'id': pid,
+                        'statement': problem.statement, # Assuming statement is what we want
+                        'display_label': problem.display_label,
+                        'order_in_bank': problem.order_in_bank,
+                        'group': problem.group
+                    }
+                    problem_stats[pid] = {
+                        'total_score': 0,
+                        'total_time': 0,
+                        'total_words': 0,
+                        'ratings': {} # criterion_name -> total_value
+                    }
+                
+                problem_counts[pid] += 1
+                
+                # Calculate stats
+                stats = problem_stats[pid]
+                
+                # Score
+                try:
+                    if hasattr(attempt_slot, 'grade'):
+                        grade = attempt_slot.grade
+                        for item in grade.items.all():
+                            stats['total_score'] += item.selected_level.points
+                except:
+                    pass
+
+                # Time
+                if attempt_slot.attempt.started_at and attempt_slot.attempt.completed_at:
+                    diff = (attempt_slot.attempt.completed_at - attempt_slot.attempt.started_at).total_seconds()
+                    if diff > 0:
+                        stats['total_time'] += diff / 60.0
+
+                # Words
+                if slot.response_type == 'open_text':
+                    answer = attempt_slot.answer_data.get('text', '') if attempt_slot.answer_data else ''
+                    if answer:
+                        stats['total_words'] += len(answer.split())
+                
+                # Ratings
+                if slot.response_type == 'rating':
+                    ratings = attempt_slot.answer_data.get('ratings', {}) if attempt_slot.answer_data else {}
+                    for c_name, value in ratings.items():
+                        if c_name not in stats['ratings']:
+                            stats['ratings'][c_name] = {'total': 0, 'count': 0}
+                        stats['ratings'][c_name]['total'] += value
+                        stats['ratings'][c_name]['count'] += 1
+
+        problem_distribution = []
+        for pid, count in problem_counts.items():
+            details = problem_details[pid]
+            stats = problem_stats[pid]
+            
+            avg_criteria_scores = {}
+            for c_name, c_data in stats['ratings'].items():
+                if c_data['count'] > 0:
+                    avg_criteria_scores[c_name] = c_data['total'] / c_data['count']
+
+            problem_distribution.append({
+                'problem_id': pid,
+                'count': count,
+                'percentage': (count / len(attempt_slots) * 100) if len(attempt_slots) > 0 else 0,
+                'label': details['display_label'], # Use display_label for frontend
+                'statement': details['statement'],
+                'order_in_bank': details['order_in_bank'],
+                'group': details['group'],
+                'avg_score': stats['total_score'] / count if count > 0 else 0,
+                'avg_time': stats['total_time'] / count if count > 0 else 0,
+                'avg_words': stats['total_words'] / count if count > 0 else 0,
+                'avg_criteria_scores': avg_criteria_scores
+            })
+        
+        problem_distribution.sort(key=lambda x: x['order_in_bank'])
+
+        data = {}
+        if slot.response_type == 'open_text':
+            word_counts = []
+            for attempt_slot in attempt_slots:
+                answer = attempt_slot.answer_data.get('text', '') if attempt_slot.answer_data else ''
+                if answer:
+                    word_counts.append(len(answer.split()))
+            
+            data = {
+                'min': min(word_counts) if word_counts else 0,
+                'max': max(word_counts) if word_counts else 0,
+                'mean': sum(word_counts) / len(word_counts) if word_counts else 0,
+                'count': len(word_counts),
+                'raw_values': word_counts
+            }
+        
+        elif slot.response_type == 'rating':
+            # Rating analysis logic
+            rubric = quiz.get_rubric()
+            criteria = rubric.get('criteria', [])
+            scale = rubric.get('scale', [])
+            
+            # Use rubric scale if available, otherwise we'll discover values
+            known_scale_values = set(s['value'] for s in scale) if scale else set()
+            
+            # Create a map of value -> label
+            value_to_label = {s['value']: s['label'] for s in scale} if scale else {}
+            
+            # We will store stats in a more flexible way
+            # criteria_stats[name] = { 'values': [], 'distribution': { val: count } }
+            criteria_stats = {} 
+            
+            # Create a mapping from ID/Name to canonical Name
+            # We want to merge "SC" (id) and "Scenario Quality (SC)" (name) into one entry
+            canonical_names = {} # key -> canonical_name
+            
+            # Pre-populate with rubric criteria to ensure order/existence
+            for c in criteria:
+                c_name = c['name']
+                c_id = c.get('id')
+                
+                criteria_stats[c_name] = {
+                    'distribution': {v: 0 for v in known_scale_values}, 
+                    'values': []
+                }
+                
+                # Map name to itself
+                canonical_names[c_name] = c_name
+                canonical_names[c_name.lower()] = c_name # case insensitive
+                
+                # Map ID to name if available
+                if c_id:
+                    canonical_names[c_id] = c_name
+                    canonical_names[c_id.lower()] = c_name
+
+            groups = set()
+            grouped_stats = {} # group -> { criteria_name -> { distribution, values } }
+
+            for attempt_slot in attempt_slots:
+                group = attempt_slot.assigned_problem.group if attempt_slot.assigned_problem else 'Ungrouped'
+                groups.add(group)
+                if group not in grouped_stats:
+                    grouped_stats[group] = {}
+
+                ratings = attempt_slot.answer_data.get('ratings', {}) if attempt_slot.answer_data else {}
+                for raw_c_name, value in ratings.items():
+                    # Normalize name (strip whitespace)
+                    normalized_key = raw_c_name.strip()
+                    
+                    # Resolve to canonical name if possible
+                    if normalized_key in canonical_names:
+                        c_name = canonical_names[normalized_key]
+                    elif normalized_key.lower() in canonical_names:
+                        c_name = canonical_names[normalized_key.lower()]
+                    else:
+                        # Unknown criterion, treat as new
+                        c_name = normalized_key
+                        # Add to mapping for future consistency in this loop
+                        canonical_names[normalized_key] = c_name
+                        canonical_names[normalized_key.lower()] = c_name
+                    
+                    # Ensure criterion exists in stats
+                    if c_name not in criteria_stats:
+                        criteria_stats[c_name] = {'distribution': {}, 'values': []}
+                    
+                    # Ensure criterion exists in grouped stats
+                    if c_name not in grouped_stats[group]:
+                        grouped_stats[group][c_name] = {'distribution': {}, 'values': []}
+
+                    # Update Overall
+                    if value not in criteria_stats[c_name]['distribution']:
+                        criteria_stats[c_name]['distribution'][value] = 0
+                    criteria_stats[c_name]['distribution'][value] += 1
+                    criteria_stats[c_name]['values'].append(value)
+                    
+                    # Update Grouped
+                    if value not in grouped_stats[group][c_name]['distribution']:
+                        grouped_stats[group][c_name]['distribution'][value] = 0
+                    grouped_stats[group][c_name]['distribution'][value] += 1
+                    grouped_stats[group][c_name]['values'].append(value)
+                    
+                    # Track seen values for scale
+                    known_scale_values.add(value)
+
+            # Re-construct scale from all seen values + rubric values, sorted
+            final_scale_values = sorted(list(known_scale_values))
+            
+            # Format for response
+            formatted_criteria = []
+            # Use rubric order for known criteria, then append others
+            rubric_c_names = [c['name'] for c in criteria]
+            all_c_names = rubric_c_names + [name for name in criteria_stats.keys() if name not in rubric_c_names]
+            
+            for c_name in all_c_names:
+                dist = []
+                total_count = len(criteria_stats[c_name]['values'])
+                for v in final_scale_values:
+                    count = criteria_stats[c_name]['distribution'].get(v, 0)
+                    percentage = (count / total_count * 100) if total_count > 0 else 0
+                    dist.append({
+                        'value': v,
+                        'label': value_to_label.get(v, str(v)), # Use label from rubric or value as string
+                        'count': count,
+                        'percentage': percentage
+                    })
+                formatted_criteria.append({
+                    'name': c_name,
+                    'distribution': dist
+                })
+            
+            data['criteria'] = formatted_criteria
+            
+            # Format grouped data
+            formatted_grouped = []
+            for group in sorted(list(groups)):
+                g_criteria = []
+                for c_name in all_c_names:
+                    dist = []
+                    # Check if this group has data for this criterion
+                    if c_name in grouped_stats[group]:
+                        total_count = len(grouped_stats[group][c_name]['values'])
+                        for v in final_scale_values:
+                            count = grouped_stats[group][c_name]['distribution'].get(v, 0)
+                            percentage = (count / total_count * 100) if total_count > 0 else 0
+                            dist.append({
+                                'value': v,
+                                'label': value_to_label.get(v, str(v)),
+                                'count': count,
+                                'percentage': percentage
+                            })
+                    else:
+                        # Empty distribution for this group/criterion
+                        for v in final_scale_values:
+                            dist.append({
+                                'value': v, 
+                                'label': value_to_label.get(v, str(v)),
+                                'count': 0,
+                                'percentage': 0
+                            })
+                            
+                    g_criteria.append({
+                        'name': c_name,
+                        'distribution': dist
+                    })
+                formatted_grouped.append({
+                    'group': group,
+                    'data': {'criteria': g_criteria}
+                })
+            
+            data['grouped_data'] = formatted_grouped
+
+        return Response({
+            'id': slot.id,
+            'label': slot.label,
+            'response_type': slot.response_type,
+            'data': data,
+            'problem_distribution': problem_distribution
+        })
