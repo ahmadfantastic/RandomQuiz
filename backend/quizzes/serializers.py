@@ -276,6 +276,10 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
 
 
 class QuizAttemptSummarySerializer(serializers.ModelSerializer):
+    grading_status = serializers.SerializerMethodField()
+    score = serializers.SerializerMethodField()
+    max_score = serializers.SerializerMethodField()
+
     class Meta:
         model = QuizAttempt
         fields = [
@@ -284,7 +288,73 @@ class QuizAttemptSummarySerializer(serializers.ModelSerializer):
             'started_at',
             'completed_at',
             'extra_info',
+            'grading_status',
+            'score',
+            'max_score',
         ]
+
+    def get_grading_status(self, obj):
+        # Filter for gradable slots (not rating)
+        gradable_slots = [
+            s for s in obj.attempt_slots.all() 
+            if s.slot.response_type != 'rating'
+        ]
+        
+        if not gradable_slots:
+            return {
+                'is_fully_graded': False,
+                'graded_count': 0,
+                'total_count': 0
+            }
+
+        graded_count = 0
+        for slot in gradable_slots:
+            # Check if grade exists and has items
+            if hasattr(slot, 'grade') and slot.grade.items.exists():
+                graded_count += 1
+        
+        return {
+            'is_fully_graded': graded_count == len(gradable_slots),
+            'graded_count': graded_count,
+            'total_count': len(gradable_slots)
+        }
+
+    def get_score(self, obj):
+        total_score = 0
+        gradable_slots = [
+            s for s in obj.attempt_slots.all() 
+            if s.slot.response_type != 'rating'
+        ]
+        
+        for slot in gradable_slots:
+            if hasattr(slot, 'grade'):
+                for item in slot.grade.items.all():
+                    total_score += item.selected_level.points
+        return total_score
+
+    def get_max_score(self, obj):
+        gradable_slots_count = len([
+            s for s in obj.attempt_slots.all() 
+            if s.slot.response_type != 'rating'
+        ])
+        
+        if gradable_slots_count == 0:
+            return 0
+
+        # Calculate max score per slot from rubric
+        try:
+            rubric = obj.quiz.grading_rubric
+            max_score_per_slot = 0
+            for item in rubric.items.all():
+                max_points = 0
+                for level in item.levels.all():
+                    if level.points > max_points:
+                        max_points = level.points
+                max_score_per_slot += max_points
+            
+            return max_score_per_slot * gradable_slots_count
+        except Exception:
+            return 0
 
 
 class QuizAttemptSerializer(serializers.ModelSerializer):

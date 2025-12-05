@@ -63,6 +63,9 @@ const GradingInterface = ({ quizId }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [grades, setGrades] = useState({}); // Map of attemptId -> slotId -> grade
     const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [selectedAttemptDetails, setSelectedAttemptDetails] = useState(null);
+    const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -75,6 +78,7 @@ const GradingInterface = ({ quizId }) => {
             setRubric(rubricRes.data);
         } catch (err) {
             console.error('Failed to load grading data', err);
+            setError('Failed to load grading data. Please try refreshing the page.');
         } finally {
             setIsLoading(false);
         }
@@ -82,19 +86,76 @@ const GradingInterface = ({ quizId }) => {
 
     useEffect(() => {
         loadData();
-    }, [loadData]);
+        setSelectedAttemptId(null);
+        setSelectedAttemptDetails(null);
+    }, [loadData, quizId]);
 
-    const selectedAttempt = attempts.find(a => a.id === selectedAttemptId);
+    const selectedAttempt = selectedAttemptDetails || attempts.find(a => a.id === selectedAttemptId);
+
+    useEffect(() => {
+        if (!selectedAttemptId) {
+            setSelectedAttemptDetails(null);
+            return;
+        }
+
+        const fetchDetails = async () => {
+            setIsLoadingDetails(true);
+            try {
+                const res = await api.get(`/api/quizzes/${quizId}/attempts/${selectedAttemptId}/`);
+                setSelectedAttemptDetails(res.data);
+            } catch (err) {
+                console.error('Failed to load attempt details', err);
+                // Fallback to summary if details fail, but likely won't have slots
+            } finally {
+                setIsLoadingDetails(false);
+            }
+        };
+
+        fetchDetails();
+    }, [selectedAttemptId, quizId]);
+
+    // Merge detailed attempt into the list so sidebar indicators work
+    useEffect(() => {
+        if (selectedAttemptDetails) {
+            setAttempts(prev => prev.map(a =>
+                a.id === selectedAttemptDetails.id ? { ...a, ...selectedAttemptDetails } : a
+            ));
+        }
+    }, [selectedAttemptDetails]);
 
     const handleGradeSave = async (slotId, gradeData) => {
         if (!selectedAttemptId) return;
 
-        // Optimistic update
+        // Optimistic update for details
+        if (selectedAttemptDetails) {
+            setSelectedAttemptDetails(prev => ({
+                ...prev,
+                attempt_slots: prev.attempt_slots.map(slot => {
+                    if (slot.slot === slotId) {
+                        return {
+                            ...slot,
+                            grade: {
+                                ...slot.grade,
+                                ...gradeData
+                            }
+                        };
+                    }
+                    return slot;
+                })
+            }));
+        }
+
+        // Optimistic update for list (if needed for indicators)
+        // ... (existing logic for attempts list update can stay or be adapted)
         const previousAttempts = [...attempts];
 
         // Update local state immediately
+        // Update local state immediately
         setAttempts(prevAttempts => prevAttempts.map(attempt => {
             if (attempt.id !== selectedAttemptId) return attempt;
+
+            // If we don't have slots (summary view), we can't update them
+            if (!attempt.attempt_slots) return attempt;
 
             return {
                 ...attempt,
@@ -148,7 +209,7 @@ const GradingInterface = ({ quizId }) => {
     };
 
     return (
-        <div className="flex flex-col md:flex-row h-[calc(100vh-200px)] gap-4">
+        <div className="flex flex-col md:flex-row h-[calc(100vh-14rem)] gap-4">
             {/* Sidebar - Student List */}
             <div className="w-full md:w-64 flex-shrink-0 border-b md:border-b-0 md:border-l md:pl-4 overflow-y-auto max-h-[200px] md:max-h-full order-1 md:order-2">
                 <div className="mb-4 flex justify-between items-center">
@@ -169,15 +230,33 @@ const GradingInterface = ({ quizId }) => {
                                 <div key={i} className="h-12 bg-muted/50 rounded-md animate-pulse" />
                             ))}
                         </div>
+                    ) : error ? (
+                        <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md border border-destructive/20">
+                            {error}
+                        </div>
+                    ) : attempts.length === 0 ? (
+                        <div className="p-8 text-center text-sm text-muted-foreground border border-dashed rounded-md bg-muted/5">
+                            <p>No students have taken this quiz yet.</p>
+                        </div>
                     ) : attempts.map(attempt => {
+                        // Use grading_status from summary if available, otherwise fallback to calculating from slots (detailed view)
                         const gradableSlots = attempt.attempt_slots?.filter(s => s.response_type !== 'rating') || [];
-                        const isFullyGraded = gradableSlots.length > 0 && gradableSlots.every(s => s.grade?.items?.length > 0);
+                        let isFullyGraded = false;
+                        if (attempt.grading_status) {
+                            isFullyGraded = attempt.grading_status.is_fully_graded;
+                        } else {
+                            isFullyGraded = gradableSlots.length > 0 && gradableSlots.every(s => s.grade?.items?.length > 0);
+                        }
 
-                        // Calculate score
+                        const isSelected = selectedAttemptId === attempt.id;
                         let currentScore = 0;
                         let maxScore = 0;
 
-                        if (rubric?.items) {
+                        if (attempt.score !== undefined && attempt.max_score !== undefined) {
+                            currentScore = attempt.score;
+                            maxScore = attempt.max_score;
+                        } else if (rubric?.items) {
+                            // Fallback calculation for detailed view or if fields missing
                             // Calculate max score per slot (sum of max points of all criteria)
                             const maxScorePerSlot = rubric.items.reduce((sum, item) => {
                                 const maxPoints = Math.max(...item.levels.map(l => l.points || 0));
@@ -243,7 +322,12 @@ const GradingInterface = ({ quizId }) => {
 
             {/* Main Content - Grading Interface */}
             <div className="flex-1 overflow-y-auto pr-2 order-2 md:order-1">
-                {selectedAttempt ? (
+                {isLoadingDetails ? (
+                    <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4" />
+                        <p>Loading attempt details...</p>
+                    </div>
+                ) : selectedAttempt ? (
                     <div className="space-y-8">
                         <div className="flex flex-col gap-1 w-full">
                             <div className="flex items-center justify-between w-full">

@@ -28,8 +28,10 @@ class QuizAttemptList(APIView):
             .prefetch_related(
                 'attempt_slots__slot',
                 'attempt_slots__assigned_problem',
+                'attempt_slots__grade__items',
                 'quiz__rating_scale_options',
                 'quiz__rating_criteria',
+                'quiz__grading_rubric__items__levels',
             )
             .order_by('-started_at')
         )

@@ -1188,8 +1188,8 @@ const QuizEditorPage = () => {
             statusKey={quizStatusKey}
             compact={true}
             customAction={
-              <Button variant="outline" size="sm" className="h-8" asChild>
-                <Link to={`/quizzes/${quizId}/analytics`}>Analytics</Link>
+              <Button variant="outline" size="default" className="h-8" to={`/quizzes/${quizId}/analytics`}>
+                Analytics
               </Button>
             }
           />
