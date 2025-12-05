@@ -44,6 +44,7 @@ from .views import (
     RubricViewSet,
     GlobalAnalysisView,
     QuizGradeExportView,
+    QuizAnalyticsView,
     QuizOverviewAnalyticsView,
     QuizInteractionAnalyticsView,
     QuizSlotAnalyticsView,
@@ -78,6 +79,7 @@ urlpatterns = [
     path('quizzes/<int:quiz_id>/rubric/', QuizRubricView.as_view(), name='quiz-rubric'),
     path('quizzes/<int:quiz_id>/grading-rubric/', GradingRubricView.as_view(), name='quiz-grading-rubric'),
 
+    path('quizzes/<int:quiz_id>/analytics/', QuizAnalyticsView.as_view(), name='quiz-analytics'),
     path('quizzes/<int:quiz_id>/analytics/overview/', QuizOverviewAnalyticsView.as_view(), name='quiz-analytics-overview'),
     path('quizzes/<int:quiz_id>/analytics/interactions/', QuizInteractionAnalyticsView.as_view(), name='quiz-analytics-interactions'),
     path('quizzes/<int:quiz_id>/analytics/slots/<int:slot_id>/', QuizSlotAnalyticsView.as_view(), name='quiz-analytics-slot'),
