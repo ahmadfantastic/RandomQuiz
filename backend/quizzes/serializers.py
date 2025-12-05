@@ -275,6 +275,18 @@ class QuizAttemptSlotSerializer(serializers.ModelSerializer):
         read_only_fields = ['attempt', 'slot', 'assigned_problem', 'answered_at', 'grade']
 
 
+class QuizAttemptSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuizAttempt
+        fields = [
+            'id',
+            'student_identifier',
+            'started_at',
+            'completed_at',
+            'extra_info',
+        ]
+
+
 class QuizAttemptSerializer(serializers.ModelSerializer):
     attempt_slots = QuizAttemptSlotSerializer(many=True, read_only=True)
     quiz_is_open = serializers.SerializerMethodField()

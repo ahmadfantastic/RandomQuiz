@@ -59,6 +59,7 @@ from quizzes.serializers import (
     QuizSlotSerializer,
     QuizSlotProblemSerializer,
     QuizAttemptSerializer,
+    QuizAttemptSummarySerializer,
     QuizAttemptSlotSerializer,
     QuizAttemptInteractionSerializer,
     GradingRubricSerializer,
@@ -1448,12 +1449,24 @@ class QuizAttemptList(APIView):
             )
             .order_by('-started_at')
         )
-        serializer = QuizAttemptSerializer(attempts, many=True)
+        serializer = QuizAttemptSummarySerializer(attempts, many=True)
         return Response(serializer.data)
 
 
 class QuizAttemptDetail(APIView):
     permission_classes = [IsInstructor]
+
+    def get(self, request, quiz_id, attempt_id):
+        instructor = ensure_instructor(request.user)
+        attempt = get_object_or_404(
+            QuizAttempt.objects.filter(
+                models.Q(quiz__owner=instructor) | models.Q(quiz__allowed_instructors=instructor)
+            ).distinct(),
+            id=attempt_id,
+            quiz_id=quiz_id,
+        )
+        serializer = QuizAttemptSerializer(attempt)
+        return Response(serializer.data)
 
     def delete(self, request, quiz_id, attempt_id):
         instructor = ensure_instructor(request.user)

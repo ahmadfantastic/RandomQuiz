@@ -124,6 +124,7 @@ const QuizEditorPage = () => {
   const quizIdNumber = Number(quizId);
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(TABS.OVERVIEW);
+  const [visitedTabs, setVisitedTabs] = useState(new Set([TABS.OVERVIEW]));
   const [quiz, setQuiz] = useState(null);
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(true);
   const [banks, setBanks] = useState([]);
@@ -153,6 +154,7 @@ const QuizEditorPage = () => {
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
+  const [isLoadingAttemptDetails, setIsLoadingAttemptDetails] = useState(false);
   const [previewedProblem, setPreviewedProblem] = useState(null);
   const [allowedInstructors, setAllowedInstructors] = useState([]);
   const [canManageAllowedInstructors, setCanManageAllowedInstructors] = useState(false);
@@ -203,6 +205,14 @@ const QuizEditorPage = () => {
       max: Math.max(...numericValues),
     };
   }, [ratingScaleOptions]);
+
+  useEffect(() => {
+    setVisitedTabs((prev) => {
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
 
   useEffect(() => {
     if (!selectedAttempt) {
@@ -379,10 +389,23 @@ const QuizEditorPage = () => {
     setActiveSlotId(null);
   };
 
-  const openAttemptModal = (attempt) => {
+  const openAttemptModal = useCallback((attempt) => {
     setSelectedAttempt(attempt);
+    setIsLoadingAttemptDetails(true);
+    api
+      .get(`/api/quizzes/${quizId}/attempts/${attempt.id}/`)
+      .then((res) => {
+        setSelectedAttempt(res.data);
+      })
+      .catch((err) => {
+        console.error('Failed to load attempt details', err);
+        // Fallback or error handling if needed, but for now specific error state is overkill
+      })
+      .finally(() => {
+        setIsLoadingAttemptDetails(false);
+      });
     setPreviewedProblem(null);
-  };
+  }, [quizId]);
 
   const closeAttemptModal = () => {
     setSelectedAttempt(null);
@@ -1306,66 +1329,77 @@ const QuizEditorPage = () => {
                 </div>
               }
             >
-              {activeTab === TABS.OVERVIEW && (
-                <QuizOverviewTab
-                  quiz={quiz}
-                  details={details}
-                  onDetailChange={handleDetailChange}
-                  onSaveDetails={handleSaveDetails}
-                  detailsSaving={detailsSaving}
-                  detailsError={detailsError}
-                  quizLink={quizLink}
-                  handleCopyLink={handleCopyLink}
-                  copyMessage={copyMessage}
-                  readyForStudents={readyForStudents}
-                  scheduleState={scheduleState}
-                  onOpenQuiz={handleOpenQuiz}
-                  onCloseQuiz={handleCloseQuiz}
-                  scheduleActionLoading={scheduleActionLoading}
-                  scheduleActionError={scheduleActionError}
-                  onOpenQuizPrint={() => setIsPrintModalOpen(true)}
-                />
-              )}
+              <div style={{ display: activeTab === TABS.OVERVIEW ? 'block' : 'none' }}>
+                {visitedTabs.has(TABS.OVERVIEW) && (
+                  <QuizOverviewTab
+                    quiz={quiz}
+                    details={details}
+                    onDetailChange={handleDetailChange}
+                    onSaveDetails={handleSaveDetails}
+                    detailsSaving={detailsSaving}
+                    detailsError={detailsError}
+                    quizLink={quizLink}
+                    handleCopyLink={handleCopyLink}
+                    copyMessage={copyMessage}
+                    readyForStudents={readyForStudents}
+                    scheduleState={scheduleState}
+                    onOpenQuiz={handleOpenQuiz}
+                    onCloseQuiz={handleCloseQuiz}
+                    scheduleActionLoading={scheduleActionLoading}
+                    scheduleActionError={scheduleActionError}
+                    onOpenQuizPrint={() => setIsPrintModalOpen(true)}
+                  />
+                )}
+              </div>
 
-              {activeTab === TABS.SLOTS && (
-                <QuizSlotsTab
-                  slots={slots}
-                  banks={banks}
-                  isLoadingBanks={isLoadingBanks}
-                  slotError={slotError}
-                  openSlotModal={openSlotModal}
-                  openSlotDetailModal={openSlotDetailModal}
-                  loadSlots={loadSlots}
-                  slotProblemOptions={slotProblemOptions}
-                  openRubricCriteria={() => setIsRubricCriteriaOpen(true)}
-                  openRubricScale={() => setIsRubricScaleOpen(true)}
-                />
-              )}
+              <div style={{ display: activeTab === TABS.SLOTS ? 'block' : 'none' }}>
+                {visitedTabs.has(TABS.SLOTS) && (
+                  <QuizSlotsTab
+                    slots={slots}
+                    banks={banks}
+                    isLoadingBanks={isLoadingBanks}
+                    slotError={slotError}
+                    openSlotModal={openSlotModal}
+                    openSlotDetailModal={openSlotDetailModal}
+                    loadSlots={loadSlots}
+                    slotProblemOptions={slotProblemOptions}
+                    openRubricCriteria={() => setIsRubricCriteriaOpen(true)}
+                    openRubricScale={() => setIsRubricScaleOpen(true)}
+                  />
+                )}
+              </div>
 
-              {activeTab === TABS.RESPONSES && (
-                <QuizResponsesTab
-                  attempts={attempts}
-                  attemptError={attemptError}
-                  loadAttempts={loadAttempts}
-                  openAttemptModal={openAttemptModal}
-                  requestAttemptDeletion={requestAttemptDeletion}
-                  onAddResponse={() => setIsManualResponseModalOpen(true)}
-                />
-              )}
+              <div style={{ display: activeTab === TABS.RESPONSES ? 'block' : 'none' }}>
+                {visitedTabs.has(TABS.RESPONSES) && (
+                  <QuizResponsesTab
+                    attempts={attempts}
+                    attemptError={attemptError}
+                    loadAttempts={loadAttempts}
+                    openAttemptModal={openAttemptModal}
+                    requestAttemptDeletion={requestAttemptDeletion}
+                    onAddResponse={() => setIsManualResponseModalOpen(true)}
+                  />
+                )}
+              </div>
 
-              {activeTab === TABS.INSTRUCTORS && (
-                <QuizAllowedInstructorsTab
-                  allowedInstructors={allowedInstructors}
-                  canManageCollaborators={canManageAllowedInstructors}
-                  handleAddInstructor={handleAddInstructor}
-                  handleRemoveInstructor={handleRemoveInstructor}
-                  instructorId={instructorId}
-                  setInstructorId={setInstructorId}
-                  instructorError={instructorError}
-                  loadInstructors={loadAllowedInstructors}
-                />
-              )}
-              {activeTab === TABS.GRADING_RUBRIC && <GradingInterface quizId={quizIdNumber} />}
+              <div style={{ display: activeTab === TABS.INSTRUCTORS ? 'block' : 'none' }}>
+                {visitedTabs.has(TABS.INSTRUCTORS) && (
+                  <QuizAllowedInstructorsTab
+                    allowedInstructors={allowedInstructors}
+                    canManageCollaborators={canManageAllowedInstructors}
+                    handleAddInstructor={handleAddInstructor}
+                    handleRemoveInstructor={handleRemoveInstructor}
+                    instructorId={instructorId}
+                    setInstructorId={setInstructorId}
+                    instructorError={instructorError}
+                    loadInstructors={loadAllowedInstructors}
+                  />
+                )}
+              </div>
+
+              <div style={{ display: activeTab === TABS.GRADING_RUBRIC ? 'block' : 'none' }}>
+                {visitedTabs.has(TABS.GRADING_RUBRIC) && <GradingInterface quizId={quizIdNumber} />}
+              </div>
             </Suspense>
           </div>
 
@@ -1382,7 +1416,7 @@ const QuizEditorPage = () => {
         title="Student attempt"
         description="View the answers recorded for every slot."
       >
-        {selectedAttempt ? (
+        {selectedAttempt && !isLoadingAttemptDetails ? (
           <div className="space-y-4">
             <div className="rounded-md bg-muted/50 p-3 text-sm">
               <div className="flex items-start justify-between gap-3">
