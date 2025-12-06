@@ -17,6 +17,13 @@ const ProblemBankAnalysisPage = () => {
     const [allBanks, setAllBanks] = useState([]);
     const navigate = useNavigate();
 
+    // Consistent rounding helper
+    const roundToTwo = (num) => {
+        if (num === undefined || num === null) return '-';
+        return (Math.round((num + Number.EPSILON) * 100) / 100).toFixed(2);
+    };
+
+
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -149,9 +156,11 @@ const ProblemBankAnalysisPage = () => {
                                                             ))}
                                                         <TableCell className="font-bold">
                                                             {rating.weighted_score !== undefined && rating.weighted_score !== null
-                                                                ? rating.weighted_score.toFixed(2)
+                                                                ? roundToTwo(rating.weighted_score)
                                                                 : '-'}
                                                         </TableCell>
+
+
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
@@ -186,9 +195,10 @@ const ProblemBankAnalysisPage = () => {
                                                             <TableCell>{comp.criteria_id}</TableCell>
                                                             <TableCell>{comp.group1}</TableCell>
                                                             <TableCell>{comp.group2}</TableCell>
-                                                            <TableCell>{comp.mean1.toFixed(2)}</TableCell>
-                                                            <TableCell>{comp.mean2.toFixed(2)}</TableCell>
+                                                            <TableCell>{roundToTwo(comp.mean1)}</TableCell>
+                                                            <TableCell>{roundToTwo(comp.mean2)}</TableCell>
                                                             <TableCell>{comp.t_stat?.toFixed(3) || '-'}</TableCell>
+
                                                             <TableCell className={comp.p_value < 0.05 ? "font-bold text-green-600" : ""}>
                                                                 {comp.p_value?.toFixed(4) || '-'}
                                                             </TableCell>

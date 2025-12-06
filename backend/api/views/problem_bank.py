@@ -275,17 +275,25 @@ class ProblemBankRatingImportView(APIView):
             return Response({'detail': f'Error processing file: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
 
-def calculate_weighted_kappa(y1, y2):
+def calculate_weighted_kappa(y1, y2, all_categories=None, label=None):
     # y1, y2 are lists of ratings
     # Assume scale is ordinal integers
+    # all_categories: Optional list of all possible scale values to ensure matrix shape
+    # label: Optional string description for logging
+
     
     # Ensure inputs are numpy arrays
-    y1 = np.array(y1, dtype=int)
-    y2 = np.array(y2, dtype=int)
+    y1 = np.array(y1)
+    y2 = np.array(y2)
     
     # Get unique categories
-    categories = np.unique(np.concatenate((y1, y2)))
-    categories.sort()
+    if all_categories is not None:
+        categories = np.array(all_categories)
+        categories.sort()
+    else:
+        categories = np.unique(np.concatenate((y1, y2)))
+        categories.sort()
+
     
     # Map categories to 0..k-1
     cat_map = {c: i for i, c in enumerate(categories)}
@@ -324,6 +332,8 @@ def calculate_weighted_kappa(y1, y2):
     return 1.0 - (numerator / denominator)
 
 
+
+
 class ProblemBankAnalysisView(APIView):
     permission_classes = [IsInstructor]
 
@@ -344,6 +354,10 @@ class ProblemBankAnalysisView(APIView):
         
         rubric = bank.get_rubric()
         rubric_criteria = {c['id']: c['name'] for c in rubric.get('criteria', [])}
+        scale = rubric.get('scale', [])
+        
+        criteria_list = rubric.get('criteria', [])
+        criteria_weights_by_id = {c['id']: c.get('weight', 1) for c in criteria_list}
         
         for r in ratings:
             pid = r.problem_id
@@ -394,10 +408,19 @@ class ProblemBankAnalysisView(APIView):
             for pid, p_data in data.items():
                 if iid in p_data['ratings']:
                     ratings_dict = p_data['ratings'][iid]
-                    # Calculate weighted score? (Assuming simple sum or average for now as not specified)
-                    # Frontend expects 'weighted_score'.
-                    # Let's sum values for now.
-                    weighted_score = sum(ratings_dict.values())
+                    # Calculate weighted score with dynamic total weight
+                    w_sum = 0
+                    dynamic_total_weight = 0
+                    
+                    for c_id, val in ratings_dict.items():
+                        weight = criteria_weights_by_id.get(c_id, 1)
+                        w_sum += (val * weight)
+                        dynamic_total_weight += weight
+                    
+                    if dynamic_total_weight > 0:
+                        weighted_score = w_sum / dynamic_total_weight
+                    else:
+                        weighted_score = 0.0
                     
                     inst_data['ratings'].append({
                         'problem_id': pid,
@@ -500,8 +523,13 @@ class ProblemBankAnalysisView(APIView):
                                 y2.append(v2)
                         
                         count = len(y1)
+
                         if count >= 3:
-                             k = calculate_weighted_kappa(y1, y2)
+                             # Get rubric scale values if possible
+                             scale_vals = [s['value'] for s in scale] if scale else None
+                             k = calculate_weighted_kappa(y1, y2, all_categories=scale_vals, label=f"Problem Bank - Criterion {c_id}")
+
+
                              pairwise_irr.append({
                                  'instructor1': r1,
                                  'instructor2': r2,
@@ -522,7 +550,11 @@ class ProblemBankAnalysisView(APIView):
                                 all_y2.append(v2)
                     
                     if len(all_y1) >= 5:
-                         k = calculate_weighted_kappa(all_y1, all_y2)
+
+                         scale_vals = [s['value'] for s in scale] if scale else None
+                         k = calculate_weighted_kappa(all_y1, all_y2, all_categories=scale_vals, label="Problem Bank - Overall")
+
+
                          pairwise_irr.append({
                              'instructor1': r1,
                              'instructor2': r2,
@@ -531,6 +563,15 @@ class ProblemBankAnalysisView(APIView):
                              'kappa': k
                          })
 
+        # Calculate total max score
+        rubric_data = bank.get_rubric()
+        scale = rubric_data.get('scale', [])
+        criteria_list = rubric_data.get('criteria', [])
+        total_max_score = 0
+        if scale and criteria_list:
+            max_val = max(s['value'] for s in scale)
+            total_max_score = max_val * len(criteria_list)
+
         return Response({
             'bank': {
                 'id': bank.id,
@@ -538,6 +579,7 @@ class ProblemBankAnalysisView(APIView):
                 'description': bank.description,
             },
             'rubric': bank.get_rubric(),
+            'total_max_score': total_max_score,
             'instructors': instructors_data,
             'inter_rater': {
                 'pairwise': pairwise_irr
@@ -556,18 +598,47 @@ class GlobalAnalysisView(APIView):
         
         results = []
         
+        # Accumulate data for global criteria analysis (across ALL banks)
+        # Structure: criterion_name -> { 'y1': [], 'y2': [], 'scale': [] }
+        global_criteria_data = {}
+        
+        # Accumulate data by Problem Group
+        # Structure: group_name -> { criterion: [values], 'weighted_score': [values], 'total_max_score': [values] }
+        group_stats = {}
+        
+        # Temporary storage for aggregating scores per problem
+        # pid -> { 'group': group_name, 'criteria': { c_name: [scores] } }
+        problem_scores = {}
+
         for bank in banks:
+
+
+
             # Similar logic to ProblemBankAnalysisView but summarized
             ratings = InstructorProblemRating.objects.filter(
                 problem__problem_bank=bank
-            ).prefetch_related('entries', 'entries__scale_option', 'entries__criterion')
+            ).select_related('problem').prefetch_related('entries', 'entries__scale_option', 'entries__criterion')
             
             if not ratings.exists():
                 continue
                 
-            # Calculate average scores per criterion
+            # Calculate total max score for this bank
             rubric = bank.get_rubric()
             rubric_criteria = {c['id']: c['name'] for c in rubric.get('criteria', [])}
+            scale = rubric.get('scale', [])
+            criteria_list = rubric.get('criteria', [])
+            
+            # Map criterion name to weight
+            criteria_weights = {c['name']: c.get('weight', 1) for c in criteria_list}
+            
+            total_max_score = 0
+            if scale and criteria_list:
+                max_val = max(s['value'] for s in scale)
+                # Max score = max_scale_val * sum(weights)
+                total_weight = sum(criteria_weights.values())
+                total_max_score = max_val * total_weight
+
+
             
             c_totals = {}
             c_counts = {}
@@ -581,8 +652,11 @@ class GlobalAnalysisView(APIView):
                 pid = r.problem_id
                 iid = r.instructor_id
                 raters.add(iid)
+                p_group = r.problem.group
+
                 
                 if pid not in data:
+
                     data[pid] = {}
                 if iid not in data[pid]:
                     data[pid][iid] = {}
@@ -590,40 +664,214 @@ class GlobalAnalysisView(APIView):
                 for entry in r.entries.all():
                     c_id = entry.criterion.criterion_id
                     c_name = rubric_criteria.get(c_id, c_id)
+                    if pid not in problem_scores:
+                        problem_scores[pid] = {
+                            'group': p_group if p_group else "Ungrouped",
+                            'max_score': total_max_score,
+                            'total_weight': total_weight,
+                            'weights': criteria_weights,
+                            'criteria': {}
+                        }
+
+
+
                     
+                    if c_name not in problem_scores[pid]['criteria']:
+                        problem_scores[pid]['criteria'][c_name] = []
+                    problem_scores[pid]['criteria'][c_name].append(entry.scale_option.value)
+
                     if c_name not in c_totals:
-                        c_totals[c_name] = 0
+                        c_totals[c_name] = 0.0
                         c_counts[c_name] = 0
-                    
+
+                        
                     c_totals[c_name] += entry.scale_option.value
                     c_counts[c_name] += 1
                     
                     data[pid][iid][c_name] = entry.scale_option.value
+
             
+            # Calculate total max score
+            scale = rubric.get('scale', [])
+            criteria_list = rubric.get('criteria', [])
+            total_max_score = 0
+            if scale and criteria_list:
+                max_val = max(s['value'] for s in scale)
+                total_max_score = max_val * len(criteria_list)
+                max_val = max(s['value'] for s in scale)
+                total_max_score = max_val * len(criteria_list)
+            
+            # Add weighted score and max score to each group's stats that appeared in this problem
+            # Note: A problem belongs to one group. We just processed entries for one rating (one problem).
+            # So `p_group` is consistent for this inner loop (iterating entries of one rating).
+            # We need to perform this AFTER the entries loop.
+            # But wait, the entries loop iterates `rating.entries.all()`. 
+            # `p_group` variable will hold the last entry's group, which is correct (same problem).
+            # This block was removed as the new group_stats accumulation handles it more generically.
+            # if p_group:
+            #      if 'weighted_score' not in group_stats[p_group]: group_stats[p_group]['weighted_score'] = []
+            #      # We need the calculated weighted score for this specific rating instance.
+            #      # Let's calculate it locally for this rating.
+            #      current_rating_w_score = 0
+            #      for entry in rating.entries.all():
+            #          current_rating_w_score += entry.scale_option.value
+            #      
+            #      group_stats[p_group]['weighted_score'].append(current_rating_w_score)
+
+            #      if 'total_max_score' not in group_stats[p_group]: group_stats[p_group]['total_max_score'] = []
+            #      group_stats[p_group]['total_max_score'].append(total_max_score)
+
             means = {c: c_totals[c]/c_counts[c] for c in c_totals}
+
+            
+            # Add weighted score
+            # Add weighted score (Problem-First Approach)
+            # Calculate weighted score for EACH problem, then average them.
+            bank_problem_weighted_scores = []
+            
+            for pid, p_data in problem_scores.items():
+                # We only care about problems in THIS bank loop.
+                # problem_scores accumulates globally? No, `problem_scores` variable is defined OUTSIDE the loop in line 598.
+                # WAIT. `problem_scores` accumulates across ALL banks if defined outside.
+                # However, inside this loop we only want problems for the CURRENT bank.
+                # Checking line 598... yes, it is outside.
+                # So `problem_scores` contains problems from previous iterations too?
+                # Actually, I should filter `problem_scores` for the current bank or just calculate it locally.
+                
+                # Let's check if p_data['group'] corresponds to this bank? No, group doesn't link to bank directly easily here.
+                # Easier: I have `data` (pid -> ratings) for this bank locally in this loop (lines 636-680).
+                # But `problem_scores` has the nice pre-calculated structure.
+                
+                # Correct approach: Calculate weighted score for the problems we just processed in `data`.
+                # We can re-use the logic or just do it on `data`.
+                pass
+
+            # Let's iterate `data` keys (pids for this bank) and check `problem_scores`.
+            for pid in data.keys():
+                if pid in problem_scores:
+                    p_data = problem_scores[pid]
+                    
+                    # Calculate per-problem weighted score
+                    p_w_sum = 0
+                    p_means = []
+                    
+                    current_p_weights = p_data.get('weights', {})
+                    current_total_weight = p_data.get('total_weight', 0)
+                    
+                    # Calculate mean for each criterion
+                    # Calculate mean for each criterion
+                    dynamic_total_weight = 0
+                    for c_name, c_vals in p_data.get('criteria', {}).items():
+                        if c_vals:
+                            avg = sum(c_vals) / len(c_vals)
+                            w = current_p_weights.get(c_name, 1)
+                            p_w_sum += (avg * w)
+                            dynamic_total_weight += w
+                    
+                    if dynamic_total_weight > 0:
+                        bank_problem_weighted_scores.append(p_w_sum / dynamic_total_weight)
+
+
+            if bank_problem_weighted_scores:
+                means['weighted_score'] = sum(bank_problem_weighted_scores) / len(bank_problem_weighted_scores)
+            else:
+                means['weighted_score'] = 0.0
+
+
             
             # IRR
             irr = {}
             raters_list = list(raters)
+
+            
+            # Global Analysis Overall Kappa for this bank
             if len(raters_list) > 1:
-                # Calculate IRR for each criterion
-                for c in means.keys():
-                    kappas = []
-                    for i in range(len(raters_list)):
-                        for j in range(i+1, len(raters_list)):
-                            r1 = raters_list[i]
-                            r2 = raters_list[j]
-                            y1, y2 = [], []
+                all_y1_global = []
+                all_y2_global = []
+                for i in range(len(raters_list)):
+                    for j in range(i+1, len(raters_list)):
+                        r1 = raters_list[i]
+                        r2 = raters_list[j]
+                        
+                        # Gather ALL ratings for this pair across all criteria
+                        pair_y1 = []
+                        pair_y2 = []
+                        
+                        for c in means.keys():
                             for pid in data:
                                 v1 = data[pid].get(r1, {}).get(c)
                                 v2 = data[pid].get(r2, {}).get(c)
                                 if v1 is not None and v2 is not None:
-                                    y1.append(v1)
-                                    y2.append(v2)
-                            if len(y1) >= 5:
-                                kappas.append(calculate_weighted_kappa(y1, y2))
-                    if kappas:
-                        irr[c] = np.mean(kappas)
+                                    pair_y1.append(v1)
+                                    pair_y2.append(v2)
+                        
+                        all_y1_global.extend(pair_y1)
+                        all_y2_global.extend(pair_y2)
+                        
+                        # Add to global criteria accumulators
+                        if scale:
+                             scale_vals = [s['value'] for s in scale]
+                        else:
+                             scale_vals = None
+                             
+                        # Re-iterate to separate by criterion for proper aggregation
+                        for c in means.keys():
+                            c_y1 = []
+                            c_y2 = []
+                            for pid in data:
+                                v1 = data[pid].get(r1, {}).get(c)
+                                v2 = data[pid].get(r2, {}).get(c)
+                                if v1 is not None and v2 is not None:
+                                    c_y1.append(v1)
+                                    c_y2.append(v2)
+                            
+                            if c_y1:
+                                if c not in global_criteria_data:
+                                    global_criteria_data[c] = {'y1': [], 'y2': [], 'scale': scale_vals}
+                                global_criteria_data[c]['y1'].extend(c_y1)
+                                global_criteria_data[c]['y2'].extend(c_y2)
+                                # Note: Assuming scale is consistent across banks for the same criterion name.
+                                # If mixed scales, this might be tricky. We use the most recent one found.
+                                global_criteria_data[c]['scale'] = scale_vals
+                
+                # Calculate Overall if we have enough data
+
+                # Since we iterate pairs, this might concatenate multiple pairs.
+                # Usually Overall is calculated pairwise and then averaged, OR pooled.
+
+                # The implementation in ProblemBankView was pooled per pair then averaged? 
+                # Actually ProblemBankView separated pairs. 
+                # Here we are inside `results` loop (per bank).
+                # We want "Overall" for this bank.
+                # If multiple raters, we should probably average the pairwise overall kappas? 
+                
+                overall_kappas = []
+                for i in range(len(raters_list)):
+                    for j in range(i+1, len(raters_list)):
+                        r1 = raters_list[i]
+                        r2 = raters_list[j]
+                        p_y1 = []
+                        p_y2 = []
+                        for c in means.keys():
+                             for pid in data:
+                                v1 = data[pid].get(r1, {}).get(c)
+                                v2 = data[pid].get(r2, {}).get(c)
+                                if v1 is not None and v2 is not None:
+                                    p_y1.append(v1)
+                                    p_y2.append(v2)
+                        
+                        if len(p_y1) >= 5:
+                            scale_vals = [s['value'] for s in scale] if scale else None
+                            k = calculate_weighted_kappa(
+                                p_y1, p_y2, 
+                                all_categories=scale_vals, 
+                                label=f"Global Analysis - Bank {bank.name} - Overall"
+                            )
+                            overall_kappas.append(k)
+                
+                if overall_kappas:
+                    irr['Overall'] = np.mean(overall_kappas)
+
 
             # Collect criteria values for ANOVA
             criteria_values = {} # criterion -> list of all values
@@ -639,26 +887,28 @@ class GlobalAnalysisView(APIView):
                 'id': bank.id,
                 'name': bank.name,
                 'means': means,
+                'total_max_score': total_max_score,
                 'inter_rater_reliability': irr,
                 'criteria_values': criteria_values
             })
             
-        # Perform ANOVA if requested or always?
-        # Let's do ANOVA for each criterion across banks
-        
-        # We need to know the order of criteria to display them consistently
-        # Let's assume a standard set of criteria names if possible, or union them.
-        # For now, just return the data.
-        
-        # To support the "Order Analysis Criteria" requirement, we need to respect the rubric order.
-        # Since we are aggregating across banks, they might have different rubrics.
-        # But usually they share a rubric structure if they are being compared.
-        # Let's try to get a "master" order from the first bank or just alphabetical?
-        # The requirement said "as defined by the rubric".
-        # If banks have different rubrics, comparison is hard.
-        # Let's assume they are similar.
-        
+        # Populate group_stats from problem_scores
+        for pid, p_data in problem_scores.items():
+            group = p_data['group']
+            if group not in group_stats:
+                group_stats[group] = {}
+            
+            for c_name, scores in p_data['criteria'].items():
+                if scores:
+                    # Average the scores for this problem (across raters)
+                    avg_score = sum(scores) / len(scores)
+                    
+                    if c_name not in group_stats[group]:
+                        group_stats[group][c_name] = []
+                    group_stats[group][c_name].append(avg_score)
+
         criteria_order_map = {}
+
         if banks.exists():
             # Use the first bank's rubric for ordering
             first_rubric = banks.first().get_rubric()
@@ -694,24 +944,242 @@ class GlobalAnalysisView(APIView):
                 if p_val is not None and (np.isinf(p_val) or np.isnan(p_val)):
                     p_val = None
                 
+                significant = p_val < 0.05 if p_val is not None else False
+                tukey_results = []
+
+                if significant and len(groups) > 2:
+                    try:
+                        # Perform Tukey's HSD
+                        res = stats.tukey_hsd(*groups)
+                        # res.pvalue is a matrix where [i, j] is p-value between group i and j
+                        # group_names maps to indices
+                        matrix = res.pvalue
+                        for i in range(len(group_names)):
+                            for j in range(i + 1, len(group_names)):
+                                if matrix[i, j] < 0.05:
+                                    tukey_results.append(f"{group_names[i]} vs {group_names[j]} (p={matrix[i, j]:.3f})")
+                    except Exception:
+                        pass # Fallback if tukey fails
+
                 anova_results.append({
                     'criterion_id': cid,
                     'f_stat': float(f_stat) if f_stat is not None else None,
                     'p_value': float(p_val) if p_val is not None else None,
-                    'significant': p_val < 0.05 if p_val is not None else False,
-                    'banks_included': group_names
+                    'significant': significant,
+                    'banks_included': group_names,
+                    'tukey_results': tukey_results
                 })
+
+
+        # Calculate Global Criteria Kappas
+        global_criteria_results = []
+        for c_name, c_data in global_criteria_data.items():
+            if len(c_data['y1']) >= 5:
+                k = calculate_weighted_kappa(
+                    c_data['y1'], c_data['y2'], 
+                    all_categories=c_data['scale'], 
+                    label=f"Global Criteria Analysis - {c_name}"
+                )
+                # T-test Calculation if exactly 2 groups
+                t_test_result = None
+                if len(group_stats) == 2:
+                    groups = list(group_stats.keys())
+                    g1 = groups[0]
+                    g2 = groups[1]
+                    # Get values for this criterion from each group
+                    vals1 = group_stats[g1].get(c_name, [])
+                    vals2 = group_stats[g2].get(c_name, [])
+                    
+                    if len(vals1) > 1 and len(vals2) > 1:
+                        # unequal variance (Welch's)
+                        t_stat, p_val_2 = stats.ttest_ind(vals1, vals2, equal_var=False)
+                        # 1-tailed: p/2 if t-stat assumption matches, but user usually just wants p/2
+                        t_test_result = {
+                            'p_2_tailed': p_val_2,
+                            'p_1_tailed': p_val_2 / 2,
+                            't_stat': t_stat
+                        }
+
+                global_criteria_results.append({
+                    'criterion': c_name,
+                    'kappa': k,
+                    'n': len(c_data['y1']),
+                    'mean': np.mean(c_data['y1'] + c_data['y2']),
+                    't_test': t_test_result
+                })
+
+
+        
+        # Sort by criterion order
+        global_criteria_results.sort(key=lambda x: (criteria_order_map.get(x['criterion'], 999), x['criterion']))
+
+
+        # Calculate Overall Stats for Criteria Table (Pooled)
+        all_criteria_y1 = []
+        all_criteria_y2 = []
+        all_criteria_scale = [] # Scale usually constant, but let's grab one valid scale
+        
+        for c_data in global_criteria_data.values():
+            all_criteria_y1.extend(c_data['y1'])
+            all_criteria_y2.extend(c_data['y2'])
+            if not all_criteria_scale and c_data['scale']:
+                all_criteria_scale = c_data['scale']
+        
+        # Calculate Overall Stats
+        overall_criteria_stats = None
+        if overall_kappas:
+            # Weighted Score Calculation (Sum of criteria averages per problem)
+            # problem_scores [pid] -> criteria -> avg_score
+            
+            group_weighted_vals = {}
+            all_weighted_vals = []
+            
+            for pid, p_data in problem_scores.items():
+                # Let's recalculate per-problem weighted score correctly:
+                # 'criteria' stores LIST of values (from multiple raters), so we average them first.
+                
+                # Check if we should use averaged values from logic above? 
+                # The logic above populated `group_stats`. `problem_scores` is raw.
+                
+                # Let's recalculate per-problem weighted score correctly:
+                current_p_weights = p_data.get('weights', {})
+                current_p_weighted_sum = 0
+                
+                for c_name, c_vals in p_data.get('criteria', {}).values():
+                     # Wait, values() gives the list of scores. I need the key (c_name) to look up weight.
+                     pass 
+                
+                # Iterate items to get c_name
+                dynamic_total_weight = 0
+                for c_name, c_vals in p_data.get('criteria', {}).items():
+                    if c_vals:
+                         avg_val = sum(c_vals)/len(c_vals)
+                         weight = current_p_weights.get(c_name, 1)
+                         current_p_weighted_sum += (avg_val * weight)
+                         dynamic_total_weight += weight
+                
+                if p_data.get('criteria'): # if any criteria existed
+                    p_w_score = current_p_weighted_sum
+
+                    
+                    # Normalize by dynamic total weight if available (Weighted Average Rating)
+                    if dynamic_total_weight > 0:
+                        p_w_score = p_w_score / dynamic_total_weight
+                    else:
+                        p_w_score = 0.0 # fallback
+
+                    group = p_data['group']
+
+
+                    if group not in group_weighted_vals:
+                         group_weighted_vals[group] = []
+                    group_weighted_vals[group].append(p_w_score)
+                    all_weighted_vals.append(p_w_score)
+
+
+            overall_n = len(all_weighted_vals)
+            overall_mean = np.mean(all_weighted_vals) if all_weighted_vals else 0.0
+            
+            # Group Means for Weighted Score
+            group_means = {g: np.mean(vals) for g, vals in group_weighted_vals.items()}
+
+            # Overall T-Test: Pool all rating values for G1 vs G2
+            overall_t_test = None
+            if len(group_weighted_vals) == 2:
+                groups = list(group_weighted_vals.keys())
+                g1_vals = group_weighted_vals[groups[0]]
+                g2_vals = group_weighted_vals[groups[1]]
+                
+                if len(g1_vals) > 1 and len(g2_vals) > 1:
+                     t_stat, p_val_2 = stats.ttest_ind(g1_vals, g2_vals, equal_var=False)
+                     overall_t_test = {
+                        'p_2_tailed': p_val_2,
+                        'p_1_tailed': p_val_2 / 2,
+                        't_stat': t_stat
+                     }
+
+            overall_criteria_stats = {
+                'kappa': None, # Hide Kappa
+                'n': overall_n,
+                'mean': overall_mean,
+                'group_means': group_means,
+                't_test': overall_t_test
+            }
+
+
+
+        # Calculate Overall Stats for Banks Table (Averages)
+        overall_bank_stats = {}
+        if results:
+            # Averages per criterion
+            for cid in sorted_criteria:
+                vals = [r['means'][cid] for r in results if cid in r['means'] and r['means'][cid] is not None]
+                if vals:
+                    overall_bank_stats[cid] = np.mean(vals)
+            
+            # Average Weighted Score (normalized 0-1 usually, but here raw scores)
+            # Actually frontend calculates normalized. Let's send raw weighted_score mean.
+            w_scores = [r['means'].get('weighted_score', 0) for r in results]
+            if w_scores:
+                overall_bank_stats['weighted_score'] = np.mean(w_scores)
+                
+            # Average Total Max Score (needed for normalization in frontend)
+            t_scores = [r['total_max_score'] for r in results if r['total_max_score']]
+            if t_scores:
+                overall_bank_stats['total_max_score'] = np.mean(t_scores)
+
+            # Average IRR
+            irrs = []
+            for r in results:
+                ival = r['inter_rater_reliability']
+                if isinstance(ival, (int, float)):
+                    irrs.append(ival)
+                elif isinstance(ival, dict):
+                     # Usually 'Overall' is what we want? Or mean of dict?
+                     # The frontend logic for displaying bank row IRR:
+                     # if object, mean of values.
+                     # Let's mirror that logic.
+                     v = list(ival.values())
+                     if v:
+                         irrs.append(np.mean(v))
+            
+            if irrs:
+                overall_bank_stats['inter_rater_reliability'] = np.mean(irrs)
+
+        # Process Group Stats
+        problem_groups = []
+        for g_name, g_data in group_stats.items():
+            g_means = {}
+            for k, vals in g_data.items():
+                if vals:
+                    g_means[k] = np.mean(vals)
+            
+            problem_groups.append({
+                'name': g_name,
+                'means': g_means,
+                # For groups logic, we might want 'total_max_score' mean too
+                'total_max_score': g_means.get('total_max_score', 0)
+            })
+        
+        # Sort groups by name
+        problem_groups.sort(key=lambda x: x['name'])
 
         return Response({
             'banks': [{
                 'id': r['id'], 
                 'name': r['name'], 
                 'means': r['means'],
+                'total_max_score': r['total_max_score'],
                 'inter_rater_reliability': r['inter_rater_reliability']
             } for r in results],
+            'problem_groups': problem_groups,
             'anova': anova_results,
-            'criteria_order': sorted_criteria
+            'criteria_order': sorted_criteria,
+            'global_criteria_irr': global_criteria_results,
+            'overall_criteria_stats': overall_criteria_stats,
+            'overall_bank_stats': overall_bank_stats
         })
+
 
 
 class ProblemViewSet(viewsets.ModelViewSet):

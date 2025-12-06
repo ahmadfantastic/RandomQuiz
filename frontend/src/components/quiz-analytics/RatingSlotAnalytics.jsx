@@ -61,7 +61,14 @@ function getPValue(t, df) {
     return 2 * (1 - normalCDF(Math.abs(t)));
 }
 
+// Consistent rounding helper
+const roundToTwo = (num) => {
+    if (num === undefined || num === null) return '-';
+    return (Math.round((num + Number.EPSILON) * 100) / 100).toFixed(2);
+};
+
 const RatingAnalysis = ({ title, data, groupedData }) => {
+
     const { headers, rows } = useMemo(() => {
         if (groupedData) {
             // Pivoted table for Group Comparison
@@ -86,8 +93,9 @@ const RatingAnalysis = ({ title, data, groupedData }) => {
                     if (criterion) {
                         const stats = calculateStats(criterion.distribution);
                         groupStats.push(stats);
-                        row.values.push(stats.n > 0 ? stats.mean.toFixed(2) : '—');
+                        row.values.push(stats.n > 0 ? roundToTwo(stats.mean) : '—');
                     } else {
+
                         groupStats.push({ mean: 0, variance: 0, n: 0 });
                         row.values.push('—');
                     }
@@ -134,7 +142,7 @@ const RatingAnalysis = ({ title, data, groupedData }) => {
                 const stats = calculateStats(c.distribution);
                 return {
                     name: c.name,
-                    values: [stats.n > 0 ? stats.mean.toFixed(2) : 'N/A']
+                    values: [stats.n > 0 ? roundToTwo(stats.mean) : 'N/A']
                 };
             });
             return { headers, rows };
