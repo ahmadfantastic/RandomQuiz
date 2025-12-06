@@ -25,6 +25,20 @@ class InstructorViewSet(viewsets.ModelViewSet):
         # Custom permissions could go here
         return super().get_permissions()
 
+    def list(self, request, *args, **kwargs):
+        instructor = getattr(request.user, 'instructor', None)
+        is_admin = instructor and instructor.is_admin_instructor
+        if not request.user.is_superuser and not is_admin:
+            raise PermissionDenied("You must be an admin instructor to view the instructor list.")
+        return super().list(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        instructor = getattr(request.user, 'instructor', None)
+        is_admin = instructor and instructor.is_admin_instructor
+        if not request.user.is_superuser and not is_admin:
+            raise PermissionDenied("Only admin instructors can invite new instructors.")
+        return super().create(request, *args, **kwargs)
+
     @action(detail=False, methods=['get', 'put', 'patch'])
     def me(self, request):
         instructor = getattr(request.user, 'instructor', None)

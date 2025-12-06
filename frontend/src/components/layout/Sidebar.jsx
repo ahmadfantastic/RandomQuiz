@@ -40,6 +40,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     first_name: '',
     last_name: '',
     profile_picture_url: '',
+    is_admin_instructor: false,
   });
   const [quizzes, setQuizzes] = useState([]);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
@@ -87,6 +88,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           first_name: res.data.first_name || '',
           last_name: res.data.last_name || '',
           profile_picture_url: res.data.profile_picture_url || '',
+          is_admin_instructor: res.data.is_admin_instructor || false,
         });
       })
       .catch(() => { });
@@ -98,13 +100,14 @@ const Sidebar = ({ isOpen, onClose }) => {
   useEffect(() => {
     const handler = (event) => {
       if (!event?.detail) return;
-      setProfile({
-        username: event.detail.username || 'Instructor',
-        email: event.detail.email || '',
-        first_name: event.detail.first_name || '',
-        last_name: event.detail.last_name || '',
-        profile_picture_url: event.detail.profile_picture_url || '',
-      });
+      setProfile((prev) => ({
+        ...prev,
+        username: event.detail.username || prev.username,
+        email: event.detail.email || prev.email,
+        first_name: event.detail.first_name || prev.first_name,
+        last_name: event.detail.last_name || prev.last_name,
+        profile_picture_url: event.detail.profile_picture_url || prev.profile_picture_url,
+      }));
     };
     window.addEventListener('profileUpdated', handler);
     return () => window.removeEventListener('profileUpdated', handler);
@@ -226,22 +229,27 @@ const Sidebar = ({ isOpen, onClose }) => {
         </button>
       </div>
       <nav className="mt-10 flex flex-1 flex-col gap-2">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted',
-                isActive && 'bg-muted text-foreground'
-              )
-            }
-            onClick={onClose}
-          >
-            <span className="mr-3 flex h-5 w-5 items-center justify-center text-sm text-muted-foreground">{item.icon}</span>
-            {item.label}
-          </NavLink>
-        ))}
+        {navItems
+          .filter((item) => {
+            if (item.label === 'Instructors' && !profile.is_admin_instructor) return false;
+            return true;
+          })
+          .map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-muted',
+                  isActive && 'bg-muted text-foreground'
+                )
+              }
+              onClick={onClose}
+            >
+              <span className="mr-3 flex h-5 w-5 items-center justify-center text-sm text-muted-foreground">{item.icon}</span>
+              {item.label}
+            </NavLink>
+          ))}
 
         <div className="mt-4 space-y-2 rounded-2xl border border-border/80 bg-card/70 p-3 shadow-sm">
           <button
