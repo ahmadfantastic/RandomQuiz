@@ -41,6 +41,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     last_name: '',
     profile_picture_url: '',
     is_admin_instructor: false,
+    is_superuser: false,
   });
   const [quizzes, setQuizzes] = useState([]);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
@@ -89,6 +90,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           last_name: res.data.last_name || '',
           profile_picture_url: res.data.profile_picture_url || '',
           is_admin_instructor: res.data.is_admin_instructor || false,
+          is_superuser: res.data.is_superuser || false,
         });
       })
       .catch(() => { });
@@ -157,7 +159,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                   return (
                     <NavLink
                       key={quiz.id}
-                      to={`/quizzes/${quiz.id}/edit`}
+                      to={`/ quizzes / ${quiz.id}/edit`}
                       className={({ isActive }) =>
                         cn(
                           'block rounded-xl border border-transparent transition-colors hover:border-primary/70 hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
@@ -174,10 +176,10 @@ const Sidebar = ({ isOpen, onClose }) => {
                         <QuizStatusIcon statusKey={status.key} className="h-3 w-3 text-current" />
                         {quiz.title}
                       </span>
-                    </NavLink>
+                    </NavLink >
                   );
                 })}
-              </div>
+              </div >
             ) : (
               <div className="space-y-3 rounded-xl border border-dashed border-border/60 bg-muted/10 px-4 py-6 text-center text-sm font-semibold text-muted-foreground">
                 <p>No quizzes yet.</p>
@@ -198,14 +200,14 @@ const Sidebar = ({ isOpen, onClose }) => {
                 Show all
               </Button>
             </div>
-          </div>
-        </div>
+          </div >
+        </div >
         {hasQuizzes && (
           <Button size="sm" variant="outline" to="/quizzes/new" className="w-full" onClick={onClose}>
             + Create quiz
           </Button>
         )}
-      </div>
+      </div >
     );
   };
 
@@ -231,7 +233,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       <nav className="mt-10 flex flex-1 flex-col gap-2">
         {navItems
           .filter((item) => {
-            if (item.label === 'Instructors' && !profile.is_admin_instructor) return false;
+            if (item.label === 'Instructors' && !profile.is_admin_instructor && !profile.is_superuser) return false;
             return true;
           })
           .map((item) => (

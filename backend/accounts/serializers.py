@@ -14,6 +14,7 @@ class InstructorSerializer(serializers.ModelSerializer):
     profile_picture_url = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, source='user.password', required=False)
     is_self = serializers.SerializerMethodField()
+    is_superuser = serializers.BooleanField(source='user.is_superuser', read_only=True)
 
     class Meta:
         model = Instructor
@@ -26,6 +27,7 @@ class InstructorSerializer(serializers.ModelSerializer):
             'profile_picture',
             'profile_picture_url',
             'is_admin_instructor',
+            'is_superuser',
             'password',
             'is_self',
         ]

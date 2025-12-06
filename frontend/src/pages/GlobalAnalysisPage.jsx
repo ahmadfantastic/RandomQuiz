@@ -182,10 +182,10 @@ const GlobalAnalysisPage = () => {
                                                 {problem_groups && problem_groups.length === 2 && (
                                                     <>
                                                         <TableCell className={item.t_test?.p_2_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                            {item.t_test ? item.t_test.p_2_tailed.toFixed(4) : '-'}
+                                                            {item.t_test && item.t_test.p_2_tailed != null ? item.t_test.p_2_tailed.toFixed(4) : '-'}
                                                         </TableCell>
                                                         <TableCell className={item.t_test?.p_1_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                            {item.t_test ? item.t_test.p_1_tailed.toFixed(4) : '-'}
+                                                            {item.t_test && item.t_test.p_1_tailed != null ? item.t_test.p_1_tailed.toFixed(4) : '-'}
                                                         </TableCell>
                                                     </>
                                                 )}
@@ -195,7 +195,7 @@ const GlobalAnalysisPage = () => {
                                                 </TableCell>
 
                                                 <TableCell className={item.kappa < 0.5 ? "text-destructive font-bold" : "text-green-600 font-bold"}>
-                                                    {item.kappa.toFixed(3)}
+                                                    {item.kappa != null ? item.kappa.toFixed(3) : '-'}
                                                 </TableCell>
                                             </TableRow>
 
@@ -226,10 +226,10 @@ const GlobalAnalysisPage = () => {
                                             {problem_groups && problem_groups.length === 2 && (
                                                 <>
                                                     <TableCell className={data.overall_criteria_stats.t_test?.p_2_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                        {data.overall_criteria_stats.t_test ? data.overall_criteria_stats.t_test.p_2_tailed.toFixed(4) : '-'}
+                                                        {data.overall_criteria_stats.t_test && data.overall_criteria_stats.t_test.p_2_tailed != null ? data.overall_criteria_stats.t_test.p_2_tailed.toFixed(4) : '-'}
                                                     </TableCell>
                                                     <TableCell className={data.overall_criteria_stats.t_test?.p_1_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                        {data.overall_criteria_stats.t_test ? data.overall_criteria_stats.t_test.p_1_tailed.toFixed(4) : '-'}
+                                                        {data.overall_criteria_stats.t_test && data.overall_criteria_stats.t_test.p_1_tailed != null ? data.overall_criteria_stats.t_test.p_1_tailed.toFixed(4) : '-'}
                                                     </TableCell>
                                                 </>
                                             )}
@@ -333,7 +333,7 @@ const GlobalAnalysisPage = () => {
 
 
                                             <TableCell>
-                                                {data.overall_bank_stats.inter_rater_reliability !== undefined
+                                                {data.overall_bank_stats.inter_rater_reliability !== undefined && data.overall_bank_stats.inter_rater_reliability !== null
                                                     ? data.overall_bank_stats.inter_rater_reliability.toFixed(3)
                                                     : '-'}
                                             </TableCell>

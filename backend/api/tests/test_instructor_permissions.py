@@ -66,3 +66,4 @@ class InstructorPermissionTests(APITestCase):
         response = self.client.get(f'{self.list_url}me/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['username'], 'admin_inst')
+        self.assertIn('is_superuser', response.data)

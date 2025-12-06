@@ -1,6 +1,7 @@
 import csv
 from io import StringIO
 import numpy as np
+import warnings
 from scipy import stats
 from django.db import models
 from django.shortcuts import get_object_or_404
@@ -606,11 +607,15 @@ class GlobalAnalysisView(APIView):
         # Structure: group_name -> { criterion: [values], 'weighted_score': [values], 'total_max_score': [values] }
         group_stats = {}
         
+
+
         # Temporary storage for aggregating scores per problem
         # pid -> { 'group': group_name, 'criteria': { c_name: [scores] } }
-        problem_scores = {}
-
+        all_problem_scores = {}
+        
         for bank in banks:
+            # Temporary storage for aggregating scores per problem within this bank
+            problem_scores = {}
 
 
 
@@ -874,14 +879,32 @@ class GlobalAnalysisView(APIView):
 
 
             # Collect criteria values for ANOVA
-            criteria_values = {} # criterion -> list of all values
-            for r in ratings:
-                for entry in r.entries.all():
-                    c_id = entry.criterion.criterion_id
-                    c_name = rubric_criteria.get(c_id, c_id)
-                    if c_name not in criteria_values:
-                        criteria_values[c_name] = []
-                    criteria_values[c_name].append(entry.scale_option.value)
+            # We must average between raters for the same problem before adding to the ANOVA list
+            criteria_values = {}
+            for pid, p_data in problem_scores.items():
+                 for c_name, scores in p_data['criteria'].items():
+                      if scores:
+                           avg = sum(scores) / len(scores)
+                           if c_name not in criteria_values: 
+                                criteria_values[c_name] = []
+                           criteria_values[c_name].append(avg)
+
+                 # Add weighted score for ANOVA
+                 p_w_sum = 0
+                 d_tot_w = 0
+                 current_p_weights = p_data.get('weights', {})
+                 for c_name, scores in p_data['criteria'].items():
+                      if scores:
+                           avg = sum(scores)/len(scores)
+                           w = current_p_weights.get(c_name, 1)
+                           p_w_sum += avg * w
+                           d_tot_w += w
+                 
+                 if d_tot_w > 0:
+                      w_score = p_w_sum / d_tot_w
+                      if 'weighted_score' not in criteria_values:
+                           criteria_values['weighted_score'] = []
+                      criteria_values['weighted_score'].append(w_score)
 
             results.append({
                 'id': bank.id,
@@ -892,20 +915,42 @@ class GlobalAnalysisView(APIView):
                 'criteria_values': criteria_values
             })
             
-        # Populate group_stats from problem_scores
-        for pid, p_data in problem_scores.items():
-            group = p_data['group']
-            if group not in group_stats:
-                group_stats[group] = {}
-            
-            for c_name, scores in p_data['criteria'].items():
-                if scores:
-                    # Average the scores for this problem (across raters)
-                    avg_score = sum(scores) / len(scores)
-                    
-                    if c_name not in group_stats[group]:
-                        group_stats[group][c_name] = []
-                    group_stats[group][c_name].append(avg_score)
+            # Populate group_stats from problem_scores
+            for pid, p_data in problem_scores.items():
+                group = p_data['group']
+                if group not in group_stats:
+                    group_stats[group] = {}
+                
+                for c_name, scores in p_data['criteria'].items():
+                    if scores:
+                        # Average the scores for this problem (across raters)
+                        # Use float to ensure no rounding up/integer division issues
+                        avg_score = float(sum(scores)) / len(scores)
+                        
+                        if c_name not in group_stats[group]:
+                            group_stats[group][c_name] = []
+                        group_stats[group][c_name].append(avg_score)
+                
+                # Add weighted score to group stats
+                # Recalculate per-problem weighted score locally
+                p_w_sum = 0.0
+                d_tot_w = 0.0
+                current_p_weights = p_data.get('weights', {})
+                for c_name, scores in p_data['criteria'].items():
+                    if scores:
+                        avg = float(sum(scores)) / len(scores)
+                        w = float(current_p_weights.get(c_name, 1))
+                        p_w_sum += avg * w
+                        d_tot_w += w
+                
+                if d_tot_w > 0:
+                    w_score = p_w_sum / d_tot_w
+                    if 'weighted_score' not in group_stats[group]:
+                        group_stats[group]['weighted_score'] = []
+                    group_stats[group]['weighted_score'].append(w_score)
+                
+            # Accumulate to global problem scores
+            all_problem_scores.update(problem_scores)
 
         criteria_order_map = {}
 
@@ -920,7 +965,8 @@ class GlobalAnalysisView(APIView):
             all_criteria.update(res['means'].keys())
             
         # Sort all_criteria based on the collected order
-        sorted_criteria = sorted([c for c in all_criteria if c != 'weighted_score'], key=lambda x: (criteria_order_map.get(x, 999), x))
+        # Sort all_criteria based on the collected order
+        sorted_criteria = sorted([c for c in all_criteria], key=lambda x: (criteria_order_map.get(x, 999), x))
 
         anova_results = []
         
@@ -935,7 +981,9 @@ class GlobalAnalysisView(APIView):
             
             if len(groups) > 1:
                 try:
-                    f_stat, p_val = stats.f_oneway(*groups)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", RuntimeWarning)
+                        f_stat, p_val = stats.f_oneway(*groups)
                 except Exception:
                     f_stat, p_val = None, None
 
@@ -962,7 +1010,7 @@ class GlobalAnalysisView(APIView):
                         pass # Fallback if tukey fails
 
                 anova_results.append({
-                    'criterion_id': cid,
+                    'criterion_id': 'Weighted Score' if cid == 'weighted_score' else cid,
                     'f_stat': float(f_stat) if f_stat is not None else None,
                     'p_value': float(p_val) if p_val is not None else None,
                     'significant': significant,
@@ -992,11 +1040,17 @@ class GlobalAnalysisView(APIView):
                     
                     if len(vals1) > 1 and len(vals2) > 1:
                         # unequal variance (Welch's)
-                        t_stat, p_val_2 = stats.ttest_ind(vals1, vals2, equal_var=False)
+                        try:
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore", RuntimeWarning)
+                                t_stat, p_val_2 = stats.ttest_ind(vals1, vals2, equal_var=False)
+                        except Exception:
+                            t_stat, p_val_2 = None, None
+                            
                         # 1-tailed: p/2 if t-stat assumption matches, but user usually just wants p/2
                         t_test_result = {
                             'p_2_tailed': p_val_2,
-                            'p_1_tailed': p_val_2 / 2,
+                            'p_1_tailed': p_val_2 / 2 if p_val_2 is not None else None,
                             't_stat': t_stat
                         }
 
@@ -1027,14 +1081,14 @@ class GlobalAnalysisView(APIView):
         
         # Calculate Overall Stats
         overall_criteria_stats = None
-        if overall_kappas:
+        if all_problem_scores:
             # Weighted Score Calculation (Sum of criteria averages per problem)
-            # problem_scores [pid] -> criteria -> avg_score
+            # all_problem_scores [pid] -> criteria -> avg_score
             
             group_weighted_vals = {}
             all_weighted_vals = []
             
-            for pid, p_data in problem_scores.items():
+            for pid, p_data in all_problem_scores.items():
                 # Let's recalculate per-problem weighted score correctly:
                 # 'criteria' stores LIST of values (from multiple raters), so we average them first.
                 
@@ -1045,9 +1099,7 @@ class GlobalAnalysisView(APIView):
                 current_p_weights = p_data.get('weights', {})
                 current_p_weighted_sum = 0
                 
-                for c_name, c_vals in p_data.get('criteria', {}).values():
-                     # Wait, values() gives the list of scores. I need the key (c_name) to look up weight.
-                     pass 
+
                 
                 # Iterate items to get c_name
                 dynamic_total_weight = 0
@@ -1091,10 +1143,16 @@ class GlobalAnalysisView(APIView):
                 g2_vals = group_weighted_vals[groups[1]]
                 
                 if len(g1_vals) > 1 and len(g2_vals) > 1:
-                     t_stat, p_val_2 = stats.ttest_ind(g1_vals, g2_vals, equal_var=False)
+                     try:
+                         with warnings.catch_warnings():
+                             warnings.simplefilter("ignore", RuntimeWarning)
+                             t_stat, p_val_2 = stats.ttest_ind(g1_vals, g2_vals, equal_var=False)
+                     except Exception:
+                         t_stat, p_val_2 = None, None
+
                      overall_t_test = {
                         'p_2_tailed': p_val_2,
-                        'p_1_tailed': p_val_2 / 2,
+                        'p_1_tailed': p_val_2 / 2 if p_val_2 is not None else None,
                         't_stat': t_stat
                      }
 
@@ -1164,7 +1222,7 @@ class GlobalAnalysisView(APIView):
         # Sort groups by name
         problem_groups.sort(key=lambda x: x['name'])
 
-        return Response({
+        response_data = {
             'banks': [{
                 'id': r['id'], 
                 'name': r['name'], 
@@ -1178,7 +1236,20 @@ class GlobalAnalysisView(APIView):
             'global_criteria_irr': global_criteria_results,
             'overall_criteria_stats': overall_criteria_stats,
             'overall_bank_stats': overall_bank_stats
-        })
+        }
+        
+        return Response(self.sanitize_data(response_data))
+
+    def sanitize_data(self, data):
+        """Recursively replace NaN/Inf with None for JSON compliance"""
+        if isinstance(data, dict):
+            return {k: self.sanitize_data(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.sanitize_data(v) for v in data]
+        elif isinstance(data, float):
+            if np.isnan(data) or np.isinf(data):
+                return None
+        return data
 
 
 
