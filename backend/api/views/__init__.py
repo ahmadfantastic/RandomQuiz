@@ -3,13 +3,9 @@ from .instructor import InstructorViewSet
 from .problem_bank import (
     ProblemBankViewSet, 
     ProblemBankRatingImportView, 
-    ProblemBankAnalysisView, 
-    GlobalAnalysisView, 
     ProblemViewSet, 
     ProblemBankProblemListCreate, 
-    ProblemBankRubricView, 
-    InstructorProblemRatingView,
-    calculate_weighted_kappa
+    InstructorProblemRatingView
 )
 from .rubric import (
     RubricViewSet, 
@@ -17,7 +13,8 @@ from .rubric import (
     GradingRubricView, 
     QuizRubricScaleSerializer, 
     QuizRubricCriterionSerializer, 
-    QuizRubricPayloadSerializer
+    QuizRubricPayloadSerializer,
+    ProblemBankRubricView
 )
 from .quiz import (
     QuizViewSet, 
@@ -55,5 +52,8 @@ from .analytics import (
     QuizSlotProblemStudentsView, 
     QuizOverviewAnalyticsView, 
     QuizInteractionAnalyticsView, 
-    QuizSlotAnalyticsView
+    QuizSlotAnalyticsView,
+    GlobalAnalysisView,
+    ProblemBankAnalysisView,
+    calculate_weighted_kappa
 )

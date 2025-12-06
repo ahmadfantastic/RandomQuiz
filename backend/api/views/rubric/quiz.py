@@ -1,30 +1,13 @@
-
 from django.db import transaction, models
 from django.shortcuts import get_object_or_404
-from rest_framework import serializers, viewsets, status
+from rest_framework import serializers, status
 from accounts.permissions import IsInstructor
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import ensure_instructor
-from accounts.permissions import IsInstructor
-from problems.models import Rubric
-from problems.serializers import RubricSerializer
 from quizzes.models import Quiz, QuizRatingScaleOption, QuizRatingCriterion, GradingRubric
 from quizzes.serializers import GradingRubricSerializer
-
-
-class RubricViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsInstructor]
-    serializer_class = RubricSerializer
-
-    def get_queryset(self):
-        # Return all rubrics
-        return Rubric.objects.all()
-
-    def perform_create(self, serializer):
-        instructor = ensure_instructor(self.request.user)
-        serializer.save(owner=instructor)
 
 
 class QuizRubricScaleSerializer(serializers.Serializer):
