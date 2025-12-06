@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
@@ -51,22 +51,25 @@ const QuizAnalyticsPage = () => {
     const [loading, setLoading] = useState(true);
     const [quiz, setQuiz] = useState(null);
     const [slots, setSlots] = useState([]);
+    const [allQuizzes, setAllQuizzes] = useState([]);
     const [activeTab, setActiveTab] = useState('overview');
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchQuizInfo = async () => {
             try {
                 setLoading(true);
                 // Fetch quiz details to get title and slots structure
-                // We might need a specific endpoint or just use the detail endpoint
-                // The detail endpoint usually returns slots.
                 const res = await api.get(`/api/quizzes/${quizId}/`);
                 setQuiz(res.data);
                 // Extract slots from quiz data
-                // Assuming res.data.slots is available and ordered
                 if (res.data.slots) {
                     setSlots(res.data.slots);
                 }
+
+                // Fetch all quizzes for switcher
+                const allRes = await api.get('/api/quizzes/');
+                setAllQuizzes(allRes.data);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -105,15 +108,34 @@ const QuizAnalyticsPage = () => {
     return (
         <AppShell>
             <div className="space-y-8 pb-12">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" to={`/quizzes/${quizId}/edit`}>
-                        <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Analytics: {quiz.title}</h1>
-                        <p className="text-muted-foreground">
-                            Detailed insights into student performance and engagement
-                        </p>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <Button variant="ghost" size="icon" to={`/quizzes/${quizId}/edit`}>
+                            <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                        <div>
+                            <h1 className="text-2xl font-bold tracking-tight">Analytics: {quiz.title}</h1>
+                            <p className="text-muted-foreground">
+                                Detailed insights into student performance and engagement
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" to="/analysis/global">
+                            Global Analysis
+                        </Button>
+                        <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Switch Quiz:</span>
+                        <select
+                            className="h-10 w-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            value={quizId}
+                            onChange={(e) => navigate(`/quizzes/${e.target.value}/analytics`)}
+                        >
+                            {allQuizzes.map(q => (
+                                <option key={q.id} value={q.id}>
+                                    {q.title}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 

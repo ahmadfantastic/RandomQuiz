@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,8 @@ const GlobalAnalysisPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [data, setData] = useState(null);
+    const [quizzes, setQuizzes] = useState([]);
+    const navigate = useNavigate();
 
     // Consistent rounding helper: 0.935 -> 0.94
     const roundToTwo = (num) => {
@@ -23,8 +25,12 @@ const GlobalAnalysisPage = () => {
         const fetchData = async () => {
             try {
                 setLoading(true);
-                const response = await api.get('/api/problem-banks/analysis/global/');
-                setData(response.data);
+                const [globalRes, quizzesRes] = await Promise.all([
+                    api.get('/api/problem-banks/analysis/global/'),
+                    api.get('/api/quizzes/')
+                ]);
+                setData(globalRes.data);
+                setQuizzes(quizzesRes.data);
             } catch (err) {
                 setError('Failed to load global analysis data.');
                 console.error(err);
@@ -78,15 +84,49 @@ const GlobalAnalysisPage = () => {
     return (
         <AppShell>
             <div className="space-y-8 pb-12">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" to={`/problem-banks`}>
-                        <ChevronLeft className="h-5 w-5" />
-                    </Button>
+                <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Global Analysis</h1>
                         <p className="text-muted-foreground">
                             Comparison of ratings across all problem banks
                         </p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Bank:</span>
+                            <select
+                                className="h-9 w-[180px] rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                onChange={(e) => {
+                                    if (e.target.value) {
+                                        navigate(`/problem-banks/${e.target.value}/analysis`);
+                                    }
+                                }}
+                                defaultValue=""
+                            >
+                                <option value="" disabled>Analyze Bank...</option>
+                                {banks.map(b => (
+                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Quiz:</span>
+                            <select
+                                className="h-9 w-[180px] rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                onChange={(e) => {
+                                    if (e.target.value) {
+                                        navigate(`/quizzes/${e.target.value}/analytics`);
+                                    }
+                                }}
+                                defaultValue=""
+                            >
+                                <option value="" disabled>Analyze Quiz...</option>
+                                {quizzes.map(q => (
+                                    <option key={q.id} value={q.id}>{q.title}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
 

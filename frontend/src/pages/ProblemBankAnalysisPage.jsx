@@ -91,6 +91,9 @@ const ProblemBankAnalysisPage = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        <Button variant="outline" to="/analysis/global">
+                            Global Analysis
+                        </Button>
                         <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Switch Bank:</span>
                         <select
                             className="h-10 w-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
