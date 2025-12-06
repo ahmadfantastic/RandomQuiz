@@ -47,5 +47,5 @@ externalPort = 3001
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["bash", "-c", "cd backend && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:5000 --workers 2 --reuse-port randomquiz.wsgi:application"]
-build = ["bash", "build.sh"]
+run = ["bash", "-c", "cd backend && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --timeout 120 randomquiz.wsgi:application"]
+build = ["./build.sh"]
