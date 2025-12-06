@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from accounts.models import ensure_instructor
 from problems.models import Problem
-from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizAttemptInteraction, QuizSlotGrade
+from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizAttemptInteraction, QuizSlotGrade, QuizRatingCriterion
 
 
 class QuizAnalyticsView(APIView):
@@ -442,9 +442,72 @@ class QuizAnalyticsView(APIView):
                         'data': {'criteria': g_criteria_data}
                     })
 
+                # Calculate Cronbach's Alpha for this slot
+                slot_cronbach_alpha = None
+                try:
+                    # 1. Gather data: attempt_id -> { criterion_id: value }
+                    # We need to filter attempts that have answered this slot
+                    # Calculate Cronbach's Alpha
+                    slot_cronbach_alpha = None
+                    try:
+                        criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+                        if criteria:
+                            slot_attempt_ratings = {}
+                            for attempt_slot in attempt_slots:
+                                a_id = attempt_slot.attempt_id
+                                if attempt_slot.answer_data and 'ratings' in attempt_slot.answer_data:
+                                    slot_attempt_ratings[a_id] = attempt_slot.answer_data['ratings']
+                            
+                            # Build matrix
+                            # Columns: criteria ids
+                            existing_c_ids = set()
+                            for r_map in slot_attempt_ratings.values():
+                                existing_c_ids.update(r_map.keys())
+                            
+                            active_criteria = [c for c in criteria if c.criterion_id in existing_c_ids]
+                            item_keys = [c.criterion_id for c in active_criteria]
+                            K = len(item_keys)
+                            
+                            if K > 1:
+                                scores_matrix = []
+                                for ratings in slot_attempt_ratings.values():
+                                    # Listwise deletion
+                                    if all(k in ratings for k in item_keys):
+                                        row = [float(ratings[k]) for k in item_keys]
+                                        scores_matrix.append(row)
+                                
+                                N = len(scores_matrix)
+
+                                if N > 1:
+                                    item_variances = []
+                                    for col_idx in range(K):
+                                        col_values = [row[col_idx] for row in scores_matrix]
+                                        mean = sum(col_values) / N
+                                        var = sum((x - mean) ** 2 for x in col_values) / (N - 1)
+                                        item_variances.append(var)
+                                    
+                                    total_scores = [sum(row) for row in scores_matrix]
+                                    mean_total = sum(total_scores) / N
+                                    var_total = sum((x - mean_total) ** 2 for x in total_scores) / (N - 1)
+                                    
+                                    if var_total > 0:
+                                        slot_cronbach_alpha = (K / (K - 1)) * (1 - (sum(item_variances) / var_total))
+
+                    except Exception as e:
+                        print(f"Error calculating slot alpha in view: {e}")
+
+                    data = {
+                        'criteria': criteria_stats,
+                        'grouped_data': grouped_charts_data,
+                        'cronbach_alpha': slot_cronbach_alpha
+                    }
+                except Exception as e:
+                    print(f"Error calculating per-slot Cronbach's Alpha: {e}")
+
                 slot_data['data'] = {
                     'criteria': criteria_stats,
-                    'grouped_data': grouped_charts_data
+                    'grouped_data': grouped_charts_data,
+                    'cronbach_alpha': slot_cronbach_alpha
                 }
 
             slots_data.append(slot_data)
@@ -493,67 +556,6 @@ class QuizAnalyticsView(APIView):
         min_score = score_stats['min_score'] or 0
         max_score = score_stats['max_score'] or 0
 
-        # Calculate Cronbach's Alpha
-        cronbach_alpha = None
-        try:
-            # 1. Identify rating slots and criteria
-            rating_slots = [s for s in quiz_slots if s.response_type == QuizSlot.ResponseType.RATING]
-            if rating_slots and criteria:
-                # Items are (slot_id, criterion_id)
-                # We need to map attempt_id -> { (slot_id, c_id): value }
-                attempt_ratings = {}
-                
-                # We need to iterate all_attempt_slots again
-                for sa in all_attempt_slots:
-                    a_id = sa['attempt_id']
-                    if a_id not in attempt_ratings:
-                        attempt_ratings[a_id] = {}
-                    
-                    if sa['answer_data'] and 'ratings' in sa['answer_data']:
-                        ratings = sa['answer_data']['ratings']
-                        for c_id, val in ratings.items():
-                            # Key: slot_id_criterion_id
-                            key = f"{sa['slot_id']}_{c_id}"
-                            attempt_ratings[a_id][key] = val
-
-                # 2. Build matrix
-                # Columns: all combinations of rating_slot.id and criterion.id
-                item_keys = []
-                for s in rating_slots:
-                    for c in criteria:
-                        item_keys.append(f"{s.id}_{c['id']}")
-                
-                K = len(item_keys)
-                
-                if K > 1:
-                    # Rows
-                    scores_matrix = []
-                    for a_id, ratings in attempt_ratings.items():
-                        # Check if complete (listwise deletion)
-                        if all(k in ratings for k in item_keys):
-                            row = [float(ratings[k]) for k in item_keys]
-                            scores_matrix.append(row)
-                    
-                    N = len(scores_matrix)
-                    if N > 1:
-                        # 3. Calculate variances
-                        item_variances = []
-                        for col_idx in range(K):
-                            col_values = [row[col_idx] for row in scores_matrix]
-                            mean = sum(col_values) / N
-                            var = sum((x - mean) ** 2 for x in col_values) / (N - 1) # Sample variance
-                            item_variances.append(var)
-                        
-                        total_scores = [sum(row) for row in scores_matrix]
-                        mean_total = sum(total_scores) / N
-                        var_total = sum((x - mean_total) ** 2 for x in total_scores) / (N - 1)
-                        
-                        if var_total > 0:
-                            cronbach_alpha = (K / (K - 1)) * (1 - (sum(item_variances) / var_total))
-        except Exception as e:
-            print(f"Error calculating Cronbach's Alpha: {e}")
-            pass
-
         return Response({
             'avg_score': avg_score,
             'min_score': min_score,
@@ -564,9 +566,7 @@ class QuizAnalyticsView(APIView):
             'slots': slots_data,
             'interactions': [],
             'available_problems': available_problems,
-            'available_problems': available_problems,
-            'word_count_stats': word_count_stats,
-            'cronbach_alpha': cronbach_alpha
+            'word_count_stats': word_count_stats
         })
 
 
@@ -1062,6 +1062,65 @@ class QuizSlotAnalyticsView(APIView):
                 })
             
             data['grouped_data'] = formatted_grouped
+
+            # Calculate Cronbach's Alpha
+            slot_cronbach_alpha = None
+            try:
+                # Reuse criteria loaded earlier? Not really available as 'criteria' variable is inside loop above?
+                # Actually, wait. 'criteria' IS NOT available here scope-wise if it was defined inside the 'if' block.
+                # But looking at line 1005 `rubric_c_names = [c['name'] for c in criteria]` suggests `criteria` is available list of dicts.
+                # However, for calculation we need criterion IDs. The `criteria` variable in my previous snippets was `QuizRatingCriterion` objects.
+                # Let's re-fetch or assume availability.
+                # The Loop at line 1005 implies `criteria` is a list of dicts? No, `[c['name'] for c in criteria]`.
+                # If `criteria` is objects, `c.name` would be used.
+                # Let's check where `criteria` was defined. It seems I didn't see the definition in the previous view.
+                # Warning: `criteria` might not be defined or might be a list of serialized dicts.
+                
+                # To be safe, let's re-fetch clean objects for calculation.
+                alpha_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+                if alpha_criteria:
+                    slot_attempt_ratings = {}
+                    for attempt_slot in attempt_slots:
+                        a_id = attempt_slot.attempt_id
+                        if attempt_slot.answer_data and 'ratings' in attempt_slot.answer_data:
+                            slot_attempt_ratings[a_id] = attempt_slot.answer_data['ratings']
+                    
+                    # Build matrix
+                    existing_c_ids = set()
+                    for r_map in slot_attempt_ratings.values():
+                        existing_c_ids.update(r_map.keys())
+                    
+                    active_criteria = [c for c in alpha_criteria if c.criterion_id in existing_c_ids]
+                    item_keys = [c.criterion_id for c in active_criteria]
+                    K = len(item_keys)
+                    
+                    if K > 1:
+                        scores_matrix = []
+                        for ratings in slot_attempt_ratings.values():
+                            if all(k in ratings for k in item_keys):
+                                row = [float(ratings[k]) for k in item_keys]
+                                scores_matrix.append(row)
+                        
+                        N = len(scores_matrix)
+                        if N > 1:
+                            item_variances = []
+                            for col_idx in range(K):
+                                col_values = [row[col_idx] for row in scores_matrix]
+                                mean = sum(col_values) / N
+                                var = sum((x - mean) ** 2 for x in col_values) / (N - 1)
+                                item_variances.append(var)
+                            
+                            total_scores = [sum(row) for row in scores_matrix]
+                            mean_total = sum(total_scores) / N
+                            var_total = sum((x - mean_total) ** 2 for x in total_scores) / (N - 1)
+                            
+                            if var_total > 0:
+                                slot_cronbach_alpha = (K / (K - 1)) * (1 - (sum(item_variances) / var_total))
+
+            except Exception as e:
+                print(f"Error calculating slot alpha: {e}")
+            
+            data['cronbach_alpha'] = slot_cronbach_alpha
 
         return Response({
             'id': slot.id,

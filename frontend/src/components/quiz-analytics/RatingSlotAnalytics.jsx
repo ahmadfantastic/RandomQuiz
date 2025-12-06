@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Activity } from 'lucide-react';
 import RatingChart from './RatingChart';
 import ProblemStatsTable from './ProblemStatsTable';
 import StudentProblemDetailsModal from './StudentProblemDetailsModal';
@@ -199,7 +200,15 @@ const RatingSlotAnalytics = ({ slot }) => {
         <div className="space-y-4">
             <Card>
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-base font-medium">{slot.label}</CardTitle>
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="text-base font-medium">{slot.label}</CardTitle>
+                        {slot.data.cronbach_alpha !== undefined && slot.data.cronbach_alpha !== null && (
+                            <div className="flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground" title="Cronbach's Alpha (Internal Consistency)">
+                                <Activity className="h-3 w-3" />
+                                Alpha: {slot.data.cronbach_alpha.toFixed(2)}
+                            </div>
+                        )}
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-col gap-6">
