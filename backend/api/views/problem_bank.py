@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 
 from accounts.models import ensure_instructor, Instructor
 from problems.models import ProblemBank, Problem, Rubric, InstructorProblemRating
+from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizRatingCriterion, QuizSlotGrade
 from problems.serializers import (
     ProblemBankSerializer, 
     ProblemSerializer, 
@@ -1236,6 +1237,147 @@ class GlobalAnalysisView(APIView):
             'global_criteria_irr': global_criteria_results,
             'overall_criteria_stats': overall_criteria_stats,
             'overall_bank_stats': overall_bank_stats
+        }
+
+        # QUIZ ANALYSIS
+        # ---------------------------------------------------------------------
+        quiz_results = []
+        quizzes = Quiz.objects.filter(owner=instructor)
+        
+        # Collect all criteria used across all quizzes for dynamic table columns
+        all_quiz_criteria = set()
+
+        for quiz in quizzes:
+            # 1. Attempts
+            attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+            response_count = attempts.count()
+            
+            # 2. Average Time
+            durations = []
+            for a in attempts:
+                if a.started_at and a.completed_at:
+                    d = (a.completed_at - a.started_at).total_seconds() / 60.0
+                    if d > 0: durations.append(d)
+            avg_time = sum(durations)/len(durations) if durations else None
+            
+            # 3. Average Word Count (Open Text Slots)
+            # Find open text slots
+            text_slots = quiz.slots.filter(response_type=QuizSlot.ResponseType.OPEN_TEXT)
+            avg_word_count = None
+            if text_slots.exists():
+                # Get all answers
+                # Optimized way:
+                answers = QuizAttemptSlot.objects.filter(
+                    attempt__in=attempts,
+                    slot__in=text_slots
+                ).values_list('answer_data', flat=True)
+                
+                counts = []
+                for ans in answers:
+                    if ans and 'text' in ans:
+                        text = ans['text']
+                        counts.append(len(text.split()))
+                
+                if counts:
+                    avg_word_count = sum(counts) / len(counts)
+            
+            # 4. Ratings & Cronbach Alpha
+            # Find rating slots
+            rating_slots = quiz.slots.filter(response_type=QuizSlot.ResponseType.RATING)
+            
+            quiz_alpha = None
+            quiz_criteria_means = {}
+            
+            if rating_slots.exists():
+                # Get criteria for this quiz
+                # We assume criteria are defined on the quiz level or rubric
+                rubric_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+                
+                c_ids = [c.criterion_id for c in rubric_criteria]
+                c_names = {c.criterion_id: c.name for c in rubric_criteria}
+                
+                # Add to global set
+                for name in c_names.values():
+                    all_quiz_criteria.add(name)
+
+                # Collect ratings
+                slot_alphas = []
+                c_totals_quiz = {} # c_name -> list of means per slot
+                
+                for slot in rating_slots:
+                    # Get attempts for this slot
+                    slot_attempts = QuizAttemptSlot.objects.filter(
+                        attempt__in=attempts,
+                        slot=slot
+                    ).values_list('answer_data', flat=True)
+                    
+                    slot_matrix = [] # list of lists
+                    
+                    # Store values for means
+                    slot_c_values = {c_id: [] for c_id in c_ids}
+                    
+                    for ans in slot_attempts:
+                        if ans and 'ratings' in ans:
+                            ratings = ans['ratings']
+                            # Check if complete
+                            if all(k in ratings for k in c_ids):
+                                row = [float(ratings[k]) for k in c_ids]
+                                slot_matrix.append(row)
+                                
+                            for k, v in ratings.items():
+                                if k in slot_c_values:
+                                     slot_c_values[k].append(float(v))
+
+                    # Calculate Alpha
+                    K = len(c_ids)
+                    if K > 1 and len(slot_matrix) > 1:
+                         # Variance calc
+                         item_variances = []
+                         for col_idx in range(K):
+                             col_values = [r[col_idx] for r in slot_matrix]
+                             if col_values:
+                                 mean = sum(col_values)/len(col_values)
+                                 var = sum((x - mean)**2 for x in col_values)/(len(col_values)-1)
+                                 item_variances.append(var)
+                             else:
+                                 item_variances.append(0)
+                         
+                         total_scores = [sum(r) for r in slot_matrix]
+                         mean_t = sum(total_scores)/len(total_scores)
+                         var_t = sum((x - mean_t)**2 for x in total_scores)/(len(total_scores)-1)
+                         
+                         if var_t > 0:
+                             alpha = (K/(K-1)) * (1 - (sum(item_variances)/var_t))
+                             slot_alphas.append(alpha)
+                    
+                    # Collect means
+                    for c_id, vals in slot_c_values.items():
+                        if vals:
+                            name = c_names.get(c_id, c_id)
+                            if name not in c_totals_quiz: c_totals_quiz[name] = []
+                            c_totals_quiz[name].append(sum(vals)/len(vals))
+                
+                # Average Alpha
+                if slot_alphas:
+                    quiz_alpha = sum(slot_alphas)/len(slot_alphas)
+                
+                # Average Means
+                for name, slot_means in c_totals_quiz.items():
+                    quiz_criteria_means[name] = sum(slot_means)/len(slot_means)
+
+            quiz_results.append({
+                'id': quiz.id,
+                'title': quiz.title,
+                'response_count': response_count,
+                'avg_time_minutes': avg_time,
+                'avg_word_count': avg_word_count,
+                'cronbach_alpha': quiz_alpha,
+                'means': quiz_criteria_means
+            })
+            
+        response_data['quiz_analysis'] = {
+            'quizzes': quiz_results,
+            'all_criteria': sorted(list(all_quiz_criteria))
         }
         
         return Response(self.sanitize_data(response_data))

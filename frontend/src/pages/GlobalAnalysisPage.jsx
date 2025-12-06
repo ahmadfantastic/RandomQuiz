@@ -346,6 +346,57 @@ const GlobalAnalysisPage = () => {
                     </CardContent>
                 </Card>
 
+                {data.quiz_analysis && data.quiz_analysis.quizzes.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Quiz Analysis</CardTitle>
+                            <CardDescription>Performance usage statistics and ratings for your quizzes</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="rounded-md border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Quiz Title</TableHead>
+                                            <TableHead>Responses</TableHead>
+                                            <TableHead>Avg Time (min)</TableHead>
+                                            <TableHead>Avg Words</TableHead>
+                                            {data.quiz_analysis.all_criteria.map(c => (
+                                                <TableHead key={c}>{c}</TableHead>
+                                            ))}
+                                            <TableHead>Cronbach Alpha</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {data.quiz_analysis.quizzes.map(quiz => (
+                                            <TableRow key={quiz.id}>
+                                                <TableCell className="font-medium">
+                                                    <Link to={`/quizzes/${quiz.id}/analytics`} className="hover:underline text-primary">
+                                                        {quiz.title}
+                                                    </Link>
+                                                </TableCell>
+                                                <TableCell>{quiz.response_count}</TableCell>
+                                                <TableCell>{roundToTwo(quiz.avg_time_minutes)}</TableCell>
+                                                <TableCell>{roundToTwo(quiz.avg_word_count)}</TableCell>
+                                                {data.quiz_analysis.all_criteria.map(c => (
+                                                    <TableCell key={c}>
+                                                        {quiz.means && quiz.means[c] !== undefined
+                                                            ? roundToTwo(quiz.means[c])
+                                                            : '-'}
+                                                    </TableCell>
+                                                ))}
+                                                <TableCell className={quiz.cronbach_alpha !== null ? (quiz.cronbach_alpha < 0.7 ? "text-amber-600 font-bold" : "text-green-600 font-bold") : ""}>
+                                                    {roundToTwo(quiz.cronbach_alpha)}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
                 <Card>
                     <CardHeader>
                         <CardTitle>ANOVA Results</CardTitle>

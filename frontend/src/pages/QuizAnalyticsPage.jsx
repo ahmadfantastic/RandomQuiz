@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
@@ -48,11 +48,11 @@ const AnalyticsTabContent = ({ endpoint, renderContent }) => {
 
 const QuizAnalyticsPage = () => {
     const { quizId } = useParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [quiz, setQuiz] = useState(null);
     const [slots, setSlots] = useState([]);
     const [allQuizzes, setAllQuizzes] = useState([]);
-    const [activeTab, setActiveTab] = useState('overview');
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -82,6 +82,57 @@ const QuizAnalyticsPage = () => {
         }
     }, [quizId]);
 
+    // Determine active tab from URL parameters
+    const getActiveTab = () => {
+        const tab = searchParams.get('tab');
+        const index = searchParams.get('index');
+
+        if (tab === 'interaction') return 'interaction';
+
+        if (tab === 'slot' && index !== null && slots.length > 0) {
+            // Find slot by index (preserving order)
+            // Assuming slots are already ordered by 'order' or as received from API
+            // Ideally backend sends them ordered. If not, we might need to sort them first.
+            // For now, assuming the array index matches the logical index we want to persist.
+            const slotIndex = parseInt(index, 10);
+            if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < slots.length) {
+                return `slot-${slots[slotIndex].id}`;
+            }
+        }
+
+        // Default to overview or fall back if index invalid
+        return 'overview';
+    };
+
+    const handleTabChange = (value) => {
+        const newParams = new URLSearchParams(searchParams);
+
+        if (value === 'overview') {
+            newParams.set('tab', 'overview');
+            newParams.delete('index');
+        } else if (value === 'interaction') {
+            newParams.set('tab', 'interaction');
+            newParams.delete('index');
+        } else if (value.startsWith('slot-')) {
+            const slotId = parseInt(value.replace('slot-', ''), 10);
+            const slotIndex = slots.findIndex(s => s.id === slotId);
+            if (slotIndex !== -1) {
+                newParams.set('tab', 'slot');
+                newParams.set('index', slotIndex.toString());
+            }
+        }
+
+        setSearchParams(newParams);
+    };
+
+    const handleQuizSwitch = (newQuizId) => {
+        // Construct the new URL preserving the current search params
+        navigate({
+            pathname: `/quizzes/${newQuizId}/analytics`,
+            search: searchParams.toString()
+        });
+    };
+
     if (loading) {
         return (
             <AppShell>
@@ -104,6 +155,8 @@ const QuizAnalyticsPage = () => {
             </AppShell>
         );
     }
+
+    const activeTab = getActiveTab();
 
     return (
         <AppShell>
@@ -128,7 +181,7 @@ const QuizAnalyticsPage = () => {
                         <select
                             className="h-10 w-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             value={quizId}
-                            onChange={(e) => navigate(`/quizzes/${e.target.value}/analytics`)}
+                            onChange={(e) => handleQuizSwitch(e.target.value)}
                         >
                             {allQuizzes.map(q => (
                                 <option key={q.id} value={q.id}>
@@ -139,7 +192,7 @@ const QuizAnalyticsPage = () => {
                     </div>
                 </div>
 
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
                     <div className="overflow-x-auto pb-2">
                         <TabsList className="w-full justify-start">
                             <TabsTrigger value="overview">Overview</TabsTrigger>
