@@ -111,11 +111,16 @@ const createRubricFormState = (source) => ({
         ? String(option.value)
         : '',
     label: option?.label ?? '',
+    mapped_value:
+      option?.mapped_value !== undefined && option?.mapped_value !== null
+        ? String(option.mapped_value)
+        : '',
   })),
   criteria: (Array.isArray(source?.criteria) ? source.criteria : []).map((criterion) => ({
     id: criterion?.id ?? '',
     name: criterion?.name ?? '',
     description: criterion?.description ?? '',
+    instructor_criterion_code: criterion?.instructor_criterion_code ?? '',
   })),
 });
 
@@ -318,7 +323,8 @@ const QuizEditorPage = () => {
         setRubricSaveError('Each scale option needs a label.');
         return;
       }
-      preparedScale.push({ value: parsedValue, label });
+      const mapped_value = option?.mapped_value !== undefined && option?.mapped_value !== null ? Number(option.mapped_value) : null;
+      preparedScale.push({ value: parsedValue, label, mapped_value });
     }
     if (!preparedScale.length) {
       setRubricSaveError('Define at least one scale option.');
@@ -337,7 +343,8 @@ const QuizEditorPage = () => {
         return;
       }
       const description = (criterion?.description ?? '').trim();
-      preparedCriteria.push({ id, name, description });
+      const instructor_criterion_code = (criterion?.instructor_criterion_code ?? '').trim();
+      preparedCriteria.push({ id, name, description, instructor_criterion_code });
     }
     if (!preparedCriteria.length) {
       setRubricSaveError('Define at least one criterion.');

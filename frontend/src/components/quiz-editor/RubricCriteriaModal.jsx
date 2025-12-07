@@ -65,6 +65,15 @@ const RubricCriteriaModal = ({
                                         />
                                     </div>
                                     <div>
+                                        <Label htmlFor={`criterion-code-${index}`}>Instructor Code</Label>
+                                        <Input
+                                            id={`criterion-code-${index}`}
+                                            value={criterion.instructor_criterion_code || ''}
+                                            onChange={(event) => onFieldChange('criteria', index, 'instructor_criterion_code', event.target.value)}
+                                            placeholder="Matches Instructor Rubric"
+                                        />
+                                    </div>
+                                    <div className="sm:col-span-2">
                                         <Label htmlFor={`criterion-name-${index}`}>Name</Label>
                                         <Input
                                             id={`criterion-name-${index}`}

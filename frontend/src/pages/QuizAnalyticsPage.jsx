@@ -8,11 +8,13 @@ import api from '@/lib/api';
 import OverviewAnalytics from '@/components/quiz-analytics/OverviewAnalytics';
 import InteractionAnalytics from '@/components/quiz-analytics/InteractionAnalytics';
 import SlotAnalytics from '@/components/quiz-analytics/SlotAnalytics';
+import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
 
 const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [data, setData] = useState(null);
+    const { quizId } = useParams();
 
     useEffect(() => {
         const fetchData = async () => {
@@ -21,7 +23,11 @@ const AnalyticsTabContent = ({ endpoint, renderContent }) => {
                 const res = await api.get(endpoint);
                 setData(res.data);
             } catch (err) {
-                setError('Failed to load data.');
+                if (err.response && err.response.data && err.response.data.detail) {
+                    setError(err.response.data.detail);
+                } else {
+                    setError('Failed to load data.');
+                }
                 console.error(err);
             } finally {
                 setLoading(false);
@@ -40,7 +46,16 @@ const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     }
 
     if (error) {
-        return <div className="text-destructive p-4">{error}</div>;
+        return (
+            <div className="p-4">
+                <div className="text-destructive mb-2">{error}</div>
+                {error.includes('mapping') && (
+                    <Button variant="outline" asChild>
+                        <Link to={`/quizzes/${quizId}/edit`}>Go to Rubric Settings</Link>
+                    </Button>
+                )}
+            </div>
+        );
     }
 
     return renderContent(data);
@@ -88,6 +103,7 @@ const QuizAnalyticsPage = () => {
         const index = searchParams.get('index');
 
         if (tab === 'interaction') return 'interaction';
+        if (tab === 'agreement') return 'agreement';
 
         if (tab === 'slot' && index !== null && slots.length > 0) {
             // Find slot by index (preserving order)
@@ -112,6 +128,9 @@ const QuizAnalyticsPage = () => {
             newParams.delete('index');
         } else if (value === 'interaction') {
             newParams.set('tab', 'interaction');
+            newParams.delete('index');
+        } else if (value === 'agreement') {
+            newParams.set('tab', 'agreement');
             newParams.delete('index');
         } else if (value.startsWith('slot-')) {
             const slotId = parseInt(value.replace('slot-', ''), 10);
@@ -197,6 +216,7 @@ const QuizAnalyticsPage = () => {
                         <TabsList className="w-full justify-start">
                             <TabsTrigger value="overview">Overview</TabsTrigger>
                             <TabsTrigger value="interaction">Interactions</TabsTrigger>
+                            <TabsTrigger value="agreement">Agreement</TabsTrigger>
                             {slots.map(slot => (
                                 <TabsTrigger key={slot.id} value={`slot-${slot.id}`}>
                                     {slot.label || `Slot ${slot.order}`}
@@ -217,6 +237,13 @@ const QuizAnalyticsPage = () => {
                             <AnalyticsTabContent
                                 endpoint={`/api/quizzes/${quizId}/analytics/interactions/`}
                                 renderContent={(data) => <InteractionAnalytics data={data} />}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="agreement">
+                            <AnalyticsTabContent
+                                endpoint={`/api/quizzes/${quizId}/analytics/agreement/`}
+                                renderContent={(data) => <InterRaterAgreement data={data} />}
                             />
                         </TabsContent>
 

@@ -3,7 +3,9 @@ from .quiz import (
     QuizSlotProblemStudentsView, 
     QuizOverviewAnalyticsView, 
     QuizInteractionAnalyticsView, 
-    QuizSlotAnalyticsView
+    QuizInteractionAnalyticsView,
+    QuizSlotAnalyticsView,
+    QuizInterRaterAgreementView
 )
 from .global_analysis import GlobalAnalysisView
 from .problem_bank import ProblemBankAnalysisView

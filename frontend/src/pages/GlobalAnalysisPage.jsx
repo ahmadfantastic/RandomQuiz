@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import api from '@/lib/api';
 
@@ -399,6 +401,19 @@ const GlobalAnalysisPage = () => {
 
                 <Card>
                     <CardHeader>
+                        <CardTitle>Global Inter-Rater Agreement (All Quizzes)</CardTitle>
+                        <CardDescription>
+                            Pooled agreement analysis between Student and Instructor ratings across all quizzes.
+                            Aggregated using weighted kappa per criterion.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <InterRaterAgreement data={data.global_quiz_agreement} />
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
                         <CardTitle>ANOVA Results</CardTitle>
                         <CardDescription>Statistical comparison of ratings across banks (One-way ANOVA)</CardDescription>
                     </CardHeader>
@@ -452,7 +467,7 @@ const GlobalAnalysisPage = () => {
                     </CardContent>
                 </Card>
             </div>
-        </AppShell>
+        </AppShell >
     );
 };
 

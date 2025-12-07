@@ -13,12 +13,14 @@ from quizzes.serializers import GradingRubricSerializer
 class QuizRubricScaleSerializer(serializers.Serializer):
     value = serializers.IntegerField()
     label = serializers.CharField()
+    mapped_value = serializers.FloatField(required=False, allow_null=True)
 
 
 class QuizRubricCriterionSerializer(serializers.Serializer):
     id = serializers.CharField()
     name = serializers.CharField()
     description = serializers.CharField()
+    instructor_criterion_code = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 class QuizRubricPayloadSerializer(serializers.Serializer):
@@ -76,6 +78,7 @@ class QuizRubricView(APIView):
                     order=index,
                     value=option['value'],
                     label=option['label'],
+                    mapped_value=option.get('mapped_value'),
                 )
                 for index, option in enumerate(payload['scale'])
             ]
@@ -86,6 +89,7 @@ class QuizRubricView(APIView):
                     criterion_id=criterion['id'],
                     name=criterion['name'],
                     description=criterion['description'],
+                    instructor_criterion_code=criterion.get('instructor_criterion_code'),
                 )
                 for index, criterion in enumerate(payload['criteria'])
             ]

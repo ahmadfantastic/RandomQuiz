@@ -43,12 +43,20 @@ class Quiz(models.Model):
         criteria_entries = list(self.rating_criteria.all())
         if scale_options and criteria_entries:
             return {
-                'scale': [{'value': option.value, 'label': option.label} for option in scale_options],
+                'scale': [
+                    {
+                        'value': option.value, 
+                        'label': option.label,
+                        'mapped_value': option.mapped_value
+                    } 
+                    for option in scale_options
+                ],
                 'criteria': [
                     {
                         'id': criterion.criterion_id,
                         'name': criterion.name,
                         'description': criterion.description,
+                        'instructor_criterion_code': criterion.instructor_criterion_code,
                     }
                     for criterion in criteria_entries
                 ],
@@ -168,6 +176,7 @@ class QuizRatingScaleOption(models.Model):
     order = models.PositiveIntegerField()
     value = models.IntegerField()
     label = models.CharField(max_length=255)
+    mapped_value = models.FloatField(null=True, blank=True, help_text="Equivalent value on the instructor's scale")
 
     class Meta:
         ordering = ['order']
@@ -185,6 +194,12 @@ class QuizRatingCriterion(models.Model):
     criterion_id = models.CharField(max_length=32)
     name = models.CharField(max_length=255)
     description = models.TextField()
+    instructor_criterion_code = models.CharField(
+        max_length=32, 
+        null=True, 
+        blank=True, 
+        help_text="Code to match against instructor rubrics"
+    )
 
     class Meta:
         ordering = ['order']

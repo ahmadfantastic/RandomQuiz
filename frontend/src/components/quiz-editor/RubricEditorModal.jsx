@@ -165,6 +165,15 @@ const RubricEditorModal = ({ open, onOpenChange, quizId, onSaveSuccess }) => {
                                                         rows={2}
                                                     />
                                                 </div>
+                                                <div>
+                                                    <Label>Instructor Code</Label>
+                                                    <Input
+                                                        value={item.instructor_criterion_code || ''}
+                                                        onChange={(e) => updateItem(itemIndex, 'instructor_criterion_code', e.target.value)}
+                                                        placeholder="e.g. acc (Matches Bank Rubric)"
+                                                        className="font-mono text-sm"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     </CardHeader>
@@ -184,6 +193,15 @@ const RubricEditorModal = ({ open, onOpenChange, quizId, onSaveSuccess }) => {
                                                             type="number"
                                                             value={level.points}
                                                             onChange={(e) => updateLevel(itemIndex, levelIndex, 'points', parseFloat(e.target.value))}
+                                                        />
+                                                    </div>
+                                                    <div className="w-24">
+                                                        <Label className="text-xs">Mapped Value</Label>
+                                                        <Input
+                                                            type="number"
+                                                            value={level.mapped_value || ''}
+                                                            onChange={(e) => updateLevel(itemIndex, levelIndex, 'mapped_value', parseFloat(e.target.value))}
+                                                            placeholder="e.g. 1.0"
                                                         />
                                                     </div>
                                                     <div className="flex-1 space-y-2">

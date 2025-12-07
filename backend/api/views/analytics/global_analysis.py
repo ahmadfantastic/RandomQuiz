@@ -7,8 +7,13 @@ from rest_framework.response import Response
 from accounts.models import ensure_instructor
 from accounts.permissions import IsInstructor
 from problems.models import ProblemBank, InstructorProblemRating
-from quizzes.models import Quiz, QuizAttempt, QuizSlot, QuizAttemptSlot, QuizRatingCriterion
-from .utils import calculate_weighted_kappa
+from quizzes.models import Quiz, QuizAttempt, QuizSlot, QuizAttemptSlot, QuizRatingCriterion, QuizRatingScaleOption
+from .utils import calculate_weighted_kappa, calculate_average_nearest
+from .kappa import quadratic_weighted_kappa
+from statistics import mean
+import logging
+
+logger = logging.getLogger(__name__)
 
 class GlobalAnalysisView(APIView):
     permission_classes = [IsInstructor]
@@ -667,8 +672,8 @@ class GlobalAnalysisView(APIView):
                          for col_idx in range(K):
                              col_values = [r[col_idx] for r in slot_matrix]
                              if col_values:
-                                 mean = sum(col_values)/len(col_values)
-                                 var = sum((x - mean)**2 for x in col_values)/(len(col_values)-1)
+                                 col_mean = sum(col_values)/len(col_values)
+                                 var = sum((x - col_mean)**2 for x in col_values)/(len(col_values)-1)
                                  item_variances.append(var)
                              else:
                                  item_variances.append(0)
@@ -709,6 +714,270 @@ class GlobalAnalysisView(APIView):
         response_data['quiz_analysis'] = {
             'quizzes': quiz_results,
             'all_criteria': sorted(list(all_quiz_criteria))
+        }
+        
+        # 5. Global Quiz Agreement (Aggregated across ALL quizzes)
+        # Refactored to match Quiz Analytics structure for consistent UI
+        
+        # Accumulators
+        agreement_data = [] # Summary rows
+        detailed_comparisons = {} # Composite Key -> Details
+        
+        # We need to track all unique criterion codes encountered to build columns
+        all_criteria_columns_map = {} # criterion_name -> {id, name, code}
+        
+        # For overall kappa
+        all_student_ratings_list = []
+        all_instructor_ratings_list = []
+        possible_ratings_overall = set()
+        total_common_problems = 0
+        
+        # Per criterion lists for kappa
+        # criterion_name -> {'i_list': [], 's_list': [], 'scale': []}
+        criterion_kappa_data = {}
+        
+        for quiz in quizzes:
+            # logger.info(f"Processing Quiz: {quiz.id} - {quiz.title}")
+            
+            # 1. Get Criteria Mapping & Scale Mapping (Exact copy of quiz.py logic)
+            quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+            criterion_map = {} # quiz_crit_id -> instructor_crit_code
+            criterion_names = {} # quiz_crit_id -> name (or code, for grouping globals)
+            
+            # We map local quiz criterion to Global Criterion Name for aggregation
+            # (Assuming criterion names like 'Accuracy' are consistent across quizzes)
+            criterion_name_map = {} # instructor_crit_code -> global_name
+
+            for qc in quiz_criteria:
+                if qc.instructor_criterion_code:
+                    criterion_map[qc.criterion_id] = qc.instructor_criterion_code
+                    criterion_names[qc.criterion_id] = qc.name
+                    criterion_name_map[qc.instructor_criterion_code] = qc.name
+                    
+                    # Track columns
+                    if qc.name not in all_criteria_columns_map:
+                         all_criteria_columns_map[qc.name] = {
+                             'id': qc.name,
+                             'name': qc.name,
+                             'code': qc.instructor_criterion_code
+                         }
+
+            if not criterion_map:
+                continue
+
+            quiz_scale = QuizRatingScaleOption.objects.filter(quiz=quiz)
+            scale_map = {} # quiz_value -> mapped_value
+            for qs in quiz_scale:
+                if qs.mapped_value is not None:
+                    # Handle float/int discrepancy by forcing float where possible or keeping checking strict
+                    # quiz.py uses 'if val in scale_map' which implies exact match. 
+                    # If DB stores 1.0 and payload is 1, they might not match if not cast.
+                    # Usually DRF JSON decodes to int/float.
+                    scale_map[qs.value] = qs.mapped_value
+            
+            if not scale_map:
+                continue
+
+            possible_ratings = sorted(list(scale_map.values()))
+            possible_ratings_overall.update(possible_ratings)
+            valid_raw_values = list(scale_map.keys())
+
+            # 3. Identify Problems & Student Ratings
+            attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+            
+            # ProblemID -> { InstructorCriterionCode -> [List of dicts {'raw':, 'mapped':}] }
+            student_ratings_data = {} 
+            
+            attempt_slots = QuizAttemptSlot.objects.filter(
+                attempt__in=attempts,
+                slot__in=quiz.slots.filter(response_type=QuizSlot.ResponseType.RATING),
+                answer_data__ratings__isnull=False
+            ).values('assigned_problem_id', 'answer_data', 'attempt__student_identifier')
+
+            for entry in attempt_slots:
+                pid = entry['assigned_problem_id']
+                ratings = entry['answer_data'].get('ratings', {})
+                sid = entry['attempt__student_identifier']
+                
+                if pid not in student_ratings_data:
+                    student_ratings_data[pid] = {}
+                
+                for q_cid, val in ratings.items():
+                    # Strict matching as per quiz.py
+                    # Cast val to type of keys if needed? usually keys are floats in DB? 
+                    # qs.value is float field?
+                    
+                    # Try matching roughly
+                    mapped_val = scale_map.get(val)
+                    if mapped_val is None:
+                        # try float conversion
+                        try:
+                             mapped_val = scale_map.get(float(val))
+                        except (ValueError, TypeError):
+                             pass
+                    
+                    if q_cid in criterion_map and mapped_val is not None:
+                        i_code = criterion_map[q_cid]
+                        
+                        if i_code not in student_ratings_data[pid]:
+                            student_ratings_data[pid][i_code] = []
+                            
+                        student_ratings_data[pid][i_code].append({
+                            'raw': val,
+                            'mapped': mapped_val,
+                            'sid': sid
+                        })
+
+            # 4. Fetch Instructor Ratings
+            instructor_ratings_data = {}
+            relevant_problem_ids = list(student_ratings_data.keys())
+            
+            instructor_ratings = InstructorProblemRating.objects.filter(
+                problem_id__in=relevant_problem_ids
+            ).prefetch_related('entries__criterion')
+            
+            for rating in instructor_ratings:
+                pid = rating.problem_id
+                if pid not in instructor_ratings_data:
+                    instructor_ratings_data[pid] = {}
+                
+                for entry in rating.entries.all():
+                    code = entry.criterion.criterion_id
+                    val = entry.scale_option.value
+                    
+                    if code not in instructor_ratings_data[pid]:
+                        instructor_ratings_data[pid][code] = []
+                    instructor_ratings_data[pid][code].append({
+                        'value': val
+                    })
+
+            # 5. Aggregate per Problem (Per Quiz logic)
+            for pid in relevant_problem_ids:
+                # We iterate unique CODES now, not just criteria objects, 
+                # but to know the 'Name', we use criterion_name_map
+                
+                # Iterate through all known codes for this quiz to ensure we catch everything
+                present_codes = set(student_ratings_data.get(pid, {}).keys()) | set(instructor_ratings_data.get(pid, {}).keys())
+                
+                for i_code in present_codes:
+                     c_name = criterion_name_map.get(i_code)
+                     if not c_name: continue # Skip if not part of this quiz mapping
+
+                     s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
+                     i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
+
+                     if s_vals_objs and i_vals_objs:
+                        # Student Aggregation: Average Raw -> Nearest Raw -> Map
+                        s_raw_vals = [float(x['raw']) for x in s_vals_objs]
+                        
+                        # We need valid_raw_values for nearest calc.
+                        # Assuming scale_map keys are valid raws.
+                        # Note: we might need to handle float/int types in valid_raw_values
+                        
+                        nearest_raw = calculate_average_nearest(s_raw_vals, valid_raw_values)
+                        s_median = scale_map.get(nearest_raw)
+                        # retry float if missed
+                        if s_median is None: s_median = scale_map.get(float(nearest_raw) if nearest_raw is not None else None)
+
+                        # Instructor Aggregation
+                        i_vals = [x['value'] for x in i_vals_objs]
+                        i_mean_val = mean(i_vals) if i_vals else 0
+                        i_median = calculate_average_nearest(i_vals, possible_ratings)
+
+                        if s_median is not None and i_median is not None:
+                            # Add to global accumulators
+                            if c_name not in criterion_kappa_data:
+                                criterion_kappa_data[c_name] = {'i_list': [], 's_list': [], 'scale': possible_ratings} # scale might mix, handled later
+                            
+                            criterion_kappa_data[c_name]['i_list'].append(i_median)
+                            criterion_kappa_data[c_name]['s_list'].append(s_median)
+                            
+                            all_instructor_ratings_list.append(i_median)
+                            all_student_ratings_list.append(s_median)
+                            total_common_problems += 1 # Problem-Criterion instance or Problem instance? 
+                            # Quiz.py sums count per criterion. It says 'total_common_problems += common_problems_for_criterion_count'.
+                            # So yes, it counts (Problem x Criterion) pairs.
+                            
+                            # Add to Details
+                            # Composite key needs to be unique globally. 
+                            # quiz.py uses PID as key. Global needs PID + Quiz? Or just PID (Problem IDs are global).
+                            # Problem IDs are global. So PID is safely unique.
+                            # BUT, if we want to show Quiz Context:
+                            
+                            details_key = f"{quiz.id}-{pid}"
+                            if details_key not in detailed_comparisons:
+                                detailed_comparisons[details_key] = {
+                                    'problem_id': pid,
+                                    'problem_label': f"{quiz.title}: Problem {pid}", # Simplified label
+                                    'ratings': {}
+                                }
+                            
+                            detailed_comparisons[details_key]['ratings'][c_name] = {
+                                'instructor': i_median,
+                                'instructor_mean': i_mean_val,
+                                'student': s_median,
+                                'student_mean': mean(s_raw_vals) if s_raw_vals else 0,
+                                'instructor_details': i_vals_objs,
+                                'student_details': s_vals_objs
+                            }
+        
+        # Process Agreement Data (Summary Table)
+        possible_ratings_list = sorted(list(possible_ratings_overall)) if possible_ratings_overall else [1, 2, 3, 4]
+
+        # Individual Criteria Rows
+        for c_name, data in criterion_kappa_data.items():
+            k = None
+            if len(data['i_list']) >= 5:
+                # Use pooled scale or specific? Pooled seems safer for global view if scales mix
+                k = quadratic_weighted_kappa(
+                    data['i_list'], 
+                    data['s_list'], 
+                    possible_ratings=possible_ratings_list, # Normalize to union of scales
+                    context=f"Global Quiz Agreement - {c_name}"
+                )
+            
+            agreement_data.append({
+                'criterion_id': c_name,
+                'criterion_name': c_name,
+                'instructor_code': all_criteria_columns_map.get(c_name, {}).get('code', '-'),
+                'common_problems': len(data['i_list']),
+                'kappa_score': round(k, 4) if k is not None else None
+            })
+            
+        agreement_data.sort(key=lambda x: x['criterion_name'])
+
+        # Overall Row
+        if all_student_ratings_list:
+            overall_kappa = quadratic_weighted_kappa(
+                all_instructor_ratings_list, 
+                all_student_ratings_list, 
+                possible_ratings=possible_ratings_list,
+                context="Global Quiz Agreement - Overall"
+            )
+            agreement_data.append({
+                'criterion_id': 'all',
+                'criterion_name': 'Overall (All Criteria)',
+                'instructor_code': '-',
+                'common_problems': total_common_problems, # logic differs slightly here (problems vs total ratings), sticking to total ratings count typically or problems? 
+                # In quiz.py 'total_common_problems' sums the common_problems per criterion. 
+                # But here I incremented 'total_common_problems' once per student-problem pair.
+                # Let's match quiz.py behavior: sum of counts
+                'common_problems': sum(len(d['i_list']) for d in criterion_kappa_data.values()),
+                'kappa_score': round(overall_kappa, 4) if overall_kappa is not None else None
+            })
+
+        # Columns
+        criteria_columns = sorted(list(all_criteria_columns_map.values()), key=lambda x: x['name'])
+        
+        # Details List
+        # Filter out empty comparisons
+        details_list = [d for d in detailed_comparisons.values() if d['ratings']]
+        details_list.sort(key=lambda x: x['problem_label'])
+
+        response_data['global_quiz_agreement'] = {
+            'agreement': agreement_data,
+            'details': details_list,
+            'criteria_columns': criteria_columns
         }
         
         return Response(self.sanitize_data(response_data))

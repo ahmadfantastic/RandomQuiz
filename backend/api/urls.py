@@ -48,6 +48,7 @@ from .views import (
     QuizOverviewAnalyticsView,
     QuizInteractionAnalyticsView,
     QuizSlotAnalyticsView,
+    QuizInterRaterAgreementView,
 )
 
 router = DefaultRouter()
@@ -82,6 +83,7 @@ urlpatterns = [
     path('quizzes/<int:quiz_id>/analytics/', QuizAnalyticsView.as_view(), name='quiz-analytics'),
     path('quizzes/<int:quiz_id>/analytics/overview/', QuizOverviewAnalyticsView.as_view(), name='quiz-analytics-overview'),
     path('quizzes/<int:quiz_id>/analytics/interactions/', QuizInteractionAnalyticsView.as_view(), name='quiz-analytics-interactions'),
+    path('quizzes/<int:quiz_id>/analytics/agreement/', QuizInterRaterAgreementView.as_view(), name='quiz-analytics-agreement'),
     path('quizzes/<int:quiz_id>/analytics/slots/<int:slot_id>/', QuizSlotAnalyticsView.as_view(), name='quiz-analytics-slot'),
     path(
         'quizzes/<int:quiz_id>/analytics/slots/<int:slot_id>/problems/<int:problem_id>/students/',

@@ -71,6 +71,20 @@ const RubricScaleModal = ({
                                         onChange={(event) => onFieldChange('scale', index, 'label', event.target.value)}
                                     />
                                 </div>
+                                <div className="w-24">
+                                    <Label htmlFor={`scale-mapped-${index}`}>Mapped Val</Label>
+                                    <Input
+                                        id={`scale-mapped-${index}`}
+                                        type="number"
+                                        step="0.1"
+                                        value={option.mapped_value ?? ''}
+                                        onChange={(event) => {
+                                            const val = event.target.value;
+                                            onFieldChange('scale', index, 'mapped_value', val === '' ? '' : parseFloat(val));
+                                        }}
+                                        placeholder="1.0"
+                                    />
+                                </div>
                                 <div className="flex items-end">
                                     <Button
                                         variant="ghost"

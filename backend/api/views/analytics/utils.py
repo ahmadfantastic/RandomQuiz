@@ -55,3 +55,17 @@ def calculate_weighted_kappa(y1, y2, all_categories=None, label=None):
         return 1.0 if numerator == 0 else 0.0
         
     return 1.0 - (numerator / denominator)
+
+def calculate_average_nearest(values, scale_values):
+    """
+    Aggregates ratings by taking the mean and mapping to the nearest valid scale value.
+    """
+    from statistics import mean
+    if not values:
+        return None
+    
+    avg = mean(values)
+    
+    # Find scale value with minimum absolute difference from average
+    nearest = min(scale_values, key=lambda x: abs(x - avg))
+    return nearest

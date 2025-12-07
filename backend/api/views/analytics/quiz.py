@@ -8,8 +8,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import ensure_instructor
-from problems.models import Problem
-from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizAttemptInteraction, QuizSlotGrade, QuizRatingCriterion
+from problems.models import Problem, InstructorProblemRating
+from .utils import calculate_weighted_kappa, calculate_average_nearest
+from .kappa import quadratic_weighted_kappa
+from statistics import median_low, mean
+from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizAttemptInteraction, QuizSlotGrade, QuizRatingCriterion, QuizRatingScaleOption
 
 
 class QuizAnalyticsView(APIView):
@@ -1129,3 +1132,230 @@ class QuizSlotAnalyticsView(APIView):
             'data': data,
             'problem_distribution': problem_distribution
         })
+
+class QuizInterRaterAgreementView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, quiz_id):
+        instructor = ensure_instructor(request.user)
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        if quiz.owner != instructor and not quiz.allowed_instructors.filter(id=instructor.id).exists():
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # 1. Get Criteria Mapping
+        # Map Quiz Criterion ID -> Instructor Criterion Code (RubricCriterion.criterion_id)
+        quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+        criterion_map = {} # quiz_crit_id -> instructor_crit_code
+        criterion_names = {} # quiz_crit_id -> name
+        for qc in quiz_criteria:
+            if qc.instructor_criterion_code:
+                criterion_map[qc.criterion_id] = qc.instructor_criterion_code
+                criterion_names[qc.criterion_id] = qc.name
+        
+        if not criterion_map:
+            return Response({
+                'detail': 'No criteria mapping found. Please configure the rubric mapping in settings.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 2. Get Scale Mapping
+        # Map Quiz Value -> Mapped Value (Instructor Scale)
+        quiz_scale = QuizRatingScaleOption.objects.filter(quiz=quiz)
+        scale_map = {} # quiz_value -> mapped_value
+        for qs in quiz_scale:
+            if qs.mapped_value is not None:
+                scale_map[qs.value] = qs.mapped_value
+        
+        if not scale_map:
+            return Response({
+                'detail': 'No scale mapping found. Please configure the rubric mapping in settings.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        possible_ratings = sorted(list(scale_map.values()))
+
+        # 3. Identify Problems
+        # Get problems assigned in completed attempts
+        attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+        quiz_problems = Problem.objects.filter(
+            slot_links__quiz_slot__quiz=quiz,
+            slot_links__quiz_slot__response_type='rating'
+        ).distinct()
+        
+        # We need efficient lookup for student ratings per problem
+        # ProblemID -> { CriterionID -> [List of Mapped Values] }
+        student_ratings_data = {} 
+        
+        # Map ProblemID -> Label (Order in Bank)
+        problem_label_map = {p.id: f"Problem {p.order_in_bank}" for p in quiz_problems}
+
+        # Fetch all relevant attempt slots
+        attempt_slots = QuizAttemptSlot.objects.filter(
+            attempt__in=attempts,
+            slot__response_type='rating',
+            answer_data__ratings__isnull=False
+        ).values('assigned_problem_id', 'answer_data')
+
+        for entry in attempt_slots:
+            pid = entry['assigned_problem_id']
+            ratings = entry['answer_data'].get('ratings', {})
+            
+            if pid not in student_ratings_data:
+                student_ratings_data[pid] = {}
+            
+            for q_cid, val in ratings.items():
+                if q_cid in criterion_map and val in scale_map:
+                    # Map to instructor codes/values
+                    i_code = criterion_map[q_cid]
+                    mapped_val = scale_map[val]
+                    
+                    if i_code not in student_ratings_data[pid]:
+                        student_ratings_data[pid][i_code] = []
+                    student_ratings_data[pid][i_code].append({
+                        'raw': val,
+                        'mapped': mapped_val
+                    })
+
+        # 4. Fetch Instructor Ratings
+        # ProblemID -> { InstructorCriterionCode -> [List of Values] }
+        instructor_ratings_data = {}
+        
+        # We only care about problems that students have rated
+        relevant_problem_ids = list(student_ratings_data.keys())
+        
+        instructor_ratings = InstructorProblemRating.objects.filter(
+            problem_id__in=relevant_problem_ids
+        ).prefetch_related('entries__criterion')
+
+        # We need to manually aggregate entries because filtering on Criterion ID from Rubric is tricky 
+        # (RubricCriterion ID vs Code). The Entry links to RubricCriterion(db model).
+        # RubricCriterion has .criterion_id field which matches instructor_criterion_code.
+        
+        for rating in instructor_ratings:
+            pid = rating.problem_id
+            if pid not in instructor_ratings_data:
+                instructor_ratings_data[pid] = {}
+            
+            for entry in rating.entries.all():
+                code = entry.criterion.criterion_id
+                val = entry.scale_option.value
+                
+                if code not in instructor_ratings_data[pid]:
+                    instructor_ratings_data[pid][code] = []
+                instructor_ratings_data[pid][code].append({
+                    'value': val
+                })
+
+        # 5. Compute Agreement per Criterion
+        agreement_data = []
+        detailed_comparisons = {}
+        all_student_ratings_list = []
+        all_instructor_ratings_list = []
+        total_common_problems = 0
+
+        # Iterate over mapped quiz criteria to preserve order
+        for qc in quiz_criteria:
+            q_cid = qc.criterion_id
+            i_code = qc.instructor_criterion_code
+            if not i_code:
+                continue
+                
+
+            
+            common_problems_for_criterion_count = 0
+            s_list_for_criterion = []
+            i_list_for_criterion = []
+            
+            for pid in relevant_problem_ids:
+                s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
+                i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
+                
+                if s_vals_objs and i_vals_objs:
+                    # Extract values for kappa calculation
+                    s_mapped_vals = [x['mapped'] for x in s_vals_objs]
+                    i_vals = [x['value'] for x in i_vals_objs]
+
+                    # Student Aggregation: Average Raw -> Nearest Raw -> Map to Instructor Scale
+                    # 1. Get average of raw values
+                    s_raw_vals = [x['raw'] for x in s_vals_objs]
+                    s_mean_raw = mean(s_raw_vals) if s_raw_vals else 0
+                    
+                    # We need the set of valid raw values for this criterion to find the nearest one.
+                    # The 'scale_map' has {raw: mapped}. The keys are valid raw values.
+                    valid_raw_values = list(scale_map.keys())
+                    
+                    nearest_raw = calculate_average_nearest(s_raw_vals, valid_raw_values)
+                    s_median = scale_map.get(nearest_raw)
+
+                    # Instructor Aggregation: Average -> Nearest Valid Value (already on target scale)
+                    i_mean_val = mean(i_vals) if i_vals else 0
+                    i_median = calculate_average_nearest(i_vals, possible_ratings)
+
+                    if s_median is not None and i_median is not None:
+                        s_list_for_criterion.append(s_median)
+                        i_list_for_criterion.append(i_median)
+                        common_problems_for_criterion_count += 1
+                    
+                    if pid not in detailed_comparisons:
+                        detailed_comparisons[pid] = {
+                            'problem_id': pid,
+                            'problem_label': problem_label_map.get(pid, f"Problem {pid}"),
+                            'ratings': {}
+                        }
+                    
+                    detailed_comparisons[pid]['ratings'][q_cid] = {
+                        'instructor': i_median,
+                        'instructor_mean': i_mean_val,
+                        'student': s_median,
+                        'student_mean': s_mean_raw,
+                        'instructor_details': i_vals_objs,
+                        'student_details': s_vals_objs
+                    }
+
+            if common_problems_for_criterion_count > 0:
+                kappa = quadratic_weighted_kappa(
+                    i_list_for_criterion, 
+                    s_list_for_criterion, 
+                    possible_ratings=possible_ratings,
+                    context=f"Criterion {qc.criterion_id}"
+                )
+                
+                agreement_data.append({
+                    'criterion_id': q_cid,
+                    'criterion_name': qc.name,
+                    'instructor_code': i_code,
+                    'common_problems': common_problems_for_criterion_count,
+                    'kappa_score': round(kappa, 4)
+                })
+
+                # Accumulate for overall kappa
+                all_student_ratings_list.extend(s_list_for_criterion)
+                all_instructor_ratings_list.extend(i_list_for_criterion)
+                total_common_problems += common_problems_for_criterion_count
+
+        # Calculate Overall Agreement
+        if all_student_ratings_list:
+            overall_kappa = quadratic_weighted_kappa(all_instructor_ratings_list, all_student_ratings_list, possible_ratings=possible_ratings)
+            agreement_data.append({
+                'criterion_id': 'all',
+                'criterion_name': 'Overall (All Criteria)',
+                'instructor_code': '-',
+                'common_problems': total_common_problems,
+                'kappa_score': round(overall_kappa, 4)
+            })
+
+        details_list = sorted(list(detailed_comparisons.values()), key=lambda x: x['problem_id'])
+        
+        criteria_columns = []
+        for qc in quiz_criteria:
+             if qc.instructor_criterion_code:
+                 criteria_columns.append({
+                     'id': qc.criterion_id,
+                     'name': qc.name,
+                     'code': qc.instructor_criterion_code
+                 })
+
+        return Response({
+            'agreement': agreement_data,
+            'details': details_list,
+            'criteria_columns': criteria_columns
+        })
+

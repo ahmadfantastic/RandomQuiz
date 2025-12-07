@@ -55,5 +55,6 @@ from .analytics import (
     QuizSlotAnalyticsView,
     GlobalAnalysisView,
     ProblemBankAnalysisView,
-    calculate_weighted_kappa
+    calculate_weighted_kappa,
+    QuizInterRaterAgreementView
 )
