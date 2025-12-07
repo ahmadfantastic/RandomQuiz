@@ -1345,17 +1345,9 @@ class QuizInterRaterAgreementView(APIView):
         # 6. Student vs Instructor Comparison (Paired T-Test)
         comparison_data = []
 
-        # Determine Student Scale Min/Max for Normalization
-        # We use quiz_scale from step 2
-        student_scale_values = [qs.value for qs in quiz_scale]
-        if student_scale_values:
-            s_min = min(student_scale_values)
-            s_max = max(student_scale_values)
-            s_range = s_max - s_min
-        else:
-            s_min = 0
-            s_max = 0
-            s_range = 0
+        # Determine Student Scale Lookup
+        # quiz_scale is defined in Step 2.
+        scale_lookup = {qs.value: qs.mapped_value for qs in quiz_scale}
 
         from scipy import stats
 
@@ -1366,7 +1358,7 @@ class QuizInterRaterAgreementView(APIView):
                 continue
 
             # Collect pairs for this criterion
-            student_scores_norm = []
+            student_scores_mapped = []
             instructor_scores = []
             common_count = 0
 
@@ -1375,31 +1367,32 @@ class QuizInterRaterAgreementView(APIView):
                 i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
 
                 if s_vals_objs and i_vals_objs:
-                    # Student Score: Mean of raw ratings
+                    # Student Score: Map individual ratings then average
                     s_raw_vals = [x['raw'] for x in s_vals_objs]
-                    s_mean_raw = mean(s_raw_vals) if s_raw_vals else 0
                     
-                    # Normalize Student Score: (val - min) / (max - min)
-                    if s_range > 0:
-                        s_norm = (s_mean_raw - s_min) / s_range
-                    else:
-                        s_norm = 0 # Default fallback if range is 0 (should shouldn't happen with valid scale)
+                    # Map using explicit lookup
+                    s_mapped_list = []
+                    for v in s_raw_vals:
+                        single_mapped = scale_lookup.get(v)
+                        if single_mapped is None:
+                            single_mapped = v
+                        s_mapped_list.append(single_mapped)
+
+                    s_mapped = mean(s_mapped_list) if s_mapped_list else 0
 
                     # Instructor Score: Mean of values
-                    # Note: Instructor values are already on the target normalized scale (0-1 typically for rubrics) 
-                    # OR we assume they are the "ground truth" scale we want to compare against.
-                    # Per user request: "scale the 1,2,3,4,5 to be between 0 and 1 as well" 
-                    # implying instructor ratings are already 0-1 (e.g. 0, 0.5, 1).
                     i_vals = [x['value'] for x in i_vals_objs]
                     i_mean = mean(i_vals) if i_vals else 0
 
-                    student_scores_norm.append(s_norm)
+                    student_scores_mapped.append(s_mapped)
                     instructor_scores.append(i_mean)
                     common_count += 1
                     
-                    # Update detailed comparisons with normalized student score
+                    
+                    # Update detailed comparisons with mapped student score and details
                     if pid in detailed_comparisons and q_cid in detailed_comparisons[pid]['ratings']:
-                        detailed_comparisons[pid]['ratings'][q_cid]['student_mean_norm'] = s_norm
+                        detailed_comparisons[pid]['ratings'][q_cid]['student_mean_norm'] = s_mapped
+                        detailed_comparisons[pid]['ratings'][q_cid]['student_details'] = [{'raw': r, 'mapped': m} for r, m in zip(s_raw_vals, s_mapped_list)]
             
             # Perform Paired T-Test
             t_stat = None
@@ -1408,21 +1401,21 @@ class QuizInterRaterAgreementView(APIView):
             
             if common_count > 1:
                 # Check if all differences are zero to avoid runtime warning
-                if all(s == i for s, i in zip(student_scores_norm, instructor_scores)):
+                if all(s == i for s, i in zip(student_scores_mapped, instructor_scores)):
                      t_stat = 0.0
                      p_val = 1.0
                 else:
                     try:
-                        result = stats.ttest_rel(student_scores_norm, instructor_scores)
+                        result = stats.ttest_rel(student_scores_mapped, instructor_scores)
                         t_stat = result.statistic
                         p_val = result.pvalue
                     except Exception as e:
                         print(f"Error calculating t-test for {qc.name}: {e}")
             
             # Calculate means
-            avg_s_norm = mean(student_scores_norm) if student_scores_norm else 0
+            avg_s_mapped = mean(student_scores_mapped) if student_scores_mapped else 0
             avg_i = mean(instructor_scores) if instructor_scores else 0
-            mean_diff = avg_s_norm - avg_i
+            mean_diff = avg_s_mapped - avg_i
 
             comparison_data.append({
                 'criterion_id': q_cid,
@@ -1431,7 +1424,7 @@ class QuizInterRaterAgreementView(APIView):
                 't_statistic': round(t_stat, 4) if t_stat is not None else None,
                 'p_value': round(p_val, 5) if p_val is not None else None,
                 'instructor_mean': round(avg_i, 4),
-                'student_mean_norm': round(avg_s_norm, 4),
+                'student_mean_norm': round(avg_s_mapped, 4),
                 'mean_difference': round(mean_diff, 4),
                 'df': common_count - 1 if common_count > 0 else 0
             })
@@ -1476,6 +1469,9 @@ class QuizInterRaterAgreementView(APIView):
             
             has_valid_data = False
             
+            # Get scale for this problem
+            # i_min, i_max, i_range = problem_scale_map.get(pid, (0, 0, 0)) # Not needed with explicit mapping
+            
             for qc in quiz_criteria:
                 i_code = qc.instructor_criterion_code
                 if not i_code or i_code not in weight_map:
@@ -1489,19 +1485,23 @@ class QuizInterRaterAgreementView(APIView):
                 i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
 
                 if s_vals_objs and i_vals_objs:
-                    # Student Norm
+                    # Student Mapped
                     s_raw_vals = [x['raw'] for x in s_vals_objs]
-                    s_mean_raw = mean(s_raw_vals) if s_raw_vals else 0
-                    if s_range > 0:
-                        s_norm = (s_mean_raw - s_min) / s_range
-                    else:
-                        s_norm = 0
+                    
+                    s_mapped_list = []
+                    for v in s_raw_vals:
+                        single_mapped = scale_lookup.get(v)
+                        if single_mapped is None:
+                            single_mapped = v
+                        s_mapped_list.append(single_mapped)
+
+                    s_mapped = mean(s_mapped_list) if s_mapped_list else 0
                     
                     # Instructor
                     i_vals = [x['value'] for x in i_vals_objs]
                     i_mean = mean(i_vals) if i_vals else 0
                     
-                    s_sum += s_norm * weight
+                    s_sum += s_mapped * weight
                     i_sum += i_mean * weight
                     w_sum += weight
                     has_valid_data = True
@@ -1563,10 +1563,22 @@ class QuizInterRaterAgreementView(APIView):
                      'code': qc.instructor_criterion_code
                  })
 
-        return Response({
+        return Response(self.sanitize_data({
             'agreement': agreement_data,
             'comparison': comparison_data,
             'details': details_list,
             'criteria_columns': criteria_columns
-        })
+        }))
+
+    def sanitize_data(self, data):
+        """Recursively replace NaN/Inf with None for JSON compliance"""
+        import numpy as np
+        if isinstance(data, dict):
+            return {k: self.sanitize_data(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.sanitize_data(v) for v in data]
+        elif isinstance(data, float):
+            if np.isnan(data) or np.isinf(data):
+                return None
+        return data
 

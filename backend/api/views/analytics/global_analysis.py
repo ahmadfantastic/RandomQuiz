@@ -1152,15 +1152,11 @@ class GlobalAnalysisView(APIView):
             if not q_criterion_map:
                 continue
             
-            # 2. Get Scale for Normalization
+            # 2. Get Scale Lookup (Raw -> Mapped)
             q_scale = QuizRatingScaleOption.objects.filter(quiz=quiz)
-            q_scale_vals = [qs.value for qs in q_scale]
-            if q_scale_vals:
-                s_min = min(q_scale_vals)
-                s_max = max(q_scale_vals)
-                s_range = s_max - s_min
-            else:
-                s_min = 0; s_max=0; s_range=0
+            # Map: value (int/float) -> mapped_value
+            # Python dict treats 5 and 5.0 as same key.
+            scale_lookup = {qs.value: qs.mapped_value for qs in q_scale}
 
             # 3. Fetch Data
             # Instructor Ratings
@@ -1210,7 +1206,7 @@ class GlobalAnalysisView(APIView):
             q_i_ratings = InstructorProblemRating.objects.filter(
                 problem_id__in=relevant_pids, 
                 instructor=instructor
-            ).select_related('problem').prefetch_related('entries', 'entries__criterion')
+            ).select_related('problem', 'problem__problem_bank', 'problem__problem_bank__rubric').prefetch_related('entries', 'entries__criterion')
             
             # Map: pid -> { code -> val, weight }
             i_data_map = {}
@@ -1224,12 +1220,9 @@ class GlobalAnalysisView(APIView):
                 if pid not in i_data_map: i_data_map[pid] = {}
                 if pid not in i_weights_map: i_weights_map[pid] = {}
                 i_order_map[pid] = r.problem.order_in_bank
-                
+
                 for entry in r.entries.all():
                      code = entry.criterion.criterion_id 
-                     # Note: this code must match instructor_criterion_code in q_criterion_map
-                     # If rubric criterion ID usage is consistent.
-                     
                      val = entry.scale_option.value
                      weight = entry.criterion.weight
                      
@@ -1261,36 +1254,48 @@ class GlobalAnalysisView(APIView):
                     'weighted_instructor': 0, 'weighted_student': 0, 'weighted_diff': 0
                 }
                 
-                # Look up problem label?
-                # We can fetch Problem objects in bulk or just use ID for now to save query
-                
                 for icode, s_raw_list in p_s_data.items():
                     if icode in p_i_data:
                         # Instructor Value
                         i_val = p_i_data[icode]
                         
-                        # Student Value (Mean Raw -> Norm)
-                        s_mean_raw = mean(s_raw_list)
-                        s_norm = (s_mean_raw - s_min) / s_range if s_range > 0 else 0
+                        # Student Value (Map each rating then average)
+                        s_mapped_list = []
+                        s_details_list = []
+                        
+                        for v in s_raw_list:
+                            # Use explicit mapping
+                            single_mapped = scale_lookup.get(v)
+                            # Fallback if None (not configured)
+                            if single_mapped is None:
+                                single_mapped = v
+                            
+                            s_mapped_list.append(single_mapped)
+                            s_details_list.append({'raw': v, 'mapped': single_mapped})
+                            
+                        # Mapped Mean
+                        s_mapped = mean(s_mapped_list) if s_mapped_list else 0
                         
                         # Add to Global Accumulators
                         if icode not in global_comparison_acc:
                             global_comparison_acc[icode] = {'s_norm': [], 'i_raw': [], 'common': 0}
                         
-                        global_comparison_acc[icode]['s_norm'].append(s_norm)
+                        global_comparison_acc[icode]['s_norm'].append(s_mapped)
                         global_comparison_acc[icode]['i_raw'].append(i_val)
                         global_comparison_acc[icode]['common'] += 1
                         
                         detail_obj['ratings'][icode] = {
                             'instructor': i_val,
                             'instructor_mean': i_val,
-                            'student_mean_norm': s_norm,
-                            'diff': s_norm - i_val
+                            'student_mean_norm': s_mapped,
+                            'diff': s_mapped - i_val,
+                            'student_details': s_details_list,
+                            'instructor_details': [{'value': i_val}]
                         }
                         
                         # Weighted Calc
                         w = p_weights.get(icode, 1)
-                        p_s_w_sum += s_norm * w
+                        p_s_w_sum += s_mapped * w
                         p_i_w_sum += i_val * w
                         p_w_tot += w
                         has_w_data = True

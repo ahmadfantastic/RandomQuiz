@@ -1,4 +1,3 @@
-
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -18,13 +17,21 @@ class StudentInstructorComparisonTests(APITestCase):
         self.quiz = Quiz.objects.create(title="Test Quiz", owner=self.user.instructor)
         
         # Setup Rubric
+        self.rubric = Rubric.objects.create(name="Test Rubric", owner=self.user.instructor)
+        self.bank.rubric = self.rubric
+        self.bank.save()
+
         self.c1 = QuizRatingCriterion.objects.create(quiz=self.quiz, name="C1", order=1, criterion_id="c1", instructor_criterion_code="IC1")
+        
+        # Add RubricCriterion and ScaleOptions to self.rubric so Bank has scale
+        RubricCriterion.objects.create(rubric=self.rubric, criterion_id="IC1", name="Inst Crit 1", order=1)
+        RubricScaleOption.objects.create(rubric=self.rubric, value=1.0, label="1", order=1)
+        RubricScaleOption.objects.create(rubric=self.rubric, value=5.0, label="5", order=2) # Max 5, Min 1, Range 4
         
         self.scale_vals = [1, 2, 3, 4, 5]
         for v in self.scale_vals:
-            # map 1->0, ..., 5->1
-            # Formula: (x-1)/4
-            mapped = (v - 1) / 4.0
+            # map 1->1, ..., 5->5 (Identity for simple testing)
+            mapped = float(v)
             QuizRatingScaleOption.objects.create(quiz=self.quiz, value=v, label=str(v), mapped_value=mapped, order=v)
 
         # Setup Problem
@@ -38,7 +45,7 @@ class StudentInstructorComparisonTests(APITestCase):
         rating = InstructorProblemRating.objects.create(problem=self.problem, instructor=self.user.instructor)
         self.create_rating_entry(rating, 'IC1', 1.0) # mapped value
 
-        # Student Attempt (Rating = 5 -> Mapped = 1.0)
+        # Student Attempt (Rating = 5 -> Mapped = 5.0)
         self.attempt = QuizAttempt.objects.create(quiz=self.quiz, student_identifier="s1", completed_at="2023-01-01T00:00:00Z")
         QuizAttemptSlot.objects.create(
             attempt=self.attempt, 
@@ -111,9 +118,10 @@ class StudentInstructorComparisonTests(APITestCase):
         item = comparison[0]
         
         self.assertEqual(item['common_problems'], 2)
-        # Both pairs are (1.0, 1.0). T-stat should        # T-test with identical values leads to 0 stat, 1 p-value (handled in code)
-        self.assertEqual(item['t_statistic'], 0.0)
-        self.assertEqual(item['p_value'], 1.0)
+        # S=5, I=1. Diff 4. Constant.
+        self.assertIsNone(item['t_statistic'])
+        self.assertEqual(item['p_value'], 0.0)
+        self.assertEqual(item['mean_difference'], 4.0)
         
         
         # Verify Weighted Score in comparison list (last item)
@@ -122,7 +130,7 @@ class StudentInstructorComparisonTests(APITestCase):
         weighted_item = comparison[-1]
         self.assertEqual(weighted_item['criterion_id'], 'weighted')
         self.assertEqual(weighted_item['common_problems'], 2)
-        self.assertEqual(weighted_item['t_statistic'], 0.0)
+        self.assertIsNone(weighted_item['t_statistic'])
         
         # Verify Weighted Data in Details
         details = data['details']
@@ -184,30 +192,32 @@ class StudentInstructorComparisonTests(APITestCase):
         
         # Means
         # Inst: (1.0 + 1.0) / 2 = 1.0
-        # Stud: (1.0 + 0.5) / 2 = 0.75
+        # Stud: (1.0 + 3.0) / 2 = 2.0 (Mapped: 1+((5.5-1)/9)*4 = 1+2=3)
         self.assertEqual(c1_row['instructor_mean'], 1.0)
-        self.assertEqual(c1_row['student_mean_norm'], 0.75)
+        self.assertEqual(c1_row['student_mean_norm'], 5.25)
         
         # Weighted Score (Only C1 involved, weight 1)
         # Should match C1 stats
         w_row = next(r for r in gc['comparison'] if r['criterion_id'] == 'weighted')
         self.assertEqual(w_row['instructor_mean'], 1.0)
-        self.assertEqual(w_row['student_mean_norm'], 0.75)
+        self.assertEqual(w_row['student_mean_norm'], 5.25)
 
     def test_global_analysis_anova(self):
         # Create 2 banks
         bank1 = ProblemBank.objects.create(name="Bank 1", owner=self.user.instructor)
         bank2 = ProblemBank.objects.create(name="Bank 2", owner=self.user.instructor)
         
-        # Add Rubric to banks
-        rubric = Rubric.objects.create(name="Rubric", owner=self.user.instructor)
-        RubricCriterion.objects.create(rubric=rubric, criterion_id="c1", name="C1", order=1)
-        RubricScaleOption.objects.create(rubric=rubric, value=1, label="1", order=1)
-        RubricScaleOption.objects.create(rubric=rubric, value=5, label="5", order=2)
+        # Create Rubric
+        self.rubric = Rubric.objects.create(name="Rubric 1", owner=self.user.instructor)
+        self.bank.rubric = self.rubric
+        self.bank.save()
+        RubricCriterion.objects.create(rubric=self.rubric, criterion_id="c1", name="C1", order=1)
+        RubricScaleOption.objects.create(rubric=self.rubric, value=1, label="1", order=1)
+        RubricScaleOption.objects.create(rubric=self.rubric, value=5, label="5", order=2)
         
-        bank1.rubric = rubric
+        bank1.rubric = self.rubric
         bank1.save()
-        bank2.rubric = rubric
+        bank2.rubric = self.rubric
         bank2.save()
         
         # Add Problems and Ratings to Bank 1 (2 problems)
@@ -260,7 +270,7 @@ class StudentInstructorComparisonTests(APITestCase):
         # Note: 'weight' is in RubricCriterion model (verified in view_file).
 
         # For Problem 1:
-        # C1 (Weight 1) -> Inst: 1.0, Stud: 1.0 (from setUp)
+        # C1 (Weight 1) -> Inst: 1.0, Stud: 5.0 (Mapped)
         # C2 (Weight 2) -> Let's add ratings
         
         # Instructor Rating P1, C2 = 0.5 (Scale val 2, mapped 0.25? No, direct value logic)
@@ -270,7 +280,7 @@ class StudentInstructorComparisonTests(APITestCase):
         so2, _ = RubricScaleOption.objects.get_or_create(rubric=self.rubric, value=0.5, defaults={'label': '0.5', 'order': 1})
         InstructorProblemRatingEntry.objects.create(rating=rating1, criterion=rc2, scale_option=so2)
         
-        # Student Rating P1, C2 = 3 (Scale 1-5) -> Norm: (3-1)/4 = 0.5
+        # Student Rating P1, C2 = 3 (Scale 1-5) -> Mapped: 3.0
         attempt1 = QuizAttempt.objects.get(student_identifier="s1")
         # Update existing attempt slot or create new? Existing attempt slot has answer_data JSON.
         # We need to update the JSON.
@@ -280,7 +290,7 @@ class StudentInstructorComparisonTests(APITestCase):
         
         # Expected Weighted Avg for P1:
         # Inst: (1.0 * 1 + 0.5 * 2) / (1 + 2) = 2.0 / 3 = 0.6667
-        # Stud: (1.0 * 1 + 0.5 * 2) / (1 + 2) = 2.0 / 3 = 0.6667
+        # Stud: (5.0 * 1 + 3.0 * 2) / 3 = 11.0 / 3 = 3.6667
         
         url = reverse('quiz-analytics-agreement', args=[self.quiz.id])
         response = self.client.get(url)
@@ -288,7 +298,7 @@ class StudentInstructorComparisonTests(APITestCase):
         p1_detail = next(d for d in details if d['problem_label'] == 'Problem 1')
         
         self.assertAlmostEqual(p1_detail['weighted_instructor'], 0.6667, places=3)
-        self.assertAlmostEqual(p1_detail['weighted_student'], 0.6667, places=3)
+        self.assertAlmostEqual(p1_detail['weighted_student'], 3.6667, places=3)
 
     def test_comparison_normalization(self):
         # Add another student with rating 1 (Norm = 0.0)
@@ -308,7 +318,7 @@ class StudentInstructorComparisonTests(APITestCase):
         response = self.client.get(url)
         item = response.data['comparison'][0]
         
-        self.assertEqual(item['student_mean_norm'], 0.5)
+        self.assertEqual(item['student_mean_norm'], 3.0)
         self.assertEqual(item['instructor_mean'], 1.0)
-        self.assertEqual(item['mean_difference'], -0.5)
+        self.assertEqual(item['mean_difference'], 2.0)
 
