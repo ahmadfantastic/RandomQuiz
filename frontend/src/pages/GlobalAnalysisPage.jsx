@@ -5,6 +5,7 @@ import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { RatingAnalysis } from '@/components/quiz-analytics/RatingSlotAnalytics';
 import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import api from '@/lib/api';
@@ -134,7 +135,7 @@ const GlobalAnalysisPage = () => {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Global Inter-rater Reliability by Criteria</CardTitle>
+                        <CardTitle>Inter-rater Reliability by Criteria (All Problem Banks)</CardTitle>
                         <CardDescription>Aggregated weighted kappa for each criterion across all problem banks</CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -255,7 +256,7 @@ const GlobalAnalysisPage = () => {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Average Ratings by Bank</CardTitle>
+                        <CardTitle>Average Instructor Ratings by Bank</CardTitle>
                         <CardDescription>Mean ratings for each criterion per bank</CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -399,9 +400,23 @@ const GlobalAnalysisPage = () => {
                     </Card>
                 )}
 
+                {data.global_rating_distribution && data.global_rating_distribution.criteria.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Global Rating Analysis</CardTitle>
+                            <CardDescription>
+                                Aggregated rating distribution for all rating criteria across all quizzes.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <RatingAnalysis title="Overall Distribution" data={data.global_rating_distribution} />
+                        </CardContent>
+                    </Card>
+                )}
+
                 <Card>
                     <CardHeader>
-                        <CardTitle>Global Inter-Rater Agreement (All Quizzes)</CardTitle>
+                        <CardTitle>Instructors vs Students Agreement (All Quizzes)</CardTitle>
                         <CardDescription>
                             Pooled agreement analysis between Student and Instructor ratings across all quizzes.
                             Aggregated using weighted kappa per criterion.
@@ -414,7 +429,7 @@ const GlobalAnalysisPage = () => {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>ANOVA Results</CardTitle>
+                        <CardTitle>ANOVA Results for Problem Banks</CardTitle>
                         <CardDescription>Statistical comparison of ratings across banks (One-way ANOVA)</CardDescription>
                     </CardHeader>
                     <CardContent>

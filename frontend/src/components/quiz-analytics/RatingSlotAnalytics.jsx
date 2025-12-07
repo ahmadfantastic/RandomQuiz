@@ -68,7 +68,7 @@ const roundToTwo = (num) => {
     return (Math.round((num + Number.EPSILON) * 100) / 100).toFixed(2);
 };
 
-const RatingAnalysis = ({ title, data, groupedData }) => {
+export const RatingAnalysis = ({ title, data, groupedData }) => {
 
     const { headers, rows } = useMemo(() => {
         if (groupedData) {

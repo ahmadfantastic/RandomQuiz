@@ -713,7 +713,7 @@ class GlobalAnalysisView(APIView):
             'all_criteria': sorted(list(all_quiz_criteria))
         }
         
-        # 5. Global Quiz Agreement (Aggregated across ALL quizzes)
+            # 5. Global Quiz Agreement (Aggregated across ALL quizzes)
         # Refactored to match Quiz Analytics structure for consistent UI
         
         # Accumulators
@@ -732,6 +732,14 @@ class GlobalAnalysisView(APIView):
         # Per criterion lists for kappa
         # criterion_name -> {'i_list': [], 's_list': [], 'scale': []}
         criterion_kappa_data = {}
+
+        # Global Rating Distribution (for Chart/Table)
+        # criterion_name -> { value -> count }
+        global_rating_counts = {} 
+        # criterion_name -> { total_score: float, count: int, scale_labels: {} }
+        global_rating_stats = {}
+        global_criterion_orders = {} # {criterion_name: min_order}
+        global_rating_scales = {} # {criterion_name: set(values)}
         
         for quiz in quizzes:
             # logger.info(f"Processing Quiz: {quiz.id} - {quiz.title}")
@@ -745,7 +753,24 @@ class GlobalAnalysisView(APIView):
             # (Assuming criterion names like 'Accuracy' are consistent across quizzes)
             criterion_name_map = {} # instructor_crit_code -> global_name
 
+            # Map for quick lookup
+            quiz_criteria_map = {c.criterion_id: c for c in quiz_criteria}
+
+            # Pre-populate global tracking with known criteria from this quiz
             for qc in quiz_criteria:
+                if qc.name not in global_rating_counts:
+                    global_rating_counts[qc.name] = {}
+                    global_rating_stats[qc.name] = {'total_score': 0, 'count': 0, 'scale_labels': {}}
+                
+                # Track order (take the minimum order found across quizzes for stability)
+                if qc.name not in global_criterion_orders:
+                    global_criterion_orders[qc.name] = qc.order
+                else:
+                    global_criterion_orders[qc.name] = min(global_criterion_orders[qc.name], qc.order)
+                
+                if qc.name not in global_rating_scales:
+                    global_rating_scales[qc.name] = set()
+
                 if qc.instructor_criterion_code:
                     criterion_map[qc.criterion_id] = qc.instructor_criterion_code
                     criterion_names[qc.criterion_id] = qc.name
@@ -758,19 +783,29 @@ class GlobalAnalysisView(APIView):
                              'name': qc.name,
                              'code': qc.instructor_criterion_code
                          }
-
+                         
             if not criterion_map:
                 continue
 
             quiz_scale = QuizRatingScaleOption.objects.filter(quiz=quiz)
             scale_map = {} # quiz_value -> mapped_value
+            # Build Scale Map for Labels (Raw Value -> Label)
+            scale_labels = {} # raw_value -> label
+            current_quiz_scale_values = set()
+            
             for qs in quiz_scale:
                 if qs.mapped_value is not None:
                     # Handle float/int discrepancy by forcing float where possible or keeping checking strict
-                    # quiz.py uses 'if val in scale_map' which implies exact match. 
-                    # If DB stores 1.0 and payload is 1, they might not match if not cast.
-                    # Usually DRF JSON decodes to int/float.
                     scale_map[qs.value] = qs.mapped_value
+                # Store label for the RAW value
+                scale_labels[qs.value] = qs.label
+                current_quiz_scale_values.add(qs.value)
+            
+            # Add all scale values to global tracking for all criteria in this quiz
+            # Assuming all criteria in the same quiz share the same scale options (which is how Quiz model works)
+            for qc in quiz_criteria:
+                if qc.name in global_rating_scales:
+                    global_rating_scales[qc.name].update(current_quiz_scale_values)
             
             if not scale_map:
                 continue
@@ -778,6 +813,12 @@ class GlobalAnalysisView(APIView):
             possible_ratings = sorted(list(scale_map.values()))
             possible_ratings_overall.update(possible_ratings)
             valid_raw_values = list(scale_map.keys())
+
+            # Update global scale labels
+            for c_name in global_rating_counts.keys():
+                # We merge labels. If conflict, last one wins. Ideally scales are consistent globally.
+                if c_name in global_rating_stats:
+                    global_rating_stats[c_name]['scale_labels'].update(scale_labels)
 
             # 3. Identify Problems & Student Ratings
             attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
@@ -792,10 +833,61 @@ class GlobalAnalysisView(APIView):
             ).values('assigned_problem_id', 'answer_data', 'attempt__student_identifier')
 
             for entry in attempt_slots:
-                pid = entry['assigned_problem_id']
+                # Accumulate for Global Rating Distribution
                 ratings = entry['answer_data'].get('ratings', {})
+                for c_id, raw_val in ratings.items():
+                    # Find criterion name
+                    c_obj = quiz_criteria_map.get(c_id)
+                    if c_obj:
+                        c_name = c_obj.name
+                        
+                        # Ensure initialized (should be from pre-population, but safety check)
+                        if c_name not in global_rating_counts:
+                            global_rating_counts[c_name] = {}
+                            global_rating_stats[c_name] = {'total_score': 0, 'count': 0, 'scale_labels': {}}
+                            if c_name not in global_criterion_orders:
+                                global_criterion_orders[c_name] = c_obj.order
+                        
+                        # Use RAW value directly
+                        val = raw_val
+                        # Convert to int/float if possible for consistency
+                        try:
+                             val = float(raw_val)
+                             if val.is_integer():
+                                 val = int(val)
+                        except (ValueError, TypeError):
+                             pass
+
+                        if val not in global_rating_counts[c_name]:
+                            global_rating_counts[c_name][val] = 0
+                        
+                        global_rating_counts[c_name][val] += 1
+                        
+                        # Stats
+                        if isinstance(val, (int, float)):
+                            global_rating_stats[c_name]['total_score'] += val
+                            global_rating_stats[c_name]['count'] += 1
+                            
+                        # Update label (using the raw value as key)
+                        if raw_val in scale_labels:
+                            global_rating_stats[c_name]['scale_labels'][val] = scale_labels[raw_val]
+
+                pid = entry['assigned_problem_id']
                 sid = entry['attempt__student_identifier']
                 
+                # ... existing logic for detailed analysis ...
+                # Re-extract and map for detailed
+                # (The original logic below this block needs the mapped values for ANOVA/IRR)
+                # But notice I replaced the whole block up to the loop start.
+                # I need to ensure the detailed logic (which I might have cut off in previous replacement or verification) is intact.
+                # Let's verify what I am replacing.
+                # My previous edit ended at `pass` inside the loop, effectively truncating the detailed processing logic.
+                # Oh wait, `pass` was my manual cutoff in the replace tool content, but `replace_file_content` replaces exact ranges.
+                # The previous edit replaced lines 751-850+.
+                # I need to be careful to NOT delete the detailed analysis logic which resides AFTER the rating accumulation loop.
+                # For this edit, I focus on the setup and the accumulation loop.
+                # The detailed analysis part (student_ratings_data population) was INSIDE the attempt_slots loop in original code.
+
                 if pid not in student_ratings_data:
                     student_ratings_data[pid] = {}
                 
@@ -916,6 +1008,8 @@ class GlobalAnalysisView(APIView):
                                     'problem_label': problem_label,
                                     'ratings': {}
                                 }
+                                
+
                             
                             detailed_comparisons[details_key]['ratings'][c_name] = {
                                 'instructor': i_median,
@@ -981,6 +1075,45 @@ class GlobalAnalysisView(APIView):
             'criteria_columns': criteria_columns
         }
         
+        
+        # Format Global Rating Distribution for Chart
+        global_rating_distribution_data = {'criteria': []}
+        
+        # Sort by ORDER instead of Name
+        sorted_criteria_names = sorted(global_rating_counts.keys(), key=lambda x: global_criterion_orders.get(x, 999))
+        
+        for c_name in sorted_criteria_names:
+            counts = global_rating_counts[c_name]
+            stats = global_rating_stats[c_name]
+            labels = stats['scale_labels']
+            
+            total_responses = sum(counts.values())
+            
+            # Use ALL collected scale values for this criterion, filling with 0 if needed
+            all_values = sorted(list(global_rating_scales.get(c_name, []))) if c_name in global_rating_scales else sorted(counts.keys())
+            
+            dist_data = []
+            for val in all_values:
+                count = counts.get(val, 0)
+                percentage = (count / total_responses * 100) if total_responses > 0 else 0
+                label = labels.get(val, str(val))
+                
+                dist_data.append({
+                    'value': val,
+                    'label': label,
+                    'count': count,
+                    'percentage': percentage
+                })
+            
+            global_rating_distribution_data['criteria'].append({
+                'name': c_name,
+                'distribution': dist_data,
+                'total': total_responses,
+                'mean': stats['total_score'] / stats['count'] if stats['count'] > 0 else 0
+            })
+
+        response_data['global_rating_distribution'] = global_rating_distribution_data
+
         return Response(self.sanitize_data(response_data))
 
     def update_global_criteria_data(self, global_criteria_data, c, c_y1, c_y2, scale_vals):
