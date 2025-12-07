@@ -1121,12 +1121,21 @@ class GlobalAnalysisView(APIView):
         global_detailed_comparisons = []
         
         # Accumulators for Global T-Tests
-        # criterion_code -> { 's_norm': [], 'i_raw': [] }
+        # group -> criterion_code -> { 's_norm': [], 'i_raw': [] }
+        # Note: We will use 'Overall' as a special group that accumulates everything.
         global_comparison_acc = {} 
-        # Weighted Score Accumulators
-        # { 's_weighted': [], 'i_weighted': [] }
-        global_weighted_acc = {'s': [], 'i': []}
         
+        # Weighted Score Accumulators
+        # group -> { 's': [], 'i': [] }
+        global_weighted_acc = {}
+        
+        # Helper to init group acc
+        def init_group_acc(grp):
+            if grp not in global_comparison_acc:
+                global_comparison_acc[grp] = {}
+            if grp not in global_weighted_acc:
+                global_weighted_acc[grp] = {'s': [], 'i': []}
+
         # We need a map of criterion code to display name (taking first available)
         global_code_to_name = {}
         global_code_to_order = {}
@@ -1160,19 +1169,7 @@ class GlobalAnalysisView(APIView):
 
             # 3. Fetch Data
             # Instructor Ratings
-            # Link: Rating -> Problem -> QuizSlotProblemBank (slot_links) -> QuizSlot -> Quiz
-            i_ratings = InstructorProblemRating.objects.filter(problem__slot_links__quiz_slot__quiz=quiz).distinct() 
-            # Note: The link from Quiz -> Problem is via QuizSlot -> ProblemBank or QuizSlot -> Problems?
-            # Creating a correct query for relevant problems in this quiz.
-            # Quiz -> QuizSlot -> QuizSlotProblemBank -> Problem
-            # OR Quiz -> QuizSlot (with bank) -> ProblemBank -> Problems
             
-            # Let's rely on relevant_problem_ids from "used" problems (attempts?)
-            # or just all problems "assigned" to the quiz?
-            # analytics/quiz.py uses: valid_problems = set(attempts...assigned_problem) AND set(instructor_ratings...problem)
-            
-            # Let's find all problems associated with this quiz via slots
-            # This might be expensive loop-in-loop. 
             # Optimization: Get all completed attempts for this quiz
             q_attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
             if not q_attempts.exists():
@@ -1214,12 +1211,15 @@ class GlobalAnalysisView(APIView):
             i_weights_map = {} # pid -> { code -> weight }
             # Map: pid -> order
             i_order_map = {}
+            # Map: pid -> group
+            i_group_map = {}
             
             for r in q_i_ratings:
                 pid = r.problem_id
                 if pid not in i_data_map: i_data_map[pid] = {}
                 if pid not in i_weights_map: i_weights_map[pid] = {}
                 i_order_map[pid] = r.problem.order_in_bank
+                i_group_map[pid] = r.problem.group
 
                 for entry in r.entries.all():
                      code = entry.criterion.criterion_id 
@@ -1239,6 +1239,11 @@ class GlobalAnalysisView(APIView):
                 p_i_data = i_data_map[pid]
                 p_weights = i_weights_map.get(pid, {})
                 problem_order = i_order_map.get(pid, pid)
+                problem_group = i_group_map.get(pid, '') or '-'
+                
+                target_groups = [problem_group, 'Overall']
+                for g in target_groups:
+                    init_group_acc(g)
                 
                 # For weighted calculation
                 p_s_w_sum = 0
@@ -1249,7 +1254,8 @@ class GlobalAnalysisView(APIView):
                 # Detail Object
                 detail_obj = {
                     'problem_id': pid,
-                    'problem_label': f"{quiz.title}: Problem {problem_order}", 
+                    'problem_label': f"{quiz.title}: Problem {problem_order}",
+                    'problem_group': problem_group,
                     'ratings': {},
                     'weighted_instructor': 0, 'weighted_student': 0, 'weighted_diff': 0
                 }
@@ -1276,13 +1282,14 @@ class GlobalAnalysisView(APIView):
                         # Mapped Mean
                         s_mapped = mean(s_mapped_list) if s_mapped_list else 0
                         
-                        # Add to Global Accumulators
-                        if icode not in global_comparison_acc:
-                            global_comparison_acc[icode] = {'s_norm': [], 'i_raw': [], 'common': 0}
-                        
-                        global_comparison_acc[icode]['s_norm'].append(s_mapped)
-                        global_comparison_acc[icode]['i_raw'].append(i_val)
-                        global_comparison_acc[icode]['common'] += 1
+                        # Add to Global Accumulators for all target groups
+                        for g in target_groups:
+                             if icode not in global_comparison_acc[g]:
+                                 global_comparison_acc[g][icode] = {'s_norm': [], 'i_raw': [], 'common': 0}
+                             
+                             global_comparison_acc[g][icode]['s_norm'].append(s_mapped)
+                             global_comparison_acc[g][icode]['i_raw'].append(i_val)
+                             global_comparison_acc[g][icode]['common'] += 1
                         
                         detail_obj['ratings'][icode] = {
                             'instructor': i_val,
@@ -1304,8 +1311,9 @@ class GlobalAnalysisView(APIView):
                     w_s = p_s_w_sum / p_w_tot
                     w_i = p_i_w_sum / p_w_tot
                     
-                    global_weighted_acc['s'].append(w_s)
-                    global_weighted_acc['i'].append(w_i)
+                    for g in target_groups:
+                        global_weighted_acc[g]['s'].append(w_s)
+                        global_weighted_acc[g]['i'].append(w_i)
                     
                     detail_obj['weighted_instructor'] = w_i
                     detail_obj['weighted_student'] = w_s
@@ -1313,75 +1321,83 @@ class GlobalAnalysisView(APIView):
                     
                     global_detailed_comparisons.append(detail_obj)
 
+        # 5. Compute Statistics for Global Rows
+        # Iterate over all groups found
+        
+        for g_name in sorted(global_comparison_acc.keys()):
+            # Per Criterion
+            group_c_acc = global_comparison_acc[g_name]
+            sorted_icodes = sorted(list(group_c_acc.keys()), key=lambda x: global_code_to_order.get(x, 999))
+            
+            for icode in sorted_icodes:
+                acc = group_c_acc[icode]
+                s_list = acc['s_norm']
+                i_list = acc['i_raw']
+                n = len(s_list)
+                
+                t_stat, p_val = None, None
+                if n > 1:
+                    # check identical
+                    if all(a==b for a,b in zip(s_list, i_list)):
+                        t_stat, p_val = 0.0, 1.0
+                    else:
+                        try:
+                            res = stats.ttest_rel(s_list, i_list)
+                            t_stat, p_val = res.statistic, res.pvalue
+                        except: pass
+                
+                avg_s = mean(s_list) if s_list else 0
+                avg_i = mean(i_list) if i_list else 0
+                
+                global_comparison_rows.append({
+                    'group': g_name,
+                    'criterion_id': icode,
+                    'criterion_name': global_code_to_name.get(icode, icode),
+                    'order': global_code_to_order.get(icode, 999),
+                    'common_problems': n,
+                    't_statistic': round(t_stat, 4) if t_stat is not None else None,
+                    'p_value': round(p_val, 5) if p_val is not None else None,
+                    'instructor_mean': round(avg_i, 4),
+                    'student_mean_norm': round(avg_s, 4),
+                    'mean_difference': round(avg_s - avg_i, 4),
+                    'df': n - 1 if n > 0 else 0
+                })
+                
+            # Weighted Score Row for this group
+            if g_name in global_weighted_acc:
+                ws_list = global_weighted_acc[g_name]['s']
+                wi_list = global_weighted_acc[g_name]['i']
+                wn = len(ws_list)
+                wt_stat, wp_val = None, None
+                
+                if wn > 1:
+                     if all(a==b for a,b in zip(ws_list, wi_list)):
+                         wt_stat, wp_val = 0.0, 1.0
+                     else:
+                         try:
+                             res = stats.ttest_rel(ws_list, wi_list)
+                             wt_stat, wp_val = res.statistic, res.pvalue
+                         except: pass
+                
+                w_avg_s = mean(ws_list) if ws_list else 0
+                w_avg_i = mean(wi_list) if wi_list else 0
+                
+                global_comparison_rows.append({
+                    'group': g_name,
+                    'criterion_id': 'weighted',
+                    'criterion_name': 'Weighted Score',
+                    'order': 9999,
+                    'common_problems': wn,
+                    't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
+                    'p_value': round(wp_val, 5) if wp_val is not None else None,
+                    'instructor_mean': round(w_avg_i, 4),
+                    'student_mean_norm': round(w_avg_s, 4),
+                    'mean_difference': round(w_avg_s - w_avg_i, 4),
+                    'df': wn - 1 if wn > 0 else 0
+                })
+
         # ... after global_comparison_acc population ...
 
-        # 5. Compute Statistics for Global Rows
-        # Per Criterion
-        sorted_icodes = sorted(list(global_comparison_acc.keys()), key=lambda x: global_code_to_order.get(x, 999))
-        
-        for icode in sorted_icodes:
-            acc = global_comparison_acc[icode]
-            s_list = acc['s_norm']
-            i_list = acc['i_raw']
-            n = len(s_list)
-            
-            t_stat, p_val = None, None
-            if n > 1:
-                # check identical
-                if all(a==b for a,b in zip(s_list, i_list)):
-                    t_stat, p_val = 0.0, 1.0
-                else:
-                    try:
-                        res = stats.ttest_rel(s_list, i_list)
-                        t_stat, p_val = res.statistic, res.pvalue
-                    except: pass
-            
-            avg_s = mean(s_list) if s_list else 0
-            avg_i = mean(i_list) if i_list else 0
-            
-            global_comparison_rows.append({
-                'criterion_id': icode,
-                'criterion_name': global_code_to_name.get(icode, icode),
-                'order': global_code_to_order.get(icode, 999),
-                'common_problems': n,
-                't_statistic': round(t_stat, 4) if t_stat is not None else None,
-                'p_value': round(p_val, 5) if p_val is not None else None,
-                'instructor_mean': round(avg_i, 4),
-                'student_mean_norm': round(avg_s, 4),
-                'mean_difference': round(avg_s - avg_i, 4),
-                'df': n - 1 if n > 0 else 0
-            })
-            
-        # Weighted Score Row
-        ws_list = global_weighted_acc['s']
-        wi_list = global_weighted_acc['i']
-        wn = len(ws_list)
-        wt_stat, wp_val = None, None
-        
-        if wn > 1:
-             if all(a==b for a,b in zip(ws_list, wi_list)):
-                 wt_stat, wp_val = 0.0, 1.0
-             else:
-                 try:
-                     res = stats.ttest_rel(ws_list, wi_list)
-                     wt_stat, wp_val = res.statistic, res.pvalue
-                 except: pass
-        
-        w_avg_s = mean(ws_list) if ws_list else 0
-        w_avg_i = mean(wi_list) if wi_list else 0
-        
-        global_comparison_rows.append({
-            'criterion_id': 'weighted',
-            'criterion_name': 'Weighted Score',
-            'order': 9999,
-            'common_problems': wn,
-            't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
-            'p_value': round(wp_val, 5) if wp_val is not None else None,
-            'instructor_mean': round(w_avg_i, 4),
-            'student_mean_norm': round(w_avg_s, 4),
-            'mean_difference': round(w_avg_s - w_avg_i, 4),
-            'df': wn - 1 if wn > 0 else 0
-        })
 
         # Columns for Frontend
         criteria_columns = []

@@ -1186,6 +1186,7 @@ class QuizInterRaterAgreementView(APIView):
         
         # Map ProblemID -> Label (Order in Bank)
         problem_label_map = {p.id: f"Problem {p.order_in_bank}" for p in quiz_problems}
+        problem_group_map = {p.id: p.group or '' for p in quiz_problems}
 
         # Fetch all relevant attempt slots
         attempt_slots = QuizAttemptSlot.objects.filter(
@@ -1298,6 +1299,7 @@ class QuizInterRaterAgreementView(APIView):
                         detailed_comparisons[pid] = {
                             'problem_id': pid,
                             'problem_label': problem_label_map.get(pid, f"Problem {pid}"),
+                            'problem_group': problem_group_map.get(pid, ''),
                             'ratings': {}
                         }
                     
@@ -1346,211 +1348,210 @@ class QuizInterRaterAgreementView(APIView):
         comparison_data = []
 
         # Determine Student Scale Lookup
-        # quiz_scale is defined in Step 2.
         scale_lookup = {qs.value: qs.mapped_value for qs in quiz_scale}
 
         from scipy import stats
-
-        for qc in quiz_criteria:
-            q_cid = qc.criterion_id
-            i_code = qc.instructor_criterion_code
-            if not i_code:
-                continue
-
-            # Collect pairs for this criterion
-            student_scores_mapped = []
-            instructor_scores = []
-            common_count = 0
-
-            for pid in relevant_problem_ids:
-                s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
-                i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
-
-                if s_vals_objs and i_vals_objs:
-                    # Student Score: Map individual ratings then average
-                    s_raw_vals = [x['raw'] for x in s_vals_objs]
-                    
-                    # Map using explicit lookup
-                    s_mapped_list = []
-                    for v in s_raw_vals:
-                        single_mapped = scale_lookup.get(v)
-                        if single_mapped is None:
-                            single_mapped = v
-                        s_mapped_list.append(single_mapped)
-
-                    s_mapped = mean(s_mapped_list) if s_mapped_list else 0
-
-                    # Instructor Score: Mean of values
-                    i_vals = [x['value'] for x in i_vals_objs]
-                    i_mean = mean(i_vals) if i_vals else 0
-
-                    student_scores_mapped.append(s_mapped)
-                    instructor_scores.append(i_mean)
-                    common_count += 1
-                    
-                    
-                    # Update detailed comparisons with mapped student score and details
-                    if pid in detailed_comparisons and q_cid in detailed_comparisons[pid]['ratings']:
-                        detailed_comparisons[pid]['ratings'][q_cid]['student_mean_norm'] = s_mapped
-                        detailed_comparisons[pid]['ratings'][q_cid]['student_details'] = [{'raw': r, 'mapped': m} for r, m in zip(s_raw_vals, s_mapped_list)]
-            
-            # Perform Paired T-Test
-            t_stat = None
-            p_val = None
-            mean_diff = None
-            
-            if common_count > 1:
-                # Check if all differences are zero to avoid runtime warning
-                if all(s == i for s, i in zip(student_scores_mapped, instructor_scores)):
-                     t_stat = 0.0
-                     p_val = 1.0
-                else:
-                    try:
-                        result = stats.ttest_rel(student_scores_mapped, instructor_scores)
-                        t_stat = result.statistic
-                        p_val = result.pvalue
-                    except Exception as e:
-                        print(f"Error calculating t-test for {qc.name}: {e}")
-            
-            # Calculate means
-            avg_s_mapped = mean(student_scores_mapped) if student_scores_mapped else 0
-            avg_i = mean(instructor_scores) if instructor_scores else 0
-            mean_diff = avg_s_mapped - avg_i
-
-            comparison_data.append({
-                'criterion_id': q_cid,
-                'criterion_name': qc.name,
-                'common_problems': common_count,
-                't_statistic': round(t_stat, 4) if t_stat is not None else None,
-                'p_value': round(p_val, 5) if p_val is not None else None,
-                'instructor_mean': round(avg_i, 4),
-                'student_mean_norm': round(avg_s_mapped, 4),
-                'mean_difference': round(mean_diff, 4),
-                'df': common_count - 1 if common_count > 0 else 0
-            })
-
-        # Calculate Weighted Scores Comparison
-        # 1. Build Weight Map: {criterion_code: weight}
-        # We need to look at the instructor ratings to find the weights for the criteria codes.
-        # Since we already fetched instructor ratings with 'entries__criterion', we can extract weights.
-        weight_map = {}
-        for pid, ratings_map in instructor_ratings_data.items():
-            for code, entries in ratings_map.items():
-                if code not in weight_map and entries:
-                    # Access the criterion object from the first entry if available?
-                    # The current structure of 'instructor_ratings_data' stores simplified dicts/objects: 
-                    # 'value', 'raw_entry' ... we need to check how it was populated.
-                    # Looking at lines 1120+ (not shown) or we can reinfer from the qs.
-                    # Let's rebuild the loop over instructor_ratings query set which we have access to?
-                    # 'instructor_ratings' variable (line 1238 approx)
-                    pass
         
-        # Better approach: Iterate over the prefetched instructor_ratings queryset again to build weight map
-        # Or just trust that we can find it.
-        # Let's iterate instructor_ratings qset.
+        # Build Groups
+        # Group relevant_problem_ids by their group
+        groups = {}
+        for pid in relevant_problem_ids:
+             g = problem_group_map.get(pid, '') or '-'
+             if g not in groups:
+                 groups[g] = []
+             groups[g].append(pid)
+        
+        # Add Overall group
+        groups['Overall'] = relevant_problem_ids
+        
+        # Build Weight Map beforehand (needed for weighted calc)
+        weight_map = {}
         for r in instructor_ratings:
             for entry in r.entries.all():
                 cid = entry.criterion.criterion_id
                 if cid not in weight_map:
                     weight_map[cid] = entry.criterion.weight
 
-        # 2. Calculate Weighted Averages per Problem
-        weighted_student_scores = []
-        weighted_instructor_scores = []
-        weighted_common_count = 0
-        
-        for pid in relevant_problem_ids:
-            # Check availability
-            # We need to sum (score * weight) / sum(weight) for all available criteria for this problem
+        # Iterate Groups
+        for group_name in sorted(groups.keys()):
+            group_pids = groups[group_name]
             
-            s_sum = 0
-            i_sum = 0
-            w_sum = 0
-            
-            has_valid_data = False
-            
-            # Get scale for this problem
-            # i_min, i_max, i_range = problem_scale_map.get(pid, (0, 0, 0)) # Not needed with explicit mapping
-            
+            # --- Per Criterion Comparison ---
             for qc in quiz_criteria:
+                q_cid = qc.criterion_id
                 i_code = qc.instructor_criterion_code
-                if not i_code or i_code not in weight_map:
+                if not i_code:
                     continue
-                    
-                weight = weight_map[i_code]
+
+                # Collect pairs for this criterion (only for problems in this group)
+                student_scores_mapped = []
+                instructor_scores = []
+                common_count = 0
+
+                for pid in group_pids:
+                    s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
+                    i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
+
+                    if s_vals_objs and i_vals_objs:
+                        # Student Score: Map individual ratings then average
+                        s_raw_vals = [x['raw'] for x in s_vals_objs]
+                        
+                        # Map using explicit lookup
+                        s_mapped_list = []
+                        for v in s_raw_vals:
+                            single_mapped = scale_lookup.get(v)
+                            if single_mapped is None:
+                                single_mapped = v
+                            s_mapped_list.append(single_mapped)
+
+                        s_mapped = mean(s_mapped_list) if s_mapped_list else 0
+
+                        # Instructor Score
+                        i_vals = [x['value'] for x in i_vals_objs]
+                        i_mean = mean(i_vals) if i_vals else 0
+
+                        student_scores_mapped.append(s_mapped)
+                        instructor_scores.append(i_mean)
+                        common_count += 1
+                        
+                        # Update detailed comparisons (Per Problem - side effect OK inside loop)
+                        if pid in detailed_comparisons and q_cid in detailed_comparisons[pid]['ratings']:
+                            detailed_comparisons[pid]['ratings'][q_cid]['student_mean_norm'] = s_mapped
+                            detailed_comparisons[pid]['ratings'][q_cid]['student_details'] = [{'raw': r, 'mapped': m} for r, m in zip(s_raw_vals, s_mapped_list)]
                 
-                # Student Data
-                s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
-                # Instructor Data
-                i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
+                # Perform Paired T-Test for Group
+                t_stat = None
+                p_val = None
+                mean_diff = None
+                
+                if common_count > 1:
+                    if all(s == i for s, i in zip(student_scores_mapped, instructor_scores)):
+                         t_stat = 0.0
+                         p_val = 1.0
+                    else:
+                        try:
+                            result = stats.ttest_rel(student_scores_mapped, instructor_scores)
+                            t_stat = result.statistic
+                            p_val = result.pvalue
+                        except Exception as e:
+                            print(f"Error calculating t-test for {qc.name}: {e}")
+                
+                avg_s_mapped = mean(student_scores_mapped) if student_scores_mapped else 0
+                avg_i = mean(instructor_scores) if instructor_scores else 0
+                mean_diff = avg_s_mapped - avg_i
 
-                if s_vals_objs and i_vals_objs:
-                    # Student Mapped
-                    s_raw_vals = [x['raw'] for x in s_vals_objs]
-                    
-                    s_mapped_list = []
-                    for v in s_raw_vals:
-                        single_mapped = scale_lookup.get(v)
-                        if single_mapped is None:
-                            single_mapped = v
-                        s_mapped_list.append(single_mapped)
+                comparison_data.append({
+                    'criterion_id': q_cid,
+                    'criterion_name': qc.name,
+                    'group': group_name,
+                    'common_problems': common_count,
+                    't_statistic': round(t_stat, 4) if t_stat is not None else None,
+                    'p_value': round(p_val, 5) if p_val is not None else None,
+                    'instructor_mean': round(avg_i, 4),
+                    'student_mean_norm': round(avg_s_mapped, 4),
+                    'mean_difference': round(mean_diff, 4),
+                    'df': common_count - 1 if common_count > 0 else 0
+                })
 
-                    s_mapped = mean(s_mapped_list) if s_mapped_list else 0
-                    
-                    # Instructor
-                    i_vals = [x['value'] for x in i_vals_objs]
-                    i_mean = mean(i_vals) if i_vals else 0
-                    
-                    s_sum += s_mapped * weight
-                    i_sum += i_mean * weight
-                    w_sum += weight
-                    has_valid_data = True
+            # --- Weighted Scores Comparison for Group ---
+            weighted_student_scores = []
+            weighted_instructor_scores = []
+            weighted_common_count = 0
             
-            if has_valid_data and w_sum > 0:
-                w_s_avg = s_sum / w_sum
-                w_i_avg = i_sum / w_sum
+            for pid in group_pids:
+                # Calculate weighted score for problem
+                # Need s_mapped for each criterion.
+                # Since we already computed s_mapped in loop above but didn't store per-pid easily accessible (unless we access detailed_comparisons).
+                # But detailed_comparisons might not have it if q_cid not in detailed_comparisons[pid]['ratings']?
+                # Actually detailed_comparisons is reliably populated.
                 
-                weighted_student_scores.append(w_s_avg)
-                weighted_instructor_scores.append(w_i_avg)
-                weighted_common_count += 1
+                # Let's recompute or use detailed_comparisons
+                # Recomputing is safer/cleaner than digging into detailed_comparisons structure which has presentation strings?
+                # Detailed comparisons has numeric values stored.
                 
-                if pid in detailed_comparisons:
-                     detailed_comparisons[pid]['weighted_instructor'] = w_i_avg
-                     detailed_comparisons[pid]['weighted_student'] = w_s_avg
-                     detailed_comparisons[pid]['weighted_diff'] = w_s_avg - w_i_avg
+                # Let's recompute to be safe and independent.
+                
+                s_sum = 0
+                i_sum = 0
+                w_sum = 0
+                has_valid_data = False
+                
+                # We need to iterate all criteria again or look up what ratings this problem has.
+                # Using student_ratings_data keys?
+                # Better: Iterate all instructor criteria available for this pid.
+                
+                # We can iterate quiz_criteria again
+                for qc in quiz_criteria:
+                    i_code = qc.instructor_criterion_code
+                    if not i_code or i_code not in weight_map:
+                        continue
+                        
+                    weight = weight_map[i_code]
+                    
+                    s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
+                    i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
 
-        # 3. Perform T-Test on Weighted Scores
-        wt_stat = None
-        wp_val = None
-        w_mean_diff = None
-        
-        if weighted_common_count > 1:
-            if all(s == i for s, i in zip(weighted_student_scores, weighted_instructor_scores)):
-                 wt_stat = 0.0
-                 wp_val = 1.0
-            else:
-                try:
-                    wresult = stats.ttest_rel(weighted_student_scores, weighted_instructor_scores)
-                    wt_stat = wresult.statistic
-                    wp_val = wresult.pvalue
-                except Exception as e:
-                    print(f"Error calculating weighted t-test: {e}")
-        
-        w_avg_s = mean(weighted_student_scores) if weighted_student_scores else 0
-        w_avg_i = mean(weighted_instructor_scores) if weighted_instructor_scores else 0
-        w_mean_diff = w_avg_s - w_avg_i
-        
-        comparison_data.append({
-            'criterion_id': 'weighted',
-            'criterion_name': 'Weighted Score',
-            'common_problems': weighted_common_count,
-            't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
-            'p_value': round(wp_val, 5) if wp_val is not None else None,
-            'instructor_mean': round(w_avg_i, 4),
-            'student_mean_norm': round(w_avg_s, 4),
-            'mean_difference': round(w_mean_diff, 4),
-            'df': weighted_common_count - 1 if weighted_common_count > 0 else 0
-        })
+                    if s_vals_objs and i_vals_objs:
+                        # Student
+                        s_raw_vals = [x['raw'] for x in s_vals_objs]
+                        s_mapped_list = [scale_lookup.get(v, v) for v in s_raw_vals]
+                        s_mapped = mean(s_mapped_list) if s_mapped_list else 0
+                        
+                        # Instructor
+                        i_vals = [x['value'] for x in i_vals_objs]
+                        i_mean = mean(i_vals) if i_vals else 0
+                        
+                        s_sum += s_mapped * weight
+                        i_sum += i_mean * weight
+                        w_sum += weight
+                        has_valid_data = True
+                
+                if has_valid_data and w_sum > 0:
+                    w_s_avg = s_sum / w_sum
+                    w_i_avg = i_sum / w_sum
+                    
+                    weighted_student_scores.append(w_s_avg)
+                    weighted_instructor_scores.append(w_i_avg)
+                    weighted_common_count += 1
+                    
+                    if pid in detailed_comparisons:
+                         detailed_comparisons[pid]['weighted_instructor'] = w_i_avg
+                         detailed_comparisons[pid]['weighted_student'] = w_s_avg
+                         detailed_comparisons[pid]['weighted_diff'] = w_s_avg - w_i_avg
+
+            # T-Test Weighted
+            wt_stat = None
+            wp_val = None
+            w_mean_diff = None
+            
+            if weighted_common_count > 1:
+                if all(s == i for s, i in zip(weighted_student_scores, weighted_instructor_scores)):
+                     wt_stat = 0.0
+                     wp_val = 1.0
+                else:
+                    try:
+                        wresult = stats.ttest_rel(weighted_student_scores, weighted_instructor_scores)
+                        wt_stat = wresult.statistic
+                        wp_val = wresult.pvalue
+                    except Exception as e:
+                        print(f"Error calculating weighted t-test: {e}")
+            
+            w_avg_s = mean(weighted_student_scores) if weighted_student_scores else 0
+            w_avg_i = mean(weighted_instructor_scores) if weighted_instructor_scores else 0
+            w_mean_diff = w_avg_s - w_avg_i
+            
+            comparison_data.append({
+                'criterion_id': 'weighted',
+                'criterion_name': 'Weighted Score',
+                'group': group_name,
+                'common_problems': weighted_common_count,
+                't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
+                'p_value': round(wp_val, 5) if wp_val is not None else None,
+                'instructor_mean': round(w_avg_i, 4),
+                'student_mean_norm': round(w_avg_s, 4),
+                'mean_difference': round(w_mean_diff, 4),
+                'df': weighted_common_count - 1 if weighted_common_count > 0 else 0
+            })
             
         details_list = sorted(list(detailed_comparisons.values()), key=lambda x: x['problem_id'])
         

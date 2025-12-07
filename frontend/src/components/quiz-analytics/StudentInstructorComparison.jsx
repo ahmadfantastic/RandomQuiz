@@ -30,52 +30,92 @@ const StudentInstructorComparison = ({ data }) => {
         )
     }
 
+    // Group comparison by group field
+    const groupedComparison = comparison.reduce((acc, item) => {
+        const group = item.group || 'Ungrouped';
+        if (!acc[group]) acc[group] = [];
+        acc[group].push(item);
+        return acc;
+    }, {});
+
+    // Extract Overall
+    const overallComparison = groupedComparison['Overall'];
+    const groups = Object.keys(groupedComparison).filter(g => g !== 'Overall').sort();
+
+    const ComparisonTable = ({ title, items, className }) => (
+        <div className={`border rounded-md overflow-hidden ${className}`}>
+            <div className="px-4 py-2 bg-muted/40 font-semibold text-sm border-b">
+                {title}
+            </div>
+            <Table>
+                <TableHeader className="bg-secondary/50">
+                    <TableRow>
+                        <TableHead className="w-[150px]">Criterion</TableHead>
+                        <TableHead>Common Problems</TableHead>
+                        <TableHead>Instructor Mean</TableHead>
+                        <TableHead>Student Mean (Mapped)</TableHead>
+                        <TableHead>Mean Diff</TableHead>
+                        <TableHead>T-Statistic</TableHead>
+                        <TableHead>P-Value</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {items.map((item) => (
+                        <TableRow key={item.criterion_id}>
+                            <TableCell className="font-medium">{item.criterion_name}</TableCell>
+                            <TableCell>{item.common_problems}</TableCell>
+                            <TableCell>{item.instructor_mean}</TableCell>
+                            <TableCell>{item.student_mean_norm}</TableCell>
+                            <TableCell className={item.mean_difference > 0 ? "text-green-600" : "text-red-600"}>
+                                {item.mean_difference > 0 ? "+" : ""}{item.mean_difference}
+                            </TableCell>
+                            <TableCell>{item.t_statistic !== null ? item.t_statistic : '-'}</TableCell>
+                            <TableCell>
+                                {item.p_value !== null ? (
+                                    <span className={item.p_value < 0.05 ? "font-bold text-primary" : ""}>
+                                        {item.p_value}
+                                        {item.p_value < 0.05 && "*"}
+                                    </span>
+                                ) : '-'}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </div>
+    );
+
     return (
         <div className="space-y-6">
             <Card>
                 <CardHeader>
                     <CardTitle>Student vs Instructor Comparison</CardTitle>
                     <CardDescription>
-                        Comparison of ratings. Student ratings are mapped to the Instructor's scale range (e.g. 1-5).
+                        Comparison of ratings segmented by Problem Group.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <div className="max-h-[500px] overflow-y-auto">
-                        <Table>
-                            <TableHeader className="sticky top-0 bg-secondary z-10 shadow-sm">
-                                <TableRow>
-                                    <TableHead>Criterion</TableHead>
-                                    <TableHead>Common Problems</TableHead>
-                                    <TableHead>Instructor Mean</TableHead>
-                                    <TableHead>Student Mean (Mapped)</TableHead>
-                                    <TableHead>Mean Diff</TableHead>
-                                    <TableHead>T-Statistic</TableHead>
-                                    <TableHead>P-Value</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {comparison.map((item) => (
-                                    <TableRow key={item.criterion_id}>
-                                        <TableCell className="font-medium">{item.criterion_name}</TableCell>
-                                        <TableCell>{item.common_problems}</TableCell>
-                                        <TableCell>{item.instructor_mean}</TableCell>
-                                        <TableCell>{item.student_mean_norm}</TableCell>
-                                        <TableCell className={item.mean_difference > 0 ? "text-green-600" : "text-red-600"}>
-                                            {item.mean_difference > 0 ? "+" : ""}{item.mean_difference}
-                                        </TableCell>
-                                        <TableCell>{item.t_statistic !== null ? item.t_statistic : '-'}</TableCell>
-                                        <TableCell>
-                                            {item.p_value !== null ? (
-                                                <span className={item.p_value < 0.05 ? "font-bold text-primary" : ""}>
-                                                    {item.p_value}
-                                                    {item.p_value < 0.05 && "*"}
-                                                </span>
-                                            ) : '-'}
-                                        </TableCell>
-                                    </TableRow>
+                    <div className="max-h-[600px] overflow-y-auto p-4 space-y-8">
+                        {overallComparison && (
+                            <ComparisonTable
+                                title="Overall (All Problems)"
+                                items={overallComparison}
+                                className="border-primary/20 shadow-sm"
+                            />
+                        )}
+
+                        {groups.length > 0 && (
+                            <div className="space-y-4">
+                                <h3 className="font-medium text-lg text-muted-foreground">Breakdown by Group</h3>
+                                {groups.map(group => (
+                                    <ComparisonTable
+                                        key={group}
+                                        title={`Group: ${group}`}
+                                        items={groupedComparison[group]}
+                                    />
                                 ))}
-                            </TableBody>
-                        </Table>
+                            </div>
+                        )}
                     </div>
                 </CardContent >
             </Card >
@@ -121,7 +161,8 @@ const DetailedComparisonTable = ({ details, criteria }) => {
                                 {details.map((row) => (
                                     <TableRow key={row.problem_id}>
                                         <TableCell className="font-medium whitespace-nowrap">
-                                            {row.problem_label}
+                                            {row.problem_label} <br />
+                                            {row.problem_group || '-'}
                                         </TableCell>
                                         {criteria.map((col) => {
                                             const rating = row.ratings[col.id];
