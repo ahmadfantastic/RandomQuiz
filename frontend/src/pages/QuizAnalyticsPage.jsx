@@ -9,6 +9,7 @@ import OverviewAnalytics from '@/components/quiz-analytics/OverviewAnalytics';
 import InteractionAnalytics from '@/components/quiz-analytics/InteractionAnalytics';
 import SlotAnalytics from '@/components/quiz-analytics/SlotAnalytics';
 import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
+import StudentInstructorComparison from '@/components/quiz-analytics/StudentInstructorComparison';
 
 const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     const [loading, setLoading] = useState(true);
@@ -103,7 +104,9 @@ const QuizAnalyticsPage = () => {
         const index = searchParams.get('index');
 
         if (tab === 'interaction') return 'interaction';
+        if (tab === 'interaction') return 'interaction';
         if (tab === 'agreement') return 'agreement';
+        if (tab === 'comparison') return 'comparison';
 
         if (tab === 'slot' && index !== null && slots.length > 0) {
             // Find slot by index (preserving order)
@@ -131,6 +134,9 @@ const QuizAnalyticsPage = () => {
             newParams.delete('index');
         } else if (value === 'agreement') {
             newParams.set('tab', 'agreement');
+            newParams.delete('index');
+        } else if (value === 'comparison') {
+            newParams.set('tab', 'comparison');
             newParams.delete('index');
         } else if (value.startsWith('slot-')) {
             const slotId = parseInt(value.replace('slot-', ''), 10);
@@ -217,6 +223,7 @@ const QuizAnalyticsPage = () => {
                             <TabsTrigger value="overview">Overview</TabsTrigger>
                             <TabsTrigger value="interaction">Interactions</TabsTrigger>
                             <TabsTrigger value="agreement">Agreement</TabsTrigger>
+                            <TabsTrigger value="comparison">S vs I Comparison</TabsTrigger>
                             {slots.map(slot => (
                                 <TabsTrigger key={slot.id} value={`slot-${slot.id}`}>
                                     {slot.label || `Slot ${slot.order}`}
@@ -244,6 +251,13 @@ const QuizAnalyticsPage = () => {
                             <AnalyticsTabContent
                                 endpoint={`/api/quizzes/${quizId}/analytics/agreement/`}
                                 renderContent={(data) => <InterRaterAgreement data={data} />}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="comparison">
+                            <AnalyticsTabContent
+                                endpoint={`/api/quizzes/${quizId}/analytics/agreement/`}
+                                renderContent={(data) => <StudentInstructorComparison data={data} />}
                             />
                         </TabsContent>
 

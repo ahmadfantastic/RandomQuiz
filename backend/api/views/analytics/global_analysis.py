@@ -57,6 +57,7 @@ class GlobalAnalysisView(APIView):
             criteria_weights = {c['name']: c.get('weight', 1) for c in criteria_list}
             
             total_max_score = 0
+            total_weight = 0
             if scale and criteria_list:
                 max_val = max(s['value'] for s in scale)
                 # Max score = max_scale_val * sum(weights)
@@ -1043,7 +1044,7 @@ class GlobalAnalysisView(APIView):
                 'kappa_score': round(k, 4) if k is not None else None
             })
             
-        agreement_data.sort(key=lambda x: x['criterion_name'])
+        agreement_data.sort(key=lambda x: global_criterion_orders.get(x['criterion_name'], 999))
 
         # Overall Row
         if all_student_ratings_list:
@@ -1062,7 +1063,7 @@ class GlobalAnalysisView(APIView):
             })
 
         # Columns
-        criteria_columns = sorted(list(all_criteria_columns_map.values()), key=lambda x: x['name'])
+        criteria_columns = sorted(list(all_criteria_columns_map.values()), key=lambda x: global_criterion_orders.get(x['name'], 999))
         
         # Details List
         # Filter out empty comparisons
@@ -1084,8 +1085,8 @@ class GlobalAnalysisView(APIView):
         
         for c_name in sorted_criteria_names:
             counts = global_rating_counts[c_name]
-            stats = global_rating_stats[c_name]
-            labels = stats['scale_labels']
+            criterion_stats = global_rating_stats[c_name]
+            labels = criterion_stats['scale_labels']
             
             total_responses = sum(counts.values())
             
@@ -1109,11 +1110,289 @@ class GlobalAnalysisView(APIView):
                 'name': c_name,
                 'distribution': dist_data,
                 'total': total_responses,
-                'mean': stats['total_score'] / stats['count'] if stats['count'] > 0 else 0
+                'mean': criterion_stats['total_score'] / criterion_stats['count'] if criterion_stats['count'] > 0 else 0
             })
 
         response_data['global_rating_distribution'] = global_rating_distribution_data
 
+        # 6. Global Student vs Instructor Comparison
+        # ---------------------------------------------------------------------
+        global_comparison_rows = []
+        global_detailed_comparisons = []
+        
+        # Accumulators for Global T-Tests
+        # criterion_code -> { 's_norm': [], 'i_raw': [] }
+        global_comparison_acc = {} 
+        # Weighted Score Accumulators
+        # { 's_weighted': [], 'i_weighted': [] }
+        global_weighted_acc = {'s': [], 'i': []}
+        
+        # We need a map of criterion code to display name (taking first available)
+        global_code_to_name = {}
+        global_code_to_order = {}
+        
+        for quiz in quizzes:
+            # Re-fetch ratings/students for this specific purpose to ensure clean context (or reuse if optimized)
+            # We need student ratings mapped to instructor codes.
+            
+            # 1. Get Criteria
+            q_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+            if not q_criteria.exists():
+                continue
+                
+            q_criterion_map = {} # quiz_crit_id -> instructor_code
+            for qc in q_criteria:
+                if qc.instructor_criterion_code:
+                    q_criterion_map[qc.criterion_id] = qc.instructor_criterion_code
+                    if qc.instructor_criterion_code not in global_code_to_name:
+                         global_code_to_name[qc.instructor_criterion_code] = qc.name
+                    if qc.instructor_criterion_code not in global_code_to_order:
+                         global_code_to_order[qc.instructor_criterion_code] = qc.order
+
+            if not q_criterion_map:
+                continue
+            
+            # 2. Get Scale for Normalization
+            q_scale = QuizRatingScaleOption.objects.filter(quiz=quiz)
+            q_scale_vals = [qs.value for qs in q_scale]
+            if q_scale_vals:
+                s_min = min(q_scale_vals)
+                s_max = max(q_scale_vals)
+                s_range = s_max - s_min
+            else:
+                s_min = 0; s_max=0; s_range=0
+
+            # 3. Fetch Data
+            # Instructor Ratings
+            # Link: Rating -> Problem -> QuizSlotProblemBank (slot_links) -> QuizSlot -> Quiz
+            i_ratings = InstructorProblemRating.objects.filter(problem__slot_links__quiz_slot__quiz=quiz).distinct() 
+            # Note: The link from Quiz -> Problem is via QuizSlot -> ProblemBank or QuizSlot -> Problems?
+            # Creating a correct query for relevant problems in this quiz.
+            # Quiz -> QuizSlot -> QuizSlotProblemBank -> Problem
+            # OR Quiz -> QuizSlot (with bank) -> ProblemBank -> Problems
+            
+            # Let's rely on relevant_problem_ids from "used" problems (attempts?)
+            # or just all problems "assigned" to the quiz?
+            # analytics/quiz.py uses: valid_problems = set(attempts...assigned_problem) AND set(instructor_ratings...problem)
+            
+            # Let's find all problems associated with this quiz via slots
+            # This might be expensive loop-in-loop. 
+            # Optimization: Get all completed attempts for this quiz
+            q_attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+            if not q_attempts.exists():
+                continue
+                
+            q_attempt_slots = QuizAttemptSlot.objects.filter(attempt__in=q_attempts).select_related('assigned_problem', 'slot')
+            
+            # Map: pid -> { code -> [raw_values] }
+            s_data_map = {}
+            for qas in q_attempt_slots:
+                pid = qas.assigned_problem_id
+                if not pid: continue
+                
+                # Check rating data
+                if qas.answer_data and 'ratings' in qas.answer_data:
+                     ratings = qas.answer_data['ratings']
+                     for cid, val in ratings.items():
+                         if cid in q_criterion_map:
+                             icode = q_criterion_map[cid]
+                             if pid not in s_data_map: s_data_map[pid] = {}
+                             if icode not in s_data_map[pid]: s_data_map[pid][icode] = []
+                             try:
+                                 s_data_map[pid][icode].append(float(val))
+                             except: pass
+
+            if not s_data_map:
+                continue
+
+            # Instructor Ratings for these problems
+            relevant_pids = list(s_data_map.keys())
+            q_i_ratings = InstructorProblemRating.objects.filter(
+                problem_id__in=relevant_pids, 
+                instructor=instructor
+            ).select_related('problem').prefetch_related('entries', 'entries__criterion')
+            
+            # Map: pid -> { code -> val, weight }
+            i_data_map = {}
+            # Also need weights for weighted score
+            i_weights_map = {} # pid -> { code -> weight }
+            # Map: pid -> order
+            i_order_map = {}
+            
+            for r in q_i_ratings:
+                pid = r.problem_id
+                if pid not in i_data_map: i_data_map[pid] = {}
+                if pid not in i_weights_map: i_weights_map[pid] = {}
+                i_order_map[pid] = r.problem.order_in_bank
+                
+                for entry in r.entries.all():
+                     code = entry.criterion.criterion_id 
+                     # Note: this code must match instructor_criterion_code in q_criterion_map
+                     # If rubric criterion ID usage is consistent.
+                     
+                     val = entry.scale_option.value
+                     weight = entry.criterion.weight
+                     
+                     i_data_map[pid][code] = val
+                     i_weights_map[pid][code] = weight
+
+            # 4. Compare Per Problem
+            for pid in relevant_pids:
+                if pid not in i_data_map:
+                    continue
+                
+                # We have student ratings and instructor ratings for this problem
+                p_s_data = s_data_map[pid]
+                p_i_data = i_data_map[pid]
+                p_weights = i_weights_map.get(pid, {})
+                problem_order = i_order_map.get(pid, pid)
+                
+                # For weighted calculation
+                p_s_w_sum = 0
+                p_i_w_sum = 0
+                p_w_tot = 0
+                has_w_data = False
+                
+                # Detail Object
+                detail_obj = {
+                    'problem_id': pid,
+                    'problem_label': f"{quiz.title}: Problem {problem_order}", 
+                    'ratings': {},
+                    'weighted_instructor': 0, 'weighted_student': 0, 'weighted_diff': 0
+                }
+                
+                # Look up problem label?
+                # We can fetch Problem objects in bulk or just use ID for now to save query
+                
+                for icode, s_raw_list in p_s_data.items():
+                    if icode in p_i_data:
+                        # Instructor Value
+                        i_val = p_i_data[icode]
+                        
+                        # Student Value (Mean Raw -> Norm)
+                        s_mean_raw = mean(s_raw_list)
+                        s_norm = (s_mean_raw - s_min) / s_range if s_range > 0 else 0
+                        
+                        # Add to Global Accumulators
+                        if icode not in global_comparison_acc:
+                            global_comparison_acc[icode] = {'s_norm': [], 'i_raw': [], 'common': 0}
+                        
+                        global_comparison_acc[icode]['s_norm'].append(s_norm)
+                        global_comparison_acc[icode]['i_raw'].append(i_val)
+                        global_comparison_acc[icode]['common'] += 1
+                        
+                        detail_obj['ratings'][icode] = {
+                            'instructor': i_val,
+                            'instructor_mean': i_val,
+                            'student_mean_norm': s_norm,
+                            'diff': s_norm - i_val
+                        }
+                        
+                        # Weighted Calc
+                        w = p_weights.get(icode, 1)
+                        p_s_w_sum += s_norm * w
+                        p_i_w_sum += i_val * w
+                        p_w_tot += w
+                        has_w_data = True
+                
+                if has_w_data and p_w_tot > 0:
+                    w_s = p_s_w_sum / p_w_tot
+                    w_i = p_i_w_sum / p_w_tot
+                    
+                    global_weighted_acc['s'].append(w_s)
+                    global_weighted_acc['i'].append(w_i)
+                    
+                    detail_obj['weighted_instructor'] = w_i
+                    detail_obj['weighted_student'] = w_s
+                    detail_obj['weighted_diff'] = w_s - w_i
+                    
+                    global_detailed_comparisons.append(detail_obj)
+
+        # ... after global_comparison_acc population ...
+
+        # 5. Compute Statistics for Global Rows
+        # Per Criterion
+        sorted_icodes = sorted(list(global_comparison_acc.keys()), key=lambda x: global_code_to_order.get(x, 999))
+        
+        for icode in sorted_icodes:
+            acc = global_comparison_acc[icode]
+            s_list = acc['s_norm']
+            i_list = acc['i_raw']
+            n = len(s_list)
+            
+            t_stat, p_val = None, None
+            if n > 1:
+                # check identical
+                if all(a==b for a,b in zip(s_list, i_list)):
+                    t_stat, p_val = 0.0, 1.0
+                else:
+                    try:
+                        res = stats.ttest_rel(s_list, i_list)
+                        t_stat, p_val = res.statistic, res.pvalue
+                    except: pass
+            
+            avg_s = mean(s_list) if s_list else 0
+            avg_i = mean(i_list) if i_list else 0
+            
+            global_comparison_rows.append({
+                'criterion_id': icode,
+                'criterion_name': global_code_to_name.get(icode, icode),
+                'order': global_code_to_order.get(icode, 999),
+                'common_problems': n,
+                't_statistic': round(t_stat, 4) if t_stat is not None else None,
+                'p_value': round(p_val, 5) if p_val is not None else None,
+                'instructor_mean': round(avg_i, 4),
+                'student_mean_norm': round(avg_s, 4),
+                'mean_difference': round(avg_s - avg_i, 4),
+                'df': n - 1 if n > 0 else 0
+            })
+            
+        # Weighted Score Row
+        ws_list = global_weighted_acc['s']
+        wi_list = global_weighted_acc['i']
+        wn = len(ws_list)
+        wt_stat, wp_val = None, None
+        
+        if wn > 1:
+             if all(a==b for a,b in zip(ws_list, wi_list)):
+                 wt_stat, wp_val = 0.0, 1.0
+             else:
+                 try:
+                     res = stats.ttest_rel(ws_list, wi_list)
+                     wt_stat, wp_val = res.statistic, res.pvalue
+                 except: pass
+        
+        w_avg_s = mean(ws_list) if ws_list else 0
+        w_avg_i = mean(wi_list) if wi_list else 0
+        
+        global_comparison_rows.append({
+            'criterion_id': 'weighted',
+            'criterion_name': 'Weighted Score',
+            'order': 9999,
+            'common_problems': wn,
+            't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
+            'p_value': round(wp_val, 5) if wp_val is not None else None,
+            'instructor_mean': round(w_avg_i, 4),
+            'student_mean_norm': round(w_avg_s, 4),
+            'mean_difference': round(w_avg_s - w_avg_i, 4),
+            'df': wn - 1 if wn > 0 else 0
+        })
+
+        # Columns for Frontend
+        criteria_columns = []
+        for c in sorted_icodes:
+            criteria_columns.append({
+                'id': c,
+                'name': global_code_to_name.get(c, c),
+                'code': c
+            })
+
+        response_data['global_comparison'] = {
+            'comparison': global_comparison_rows,
+            'details': sorted(global_detailed_comparisons, key=lambda x: x['problem_id']),
+            'criteria_columns': criteria_columns
+        }
+        
         return Response(self.sanitize_data(response_data))
 
     def update_global_criteria_data(self, global_criteria_data, c, c_y1, c_y2, scale_vals):

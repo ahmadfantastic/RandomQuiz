@@ -1342,6 +1342,216 @@ class QuizInterRaterAgreementView(APIView):
                 'kappa_score': round(overall_kappa, 4)
             })
 
+        # 6. Student vs Instructor Comparison (Paired T-Test)
+        comparison_data = []
+
+        # Determine Student Scale Min/Max for Normalization
+        # We use quiz_scale from step 2
+        student_scale_values = [qs.value for qs in quiz_scale]
+        if student_scale_values:
+            s_min = min(student_scale_values)
+            s_max = max(student_scale_values)
+            s_range = s_max - s_min
+        else:
+            s_min = 0
+            s_max = 0
+            s_range = 0
+
+        from scipy import stats
+
+        for qc in quiz_criteria:
+            q_cid = qc.criterion_id
+            i_code = qc.instructor_criterion_code
+            if not i_code:
+                continue
+
+            # Collect pairs for this criterion
+            student_scores_norm = []
+            instructor_scores = []
+            common_count = 0
+
+            for pid in relevant_problem_ids:
+                s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
+                i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
+
+                if s_vals_objs and i_vals_objs:
+                    # Student Score: Mean of raw ratings
+                    s_raw_vals = [x['raw'] for x in s_vals_objs]
+                    s_mean_raw = mean(s_raw_vals) if s_raw_vals else 0
+                    
+                    # Normalize Student Score: (val - min) / (max - min)
+                    if s_range > 0:
+                        s_norm = (s_mean_raw - s_min) / s_range
+                    else:
+                        s_norm = 0 # Default fallback if range is 0 (should shouldn't happen with valid scale)
+
+                    # Instructor Score: Mean of values
+                    # Note: Instructor values are already on the target normalized scale (0-1 typically for rubrics) 
+                    # OR we assume they are the "ground truth" scale we want to compare against.
+                    # Per user request: "scale the 1,2,3,4,5 to be between 0 and 1 as well" 
+                    # implying instructor ratings are already 0-1 (e.g. 0, 0.5, 1).
+                    i_vals = [x['value'] for x in i_vals_objs]
+                    i_mean = mean(i_vals) if i_vals else 0
+
+                    student_scores_norm.append(s_norm)
+                    instructor_scores.append(i_mean)
+                    common_count += 1
+                    
+                    # Update detailed comparisons with normalized student score
+                    if pid in detailed_comparisons and q_cid in detailed_comparisons[pid]['ratings']:
+                        detailed_comparisons[pid]['ratings'][q_cid]['student_mean_norm'] = s_norm
+            
+            # Perform Paired T-Test
+            t_stat = None
+            p_val = None
+            mean_diff = None
+            
+            if common_count > 1:
+                # Check if all differences are zero to avoid runtime warning
+                if all(s == i for s, i in zip(student_scores_norm, instructor_scores)):
+                     t_stat = 0.0
+                     p_val = 1.0
+                else:
+                    try:
+                        result = stats.ttest_rel(student_scores_norm, instructor_scores)
+                        t_stat = result.statistic
+                        p_val = result.pvalue
+                    except Exception as e:
+                        print(f"Error calculating t-test for {qc.name}: {e}")
+            
+            # Calculate means
+            avg_s_norm = mean(student_scores_norm) if student_scores_norm else 0
+            avg_i = mean(instructor_scores) if instructor_scores else 0
+            mean_diff = avg_s_norm - avg_i
+
+            comparison_data.append({
+                'criterion_id': q_cid,
+                'criterion_name': qc.name,
+                'common_problems': common_count,
+                't_statistic': round(t_stat, 4) if t_stat is not None else None,
+                'p_value': round(p_val, 5) if p_val is not None else None,
+                'instructor_mean': round(avg_i, 4),
+                'student_mean_norm': round(avg_s_norm, 4),
+                'mean_difference': round(mean_diff, 4),
+                'df': common_count - 1 if common_count > 0 else 0
+            })
+
+        # Calculate Weighted Scores Comparison
+        # 1. Build Weight Map: {criterion_code: weight}
+        # We need to look at the instructor ratings to find the weights for the criteria codes.
+        # Since we already fetched instructor ratings with 'entries__criterion', we can extract weights.
+        weight_map = {}
+        for pid, ratings_map in instructor_ratings_data.items():
+            for code, entries in ratings_map.items():
+                if code not in weight_map and entries:
+                    # Access the criterion object from the first entry if available?
+                    # The current structure of 'instructor_ratings_data' stores simplified dicts/objects: 
+                    # 'value', 'raw_entry' ... we need to check how it was populated.
+                    # Looking at lines 1120+ (not shown) or we can reinfer from the qs.
+                    # Let's rebuild the loop over instructor_ratings query set which we have access to?
+                    # 'instructor_ratings' variable (line 1238 approx)
+                    pass
+        
+        # Better approach: Iterate over the prefetched instructor_ratings queryset again to build weight map
+        # Or just trust that we can find it.
+        # Let's iterate instructor_ratings qset.
+        for r in instructor_ratings:
+            for entry in r.entries.all():
+                cid = entry.criterion.criterion_id
+                if cid not in weight_map:
+                    weight_map[cid] = entry.criterion.weight
+
+        # 2. Calculate Weighted Averages per Problem
+        weighted_student_scores = []
+        weighted_instructor_scores = []
+        weighted_common_count = 0
+        
+        for pid in relevant_problem_ids:
+            # Check availability
+            # We need to sum (score * weight) / sum(weight) for all available criteria for this problem
+            
+            s_sum = 0
+            i_sum = 0
+            w_sum = 0
+            
+            has_valid_data = False
+            
+            for qc in quiz_criteria:
+                i_code = qc.instructor_criterion_code
+                if not i_code or i_code not in weight_map:
+                    continue
+                    
+                weight = weight_map[i_code]
+                
+                # Student Data
+                s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
+                # Instructor Data
+                i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
+
+                if s_vals_objs and i_vals_objs:
+                    # Student Norm
+                    s_raw_vals = [x['raw'] for x in s_vals_objs]
+                    s_mean_raw = mean(s_raw_vals) if s_raw_vals else 0
+                    if s_range > 0:
+                        s_norm = (s_mean_raw - s_min) / s_range
+                    else:
+                        s_norm = 0
+                    
+                    # Instructor
+                    i_vals = [x['value'] for x in i_vals_objs]
+                    i_mean = mean(i_vals) if i_vals else 0
+                    
+                    s_sum += s_norm * weight
+                    i_sum += i_mean * weight
+                    w_sum += weight
+                    has_valid_data = True
+            
+            if has_valid_data and w_sum > 0:
+                w_s_avg = s_sum / w_sum
+                w_i_avg = i_sum / w_sum
+                
+                weighted_student_scores.append(w_s_avg)
+                weighted_instructor_scores.append(w_i_avg)
+                weighted_common_count += 1
+                
+                if pid in detailed_comparisons:
+                     detailed_comparisons[pid]['weighted_instructor'] = w_i_avg
+                     detailed_comparisons[pid]['weighted_student'] = w_s_avg
+                     detailed_comparisons[pid]['weighted_diff'] = w_s_avg - w_i_avg
+
+        # 3. Perform T-Test on Weighted Scores
+        wt_stat = None
+        wp_val = None
+        w_mean_diff = None
+        
+        if weighted_common_count > 1:
+            if all(s == i for s, i in zip(weighted_student_scores, weighted_instructor_scores)):
+                 wt_stat = 0.0
+                 wp_val = 1.0
+            else:
+                try:
+                    wresult = stats.ttest_rel(weighted_student_scores, weighted_instructor_scores)
+                    wt_stat = wresult.statistic
+                    wp_val = wresult.pvalue
+                except Exception as e:
+                    print(f"Error calculating weighted t-test: {e}")
+        
+        w_avg_s = mean(weighted_student_scores) if weighted_student_scores else 0
+        w_avg_i = mean(weighted_instructor_scores) if weighted_instructor_scores else 0
+        w_mean_diff = w_avg_s - w_avg_i
+        
+        comparison_data.append({
+            'criterion_id': 'weighted',
+            'criterion_name': 'Weighted Score',
+            'common_problems': weighted_common_count,
+            't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
+            'p_value': round(wp_val, 5) if wp_val is not None else None,
+            'instructor_mean': round(w_avg_i, 4),
+            'student_mean_norm': round(w_avg_s, 4),
+            'mean_difference': round(w_mean_diff, 4),
+            'df': weighted_common_count - 1 if weighted_common_count > 0 else 0
+        })
+            
         details_list = sorted(list(detailed_comparisons.values()), key=lambda x: x['problem_id'])
         
         criteria_columns = []
@@ -1355,6 +1565,7 @@ class QuizInterRaterAgreementView(APIView):
 
         return Response({
             'agreement': agreement_data,
+            'comparison': comparison_data,
             'details': details_list,
             'criteria_columns': criteria_columns
         })

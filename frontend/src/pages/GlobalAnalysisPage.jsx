@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { RatingAnalysis } from '@/components/quiz-analytics/RatingSlotAnalytics';
 import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
+import StudentInstructorComparison from '@/components/quiz-analytics/StudentInstructorComparison';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import api from '@/lib/api';
 
@@ -135,7 +136,7 @@ const GlobalAnalysisPage = () => {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Inter-rater Reliability by Criteria (All Problem Banks)</CardTitle>
+                        <CardTitle>Instructors Inter-rater Reliability by Criteria (All Problem Banks)</CardTitle>
                         <CardDescription>Aggregated weighted kappa for each criterion across all problem banks</CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -426,6 +427,13 @@ const GlobalAnalysisPage = () => {
                         <InterRaterAgreement data={data.global_quiz_agreement} />
                     </CardContent>
                 </Card>
+
+                {data.global_comparison && (
+                    <div className="space-y-4">
+                        <h2 className="text-xl font-semibold tracking-tight">Global Student vs Instructor Comparison</h2>
+                        <StudentInstructorComparison data={data.global_comparison} />
+                    </div>
+                )}
 
                 <Card>
                     <CardHeader>
