@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Loader2 } from 'lucide-react';
+import { ChevronLeft, Loader2, Printer } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -79,7 +79,7 @@ const ProblemBankAnalysisPage = () => {
             <div className="space-y-8 pb-12">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="icon" to={`/problem-banks`}>
+                        <Button variant="ghost" size="icon" to={`/problem-banks`} className="print:hidden">
                             <ChevronLeft className="h-5 w-5" />
                         </Button>
                         <div>
@@ -90,7 +90,11 @@ const ProblemBankAnalysisPage = () => {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 print:hidden">
+                        <Button variant="outline" size="sm" onClick={() => window.print()}>
+                            <Printer className="mr-2 h-4 w-4" />
+                            Print
+                        </Button>
                         <Button variant="outline" to="/analysis/global">
                             Global Analysis
                         </Button>

@@ -95,7 +95,7 @@ const StudentInstructorComparison = ({ data }) => {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <div className="max-h-[600px] overflow-y-auto p-4 space-y-8">
+                    <div className="max-h-[600px] overflow-y-auto p-4 space-y-8 print:max-h-none print:overflow-visible">
                         {overallComparison && (
                             <ComparisonTable
                                 title="Overall (All Problems)"

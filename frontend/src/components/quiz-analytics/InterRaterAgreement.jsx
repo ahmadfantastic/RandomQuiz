@@ -78,7 +78,7 @@ const InterRaterAgreement = ({ data }) => {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="max-h-[500px] overflow-auto">
+                        <div className="max-h-[500px] overflow-auto print:max-h-none print:overflow-visible">
                             <Table>
                                 <TableHeader>
                                     <TableRow>

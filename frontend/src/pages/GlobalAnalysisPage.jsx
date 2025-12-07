@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Loader2 } from 'lucide-react';
+import { ChevronLeft, Loader2, Printer } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -96,6 +96,10 @@ const GlobalAnalysisPage = () => {
                         </p>
                     </div>
                     <div className="flex items-center gap-4">
+                        <Button variant="outline" size="sm" onClick={() => window.print()} className="print:hidden">
+                            <Printer className="mr-2 h-4 w-4" />
+                            Print
+                        </Button>
                         <div className="flex items-center gap-2">
                             <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Bank:</span>
                             <select
