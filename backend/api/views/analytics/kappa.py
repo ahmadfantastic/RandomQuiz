@@ -45,22 +45,8 @@ def quadratic_weighted_kappa(rater_a, rater_b, min_rating=None, max_rating=None,
     
     conf_mat = confusion_matrix(rater_a, rater_b, val_to_idx)
     
-    if context:
-        # Log the confusion matrix for debugging
-        try:
-            matrix_str = "Kappa Confusion Matrix for {}:\n".format(context)
-            # Add header row
-            matrix_str += "      " + " ".join([f"{str(v):>5}" for v in possible_ratings]) + "\n"
-            
-            for i, row in enumerate(conf_mat):
-                label = str(possible_ratings[i])
-                matrix_str += f"{label:>5} " + " ".join([f"{val:>5}" for val in row]) + "\n"
-                
-            logger.info(matrix_str)
-            # Also print to stdout for immediate visibility in development server
-            print(matrix_str)
-        except Exception as e:
-            logger.error(f"Failed to log kappa matrix: {e}")
+    # Logging removed
+
 
     num_ratings = len(possible_ratings)
     num_scored_items = float(len(rater_a))

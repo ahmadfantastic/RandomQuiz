@@ -33,14 +33,6 @@ const InterRaterAgreement = ({ data }) => {
         )
     }
 
-    const getKappaBadge = (score) => {
-        if (score >= 0.8) return <Badge className="bg-green-500">Perfect/Strong ({score})</Badge>;
-        if (score >= 0.6) return <Badge className="bg-lime-500">Moderate ({score})</Badge>;
-        if (score >= 0.4) return <Badge className="bg-yellow-500">Weak ({score})</Badge>;
-        if (score >= 0.2) return <Badge className="bg-orange-500">Minimal ({score})</Badge>;
-        return <Badge className="bg-red-500">None ({score})</Badge>;
-    };
-
     return (
         <div className="space-y-6">
             <Card>
@@ -68,7 +60,7 @@ const InterRaterAgreement = ({ data }) => {
                                     <TableCell className="font-mono text-xs">{item.instructor_code}</TableCell>
                                     <TableCell>{item.common_problems}</TableCell>
                                     <TableCell>
-                                        {item.common_problems > 0 ? getKappaBadge(item.kappa_score) : <span className="text-muted-foreground">Insufficient Data</span>}
+                                        {item.kappa_score}
                                     </TableCell>
                                 </TableRow>
                             ))}

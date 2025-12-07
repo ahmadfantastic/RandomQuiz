@@ -196,7 +196,7 @@ const GlobalAnalysisPage = () => {
                                                     {item.mean !== undefined ? roundToTwo(item.mean) : '-'}
                                                 </TableCell>
 
-                                                <TableCell className={item.kappa < 0.5 ? "text-destructive font-bold" : "text-green-600 font-bold"}>
+                                                <TableCell>
                                                     {item.kappa != null ? item.kappa.toFixed(3) : '-'}
                                                 </TableCell>
                                             </TableRow>
@@ -239,7 +239,7 @@ const GlobalAnalysisPage = () => {
 
 
                                             <TableCell>
-                                                {/* Kappa Column - Hide for Weighted Row as requested */}
+
                                             </TableCell>
 
                                         </TableRow>
@@ -387,7 +387,7 @@ const GlobalAnalysisPage = () => {
                                                             : '-'}
                                                     </TableCell>
                                                 ))}
-                                                <TableCell className={quiz.cronbach_alpha !== null ? (quiz.cronbach_alpha < 0.7 ? "text-amber-600 font-bold" : "text-green-600 font-bold") : ""}>
+                                                <TableCell>
                                                     {roundToTwo(quiz.cronbach_alpha)}
                                                 </TableCell>
                                             </TableRow>

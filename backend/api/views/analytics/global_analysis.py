@@ -11,9 +11,6 @@ from quizzes.models import Quiz, QuizAttempt, QuizSlot, QuizAttemptSlot, QuizRat
 from .utils import calculate_weighted_kappa, calculate_average_nearest
 from .kappa import quadratic_weighted_kappa
 from statistics import mean
-import logging
-
-logger = logging.getLogger(__name__)
 
 class GlobalAnalysisView(APIView):
     permission_classes = [IsInstructor]
@@ -832,6 +829,13 @@ class GlobalAnalysisView(APIView):
             instructor_ratings_data = {}
             relevant_problem_ids = list(student_ratings_data.keys())
             
+            # Fetch Problems to get order_in_bank for labeling
+            from problems.models import Problem
+            problems_map = {
+                p.id: p.order_in_bank 
+                for p in Problem.objects.filter(id__in=relevant_problem_ids)
+            }
+            
             instructor_ratings = InstructorProblemRating.objects.filter(
                 problem_id__in=relevant_problem_ids
             ).prefetch_related('entries__criterion')
@@ -894,21 +898,22 @@ class GlobalAnalysisView(APIView):
                             
                             all_instructor_ratings_list.append(i_median)
                             all_student_ratings_list.append(s_median)
-                            total_common_problems += 1 # Problem-Criterion instance or Problem instance? 
-                            # Quiz.py sums count per criterion. It says 'total_common_problems += common_problems_for_criterion_count'.
-                            # So yes, it counts (Problem x Criterion) pairs.
+                            total_common_problems += 1 
                             
                             # Add to Details
                             # Composite key needs to be unique globally. 
-                            # quiz.py uses PID as key. Global needs PID + Quiz? Or just PID (Problem IDs are global).
-                            # Problem IDs are global. So PID is safely unique.
-                            # BUT, if we want to show Quiz Context:
-                            
                             details_key = f"{quiz.id}-{pid}"
+                            
+                            # Label Construction
+                            order = problems_map.get(pid, 0)
+                            problem_label = f"{quiz.title}: Problem {order}"
+                            
                             if details_key not in detailed_comparisons:
                                 detailed_comparisons[details_key] = {
                                     'problem_id': pid,
-                                    'problem_label': f"{quiz.title}: Problem {pid}", # Simplified label
+                                    'order': order,
+                                    'quiz_title': quiz.title,
+                                    'problem_label': problem_label,
                                     'ratings': {}
                                 }
                             
@@ -958,10 +963,6 @@ class GlobalAnalysisView(APIView):
                 'criterion_id': 'all',
                 'criterion_name': 'Overall (All Criteria)',
                 'instructor_code': '-',
-                'common_problems': total_common_problems, # logic differs slightly here (problems vs total ratings), sticking to total ratings count typically or problems? 
-                # In quiz.py 'total_common_problems' sums the common_problems per criterion. 
-                # But here I incremented 'total_common_problems' once per student-problem pair.
-                # Let's match quiz.py behavior: sum of counts
                 'common_problems': sum(len(d['i_list']) for d in criterion_kappa_data.values()),
                 'kappa_score': round(overall_kappa, 4) if overall_kappa is not None else None
             })
@@ -972,7 +973,7 @@ class GlobalAnalysisView(APIView):
         # Details List
         # Filter out empty comparisons
         details_list = [d for d in detailed_comparisons.values() if d['ratings']]
-        details_list.sort(key=lambda x: x['problem_label'])
+        details_list.sort(key=lambda x: (x.get('quiz_title', ''), x.get('order', 0)))
 
         response_data['global_quiz_agreement'] = {
             'agreement': agreement_data,
