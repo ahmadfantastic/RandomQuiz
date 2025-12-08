@@ -449,7 +449,7 @@ const GlobalAnalysisPage = () => {
                 <Card>
                     <CardHeader>
                         <CardTitle>ANOVA Results for Problem Banks</CardTitle>
-                        <CardDescription>Statistical comparison of ratings across banks (One-way ANOVA)</CardDescription>
+                        <CardDescription>Statistical comparison of instructor ratings across banks (One-way ANOVA)</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border">
@@ -500,6 +500,55 @@ const GlobalAnalysisPage = () => {
                         </div>
                     </CardContent>
                 </Card>
+
+                {data.quiz_anova && data.quiz_anova.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>ANOVA Results for Quizzes</CardTitle>
+                            <CardDescription>Statistical comparison of student ratings across quizzes (One-way ANOVA)</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="rounded-md border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Criterion</TableHead>
+                                            <TableHead>F-statistic</TableHead>
+                                            <TableHead>p-value</TableHead>
+                                            <TableHead>Post-hoc Analysis (Tukey's HSD)</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {data.quiz_anova.map((res, idx) => (
+                                            <TableRow key={idx}>
+                                                <TableCell className="font-medium">{res.criterion_id}</TableCell>
+                                                <TableCell>{res.f_stat?.toFixed(3) || '-'}</TableCell>
+                                                <TableCell className={res.significant ? "font-bold text-green-600" : ""}>
+                                                    {res.p_value?.toFixed(4) || '-'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {res.significant ? (
+                                                        res.tukey_results && res.tukey_results.length > 0 ? (
+                                                            <div className="text-xs space-y-1">
+                                                                {res.tukey_results.map((tukeyRes, tukeyIdx) => (
+                                                                    <div key={tukeyIdx}>{tukeyRes}</div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-muted-foreground italic text-xs">No significant pairwise differences</span>
+                                                        )
+                                                    ) : (
+                                                        '-'
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
             </div>
         </AppShell >
     );

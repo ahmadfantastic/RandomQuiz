@@ -1542,6 +1542,126 @@ class GlobalAnalysisView(APIView):
             'criteria_columns': criteria_columns
         }
 
+        # ANOVA for Student Ratings Across Quizzes
+        # ---------------------------------------------------------------------
+        # Collect student rating values grouped by quiz for each criterion
+        quiz_student_rating_values = {} # quiz_id -> {criterion_name: [values]}
+        
+        for quiz in quizzes:
+            quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+            if not quiz_criteria.exists():
+                continue
+                
+            quiz_criteria_map = {c.criterion_id: c for c in quiz_criteria}
+            
+            # Get rating scale for this quiz
+            quiz_scale = QuizRatingScaleOption.objects.filter(quiz=quiz)
+            # We'll use raw values directly (no mapping needed for ANOVA)
+            
+            # Get completed attempts
+            attempts = QuizAttempt.objects.filter(quiz=quiz, completed_at__isnull=False)
+            if not attempts.exists():
+                continue
+            
+            # Get all rating slots for this quiz
+            rating_slots = quiz.slots.filter(response_type=QuizSlot.ResponseType.RATING)
+            if not rating_slots.exists():
+                continue
+                
+            # Collect all student ratings
+            attempt_slots = QuizAttemptSlot.objects.filter(
+                attempt__in=attempts,
+                slot__in=rating_slots,
+                answer_data__ratings__isnull=False
+            ).values_list('answer_data', flat=True)
+            
+            # Initialize storage for this quiz
+            if quiz.id not in quiz_student_rating_values:
+                quiz_student_rating_values[quiz.id] = {'quiz_title': quiz.title, 'criteria': {}}
+            
+            # Aggregate ratings by criterion
+            for answer_data in attempt_slots:
+                if answer_data and 'ratings' in answer_data:
+                    ratings = answer_data['ratings']
+                    for c_id, raw_val in ratings.items():
+                        c_obj = quiz_criteria_map.get(c_id)
+                        if c_obj:
+                            c_name = c_obj.name
+                            
+                            if c_name not in quiz_student_rating_values[quiz.id]['criteria']:
+                                quiz_student_rating_values[quiz.id]['criteria'][c_name] = []
+                            
+                            # Convert to float for consistency
+                            try:
+                                val = float(raw_val)
+                                quiz_student_rating_values[quiz.id]['criteria'][c_name].append(val)
+                            except (ValueError, TypeError):
+                                pass
+        
+        # Calculate ANOVA for each criterion
+        quiz_anova_results = []
+        
+        # Collect all unique criteria across all quizzes
+        all_quiz_student_criteria = set()
+        for quiz_data in quiz_student_rating_values.values():
+            all_quiz_student_criteria.update(quiz_data['criteria'].keys())
+        
+        # Sort criteria by the global order we established earlier
+        sorted_quiz_student_criteria = sorted(
+            list(all_quiz_student_criteria),
+            key=lambda x: (global_criterion_orders.get(x, 999), x)
+        )
+        
+        for criterion_name in sorted_quiz_student_criteria:
+            groups = []
+            group_names = []
+            
+            for quiz_id, quiz_data in quiz_student_rating_values.items():
+                if criterion_name in quiz_data['criteria']:
+                    values = quiz_data['criteria'][criterion_name]
+                    if len(values) > 1:  # Need at least 2 values per group
+                        groups.append(values)
+                        group_names.append(quiz_data['quiz_title'])
+            
+            if len(groups) > 1:  # Need at least 2 groups to compare
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", RuntimeWarning)
+                        f_stat, p_val = stats.f_oneway(*groups)
+                except Exception:
+                    f_stat, p_val = None, None
+
+                if f_stat is not None and (np.isinf(f_stat) or np.isnan(f_stat)):
+                    f_stat = None
+                if p_val is not None and (np.isinf(p_val) or np.isnan(p_val)):
+                    p_val = None
+                
+                significant = p_val < 0.05 if p_val is not None else False
+                tukey_results = []
+
+                if significant and len(groups) > 2:
+                    try:
+                        # Perform Tukey's HSD
+                        res = stats.tukey_hsd(*groups)
+                        matrix = res.pvalue
+                        for i in range(len(group_names)):
+                            for j in range(i + 1, len(group_names)):
+                                if matrix[i, j] < 0.05:
+                                    tukey_results.append(f"{group_names[i]} vs {group_names[j]} (p={matrix[i, j]:.3f})")
+                    except Exception:
+                        pass
+
+                quiz_anova_results.append({
+                    'criterion_id': criterion_name,
+                    'f_stat': float(f_stat) if f_stat is not None else None,
+                    'p_value': float(p_val) if p_val is not None else None,
+                    'significant': significant,
+                    'quizzes_included': group_names,
+                    'tukey_results': tukey_results
+                })
+        
+        response_data['quiz_anova'] = quiz_anova_results
+
         # Calculate Correlations based on global point lists
         score_correlation = []
         
