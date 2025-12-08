@@ -11,6 +11,8 @@ from quizzes.models import Quiz, QuizAttempt, QuizSlot, QuizAttemptSlot, QuizRat
 from .utils import calculate_weighted_kappa, calculate_average_nearest
 from .kappa import quadratic_weighted_kappa
 from statistics import mean
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 
 class GlobalAnalysisView(APIView):
     permission_classes = [IsInstructor]
@@ -735,17 +737,115 @@ class GlobalAnalysisView(APIView):
         criterion_kappa_data = {}
 
         # Global Rating Distribution (for Chart/Table)
-        # criterion_name -> { value -> count }
         global_rating_counts = {} 
         # criterion_name -> { total_score: float, count: int, scale_labels: {} }
         global_rating_stats = {}
         global_criterion_orders = {} # {criterion_name: min_order}
         global_rating_scales = {} # {criterion_name: set(values)}
+
+        # Global Score vs Rating Correlation Data
+        # criterion_name -> list of {x: score, y: rating}
+        global_score_points = {} 
+        global_weighted_score_points = []
         
+        # Helper map for Bank Weights: BankID -> { InstructorCode -> Weight }
+        bank_weights_cache = {}
+
         for quiz in quizzes:
-            # logger.info(f"Processing Quiz: {quiz.id} - {quiz.title}")
+            # 1. Get Criteria Mapping & Scale Mapping 
+            quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+            criterion_map = {} # quiz_crit_id -> instructor_crit_code
+            criterion_names = {} # quiz_crit_id -> name (or code, for grouping globals)
             
-            # 1. Get Criteria Mapping & Scale Mapping (Exact copy of quiz.py logic)
+            # Pre-populate global tracking with known criteria from this quiz
+            for qc in quiz_criteria:
+                if qc.name not in global_score_points:
+                    global_score_points[qc.name] = []
+                
+                if qc.name not in global_rating_counts:
+                    global_rating_counts[qc.name] = {}
+                    global_rating_stats[qc.name] = {'total_score': 0, 'count': 0, 'scale_labels': {}}
+                
+                if qc.name not in global_criterion_orders:
+                    global_criterion_orders[qc.name] = qc.order
+                else:
+                    global_criterion_orders[qc.name] = min(global_criterion_orders[qc.name], qc.order)
+                
+                if qc.name not in global_rating_scales:
+                    global_rating_scales[qc.name] = set()
+
+                if qc.instructor_criterion_code:
+                    criterion_map[qc.criterion_id] = qc.instructor_criterion_code
+                    criterion_names[qc.criterion_id] = qc.name
+                    # ...
+            
+            # --- Score Correlation Logic ---
+            # Now that maps are ready, we can process slots for this quiz
+            
+            # 1. Calculate Total Quiz Score per Attempt for this quiz
+            attempt_scores_qs = QuizAttemptSlot.objects.filter(
+                attempt__quiz=quiz,
+                attempt__completed_at__isnull=False,
+                grade__isnull=False
+            ).values('attempt_id').annotate(
+                total_score=Coalesce(Sum('grade__items__selected_level__points'), 0.0)
+            )
+            quiz_attempt_score_map = {item['attempt_id']: item['total_score'] for item in attempt_scores_qs}
+            
+            # 2. Fetch rating slots with attempt_id and bank info
+            quiz_rating_slots = QuizAttemptSlot.objects.filter(
+                attempt__quiz=quiz,
+                attempt__completed_at__isnull=False,
+                slot__response_type='rating',
+                answer_data__ratings__isnull=False
+            ).select_related('assigned_problem__problem_bank').values(
+                'id', 'answer_data', 'attempt_id', 'assigned_problem__problem_bank__id'
+            )
+            
+            for entry in quiz_rating_slots:
+                aid = entry['attempt_id']
+                score = quiz_attempt_score_map.get(aid)
+                
+                if score is not None:
+                    ratings = entry['answer_data'].get('ratings', {})
+                    bank_id = entry['assigned_problem__problem_bank__id']
+                    
+                    # Fetch weights if not in cache
+                    if bank_id not in bank_weights_cache:
+                        try:
+                            bank = ProblemBank.objects.get(id=bank_id)
+                            # We need Rubric Criterion Code -> Weight
+                            # bank.get_rubric() returns structure with id=code.
+                            # Usually criterion_id in rubric dict matches instructor_criterion_code.
+                            rubric = bank.get_rubric()
+                            w_map = {c['id']: c.get('weight', 1) for c in rubric.get('criteria', [])}
+                            bank_weights_cache[bank_id] = w_map
+                        except Exception:
+                            bank_weights_cache[bank_id] = {}
+                            
+                    current_bank_weights = bank_weights_cache.get(bank_id, {})
+                    
+                    w_sum = 0
+                    w_total = 0
+                    
+                    for q_cid, val in ratings.items():
+                        c_name = criterion_names.get(q_cid)
+                        i_code = criterion_map.get(q_cid)
+                        
+                        if c_name:
+                             global_score_points[c_name].append({'x': score, 'y': val})
+                             
+                        # Weighted Calc
+                        if i_code:
+                            weight = current_bank_weights.get(i_code, 1) # Default to 1 if not found
+                            w_sum += val * weight
+                            w_total += weight
+                            
+                    if w_total > 0:
+                        weighted_avg = w_sum / w_total
+                        global_weighted_score_points.append({'x': score, 'y': weighted_avg})
+
+
             quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
             criterion_map = {} # quiz_crit_id -> instructor_crit_code
             criterion_names = {} # quiz_crit_id -> name (or code, for grouping globals)
@@ -1413,6 +1513,60 @@ class GlobalAnalysisView(APIView):
             'details': sorted(global_detailed_comparisons, key=lambda x: x['problem_id']),
             'criteria_columns': criteria_columns
         }
+
+        # Calculate Correlations based on global point lists
+        score_correlation = []
+        
+        def calculate_global_correlations(points, label):
+             n = len(points)
+             if n < 2:
+                 return {
+                     'name': label,
+                     'count': n,
+                     'pearson_r': None,
+                     'pearson_p': None,
+                     'spearman_rho': None,
+                     'spearman_p': None,
+                     'points': points
+                 }
+             
+             x = [p['x'] for p in points]
+             y = [p['y'] for p in points]
+             
+             # Pearson
+             try:
+                 pr, pp = stats.pearsonr(x, y)
+                 if np.isnan(pr): pr, pp = None, None
+             except Exception:
+                 pr, pp = None, None
+                 
+             # Spearman
+             try:
+                 # Spearman can fail if input is constant
+                 sr, sp = stats.spearmanr(x, y)
+                 if np.isnan(sr): sr, sp = None, None
+             except Exception as e:
+                 sr, sp = None, None
+
+             return {
+                 'name': label,
+                 'count': n,
+                 'pearson_r':  round(pr, 4) if pr is not None else None,
+                 'pearson_p':  round(pp, 5) if pp is not None else None,
+                 'spearman_rho': round(sr, 4) if sr is not None else None,
+                 'spearman_p': round(sp, 5) if sp is not None else None,
+                 'points': points # Include for frontend plotting
+             }
+
+        for c_name, points in global_score_points.items():
+            score_correlation.append(calculate_global_correlations(points, c_name))
+            
+        score_correlation.append(calculate_global_correlations(global_weighted_score_points, "Weighted Rating"))
+        
+        # Sort by global criteria order
+        score_correlation.sort(key=lambda x: (global_criterion_orders.get(x['name'], 999), x['name']))
+        
+        response_data['score_correlation'] = score_correlation
         
         return Response(self.sanitize_data(response_data))
 

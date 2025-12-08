@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { RatingAnalysis } from '@/components/quiz-analytics/RatingSlotAnalytics';
 import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
+import ScoreVsRatingAnalysis from '@/components/quiz-analytics/ScoreVsRatingAnalysis';
 import StudentInstructorComparison from '@/components/quiz-analytics/StudentInstructorComparison';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import api from '@/lib/api';
@@ -437,6 +438,10 @@ const GlobalAnalysisPage = () => {
                         <h2 className="text-xl font-semibold tracking-tight">Global Student vs Instructor Comparison</h2>
                         <StudentInstructorComparison data={data.global_comparison} />
                     </div>
+                )}
+
+                {data.score_correlation && (
+                    <ScoreVsRatingAnalysis data={data} />
                 )}
 
                 <Card>
