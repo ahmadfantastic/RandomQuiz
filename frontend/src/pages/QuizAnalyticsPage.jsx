@@ -229,11 +229,11 @@ const QuizAnalyticsPage = () => {
                 <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
                     <div className="overflow-x-auto pb-2 print:hidden">
                         <TabsList className="w-full justify-start">
-                            <TabsTrigger value="overview">Overview</TabsTrigger>
-                            <TabsTrigger value="interaction">Interactions</TabsTrigger>
-                            <TabsTrigger value="agreement">Agreement</TabsTrigger>
-                            <TabsTrigger value="comparison">S vs I Comparison</TabsTrigger>
-                            <TabsTrigger value="correlation">Score vs Rating</TabsTrigger>
+                            <TabsTrigger value="overview">Quiz Overview</TabsTrigger>
+                            <TabsTrigger value="interaction">Student Interactions</TabsTrigger>
+                            <TabsTrigger value="agreement">Stu. vs. Inst (Kappa)</TabsTrigger>
+                            <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
+                            <TabsTrigger value="correlation">Score Correlation</TabsTrigger>
                             {slots.map(slot => (
                                 <TabsTrigger key={slot.id} value={`slot-${slot.id}`}>
                                     {slot.label || `Slot ${slot.order}`}

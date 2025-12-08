@@ -89,9 +89,9 @@ const StudentInstructorComparison = ({ data }) => {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Student vs Instructor Comparison</CardTitle>
+                    <CardTitle>Rating Comparison by Group</CardTitle>
                     <CardDescription>
-                        Comparison of ratings segmented by Problem Group.
+                        T-test comparison of average ratings between students and instructors, segmented by Problem Group
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -136,9 +136,9 @@ const DetailedComparisonTable = ({ details, criteria }) => {
         <>
             <Card>
                 <CardHeader>
-                    <CardTitle>Detailed Comparison By Problem</CardTitle>
+                    <CardTitle>Problem-Level Rating Comparison</CardTitle>
                     <CardDescription>
-                        Breakdown of average scores per problem. Click on a cell to view individual ratings.
+                        Detailed breakdown of average ratings and weighted scores per problem. Click on a cell to view individual ratings.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">

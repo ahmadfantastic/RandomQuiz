@@ -37,7 +37,7 @@ const InterRaterAgreement = ({ data }) => {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Inter-rater Agreement</CardTitle>
+                    <CardTitle>Inter-Rater Reliability Analysis</CardTitle>
                     <CardDescription>
                         Agreement between Instructor ratings and Student ratings using Quadratic Weighted Kappa.
                         Scores are aggregated using the mean rounded down to the nearest valid rating.
@@ -72,7 +72,7 @@ const InterRaterAgreement = ({ data }) => {
             {data.details && data.details.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>Detailed Comparison</CardTitle>
+                        <CardTitle>Problem-Level Agreement Details</CardTitle>
                         <CardDescription>
                             Individual problem ratings (Sorted by Problem ID).
                         </CardDescription>

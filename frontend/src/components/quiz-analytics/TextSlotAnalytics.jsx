@@ -75,7 +75,7 @@ const TextSlotAnalytics = ({ slot }) => {
                         </div>
                         {slot.problem_distribution && slot.problem_distribution.length > 0 && (
                             <div className="w-full border-t pt-4">
-                                <h4 className="text-sm font-semibold mb-4">Problem Breakdown</h4>
+                                <h4 className="text-sm font-semibold mb-4">Problem-Level Statistics</h4>
                                 <ProblemStatsTable
                                     problems={slot.problem_distribution}
                                     responseType={slot.response_type}

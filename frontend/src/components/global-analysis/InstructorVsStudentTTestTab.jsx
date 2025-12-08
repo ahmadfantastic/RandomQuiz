@@ -6,7 +6,7 @@ const InstructorVsStudentTTestTab = ({ data }) => {
         <div className="space-y-8">
             {data.global_comparison && (
                 <div className="space-y-4">
-                    <h2 className="text-xl font-semibold tracking-tight">Global Student vs Instructor Comparison</h2>
+                    <h2 className="text-xl font-semibold tracking-tight">Global Comparison: Student vs. Instructor Ratings</h2>
                     <StudentInstructorComparison data={data.global_comparison} />
                 </div>
             )}

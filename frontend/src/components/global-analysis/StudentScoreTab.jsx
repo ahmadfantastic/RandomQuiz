@@ -11,8 +11,8 @@ const StudentScoreTab = ({ data, roundToTwo }) => {
             {data.quiz_analysis && data.quiz_analysis.quizzes.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>Quiz Analysis</CardTitle>
-                        <CardDescription>Performance usage statistics for your quizzes</CardDescription>
+                        <CardTitle>Answer Performance Analysis</CardTitle>
+                        <CardDescription>Aggregated performance statistics (score, time, word count) for all quizzes</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border">
@@ -56,8 +56,8 @@ const StudentScoreTab = ({ data, roundToTwo }) => {
             {data.quiz_score_anova && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>ANOVA Results for Quiz Scores</CardTitle>
-                        <CardDescription>Statistical comparison of student scores across quizzes (One-way ANOVA)</CardDescription>
+                        <CardTitle>Score Variance Analysis (ANOVA)</CardTitle>
+                        <CardDescription>One-way ANOVA comparing student scores across quizzes to identify significant performance differences</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border">

@@ -10,8 +10,8 @@ const StudentRatingTab = ({ data, roundToTwo }) => {
             {data.quiz_analysis && data.quiz_analysis.quizzes.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>Quiz Analysis</CardTitle>
-                        <CardDescription>Ratings for your quizzes</CardDescription>
+                        <CardTitle>Quiz Rating Overview</CardTitle>
+                        <CardDescription>Average ratings per criterion for each quiz</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border">
@@ -53,9 +53,9 @@ const StudentRatingTab = ({ data, roundToTwo }) => {
             {data.global_rating_distribution && data.global_rating_distribution.criteria.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>Global Rating Analysis</CardTitle>
+                        <CardTitle>Aggregate Rating Distribution</CardTitle>
                         <CardDescription>
-                            Aggregated rating distribution for all rating criteria across all quizzes.
+                            Distribution of ratings across all quizzes, aggregated by criterion
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -120,8 +120,8 @@ const StudentRatingTab = ({ data, roundToTwo }) => {
             {data.quiz_anova && data.quiz_anova.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>ANOVA Results for Quizzes</CardTitle>
-                        <CardDescription>Statistical comparison of student ratings across quizzes (One-way ANOVA)</CardDescription>
+                        <CardTitle>Rating Variance Analysis (ANOVA)</CardTitle>
+                        <CardDescription>One-way ANOVA comparing student ratings across quizzes for each criterion</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border">

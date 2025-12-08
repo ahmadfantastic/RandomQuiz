@@ -28,7 +28,7 @@ const AllSlotInteractions = ({ slots }) => {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Interaction Analysis</h2>
+                <h2 className="text-xl font-semibold">Student Interaction Timeline</h2>
                 {students.length > 0 && (
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground">Student:</span>

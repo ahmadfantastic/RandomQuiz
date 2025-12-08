@@ -7,10 +7,9 @@ const InstructorVsStudentKappaTab = ({ data }) => {
         <div className="space-y-8">
             <Card>
                 <CardHeader>
-                    <CardTitle>Instructors vs Students Agreement (All Quizzes)</CardTitle>
+                    <CardTitle>Instructor vs. Student Agreement (Kappa)</CardTitle>
                     <CardDescription>
-                        Pooled agreement analysis between Student and Instructor ratings across all quizzes.
-                        Aggregated using weighted kappa per criterion.
+                        Analysis of agreement between instructor and student ratings using aggregated weighted kappa
                     </CardDescription>
                 </CardHeader>
                 <CardContent>

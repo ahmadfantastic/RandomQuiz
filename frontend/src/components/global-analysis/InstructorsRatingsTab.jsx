@@ -8,8 +8,8 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
         <div className="space-y-8">
             <Card>
                 <CardHeader>
-                    <CardTitle>Instructors Inter-rater Reliability by Criteria (All Problem Banks)</CardTitle>
-                    <CardDescription>Aggregated weighted kappa for each criterion across all problem banks</CardDescription>
+                    <CardTitle>Inter-Rater Reliability Analysis</CardTitle>
+                    <CardDescription>Comparison of agreement (weighted kappa) between instructors for each criterion</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
@@ -129,8 +129,8 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Average Instructor Ratings by Bank</CardTitle>
-                    <CardDescription>Mean ratings for each criterion per bank</CardDescription>
+                    <CardTitle>Problem Bank Rating Summary</CardTitle>
+                    <CardDescription>Average instructor ratings and weighted scores for each problem bank</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
@@ -224,8 +224,8 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
 
             <Card>
                 <CardHeader>
-                    <CardTitle>ANOVA Results for Problem Banks</CardTitle>
-                    <CardDescription>Statistical comparison of instructor ratings across banks (One-way ANOVA)</CardDescription>
+                    <CardTitle>Bank Variance Analysis (ANOVA)</CardTitle>
+                    <CardDescription>One-way ANOVA comparing instructor ratings across problem banks</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
