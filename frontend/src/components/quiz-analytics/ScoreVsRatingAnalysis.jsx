@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label } from 'recharts';
 
-const ScoreVsRatingAnalysis = ({ data }) => {
+const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating" }) => {
     if (!data || !data.score_correlation) {
         return (
             <div className="p-4">
@@ -18,9 +18,9 @@ const ScoreVsRatingAnalysis = ({ data }) => {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Score vs Rating Correlation Analysis</CardTitle>
+                    <CardTitle>{title || "Score vs Rating Correlation Analysis"}</CardTitle>
                     <CardDescription>
-                        Analysis of how student ratings correlate with their graded scores per criterion.
+                        {description || "Analysis of how student ratings correlate with their graded scores per criterion."}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -88,8 +88,8 @@ const ScoreVsRatingAnalysis = ({ data }) => {
                                         <XAxis type="number" dataKey="x" name="Score">
                                             <Label value="Grade Score" offset={-10} position="insideBottom" />
                                         </XAxis>
-                                        <YAxis type="number" dataKey="y" name="Rating">
-                                            <Label value="Rating" angle={-90} position="insideLeft" />
+                                        <YAxis type="number" dataKey="y" name={yAxisLabel}>
+                                            <Label value={yAxisLabel} angle={-90} position="insideLeft" />
                                         </YAxis>
                                         <Tooltip cursor={{ strokeDasharray: '3 3' }} />
                                         <Scatter name="Students" data={item.points} fill="hsl(var(--primary))" />

@@ -775,6 +775,14 @@ class GlobalAnalysisView(APIView):
         global_score_points = {} 
         global_weighted_score_points = []
         
+        # Global Score vs Time Correlation Data
+        # list of {x: score, y: duration_minutes}
+        global_time_score_points = []
+
+        # Global Score vs Word Count Correlation Data
+        # list of {x: score, y: word_count}
+        global_word_count_score_points = []
+        
         # Helper map for Bank Weights: BankID -> { InstructorCode -> Weight }
         bank_weights_cache = {}
 
@@ -871,6 +879,50 @@ class GlobalAnalysisView(APIView):
                     if w_total > 0:
                         weighted_avg = w_sum / w_total
                         global_weighted_score_points.append({'x': score, 'y': weighted_avg})
+
+            # --- Time Correlation Logic ---
+            # Collect duration for each completed attempt along with its score
+            quiz_attempts = QuizAttempt.objects.filter(
+                quiz=quiz,
+                completed_at__isnull=False,
+                started_at__isnull=False
+            ).values('id', 'started_at', 'completed_at')
+            
+            for attempt in quiz_attempts:
+                attempt_id = attempt['id']
+                score = quiz_attempt_score_map.get(attempt_id)
+                
+                if score is not None:
+                    # Calculate duration in minutes
+                    duration = (attempt['completed_at'] - attempt['started_at']).total_seconds() / 60.0
+                    if duration > 0:  # Only include positive durations
+                        global_time_score_points.append({'x': score, 'y': duration})
+
+            # --- Word Count Correlation Logic ---
+            text_slots = quiz.slots.filter(response_type='open_text')
+            if text_slots.exists():
+                 # Calculate total word count for each attempt that has a score
+                 valid_attempt_ids = list(quiz_attempt_score_map.keys())
+                 
+                 text_answers = QuizAttemptSlot.objects.filter(
+                     attempt_id__in=valid_attempt_ids,
+                     slot__in=text_slots
+                 ).values('attempt_id', 'answer_data')
+                 
+                 attempt_word_counts = {aid: 0 for aid in valid_attempt_ids}
+                 
+                 for ans in text_answers:
+                     aid = ans['attempt_id']
+                     if ans['answer_data'] and 'text' in ans['answer_data']:
+                         text = ans['answer_data']['text'] or ""
+                         words = len(text.split())
+                         if aid in attempt_word_counts:
+                             attempt_word_counts[aid] += words
+                 
+                 for aid, wc in attempt_word_counts.items():
+                     score = quiz_attempt_score_map.get(aid)
+                     if score is not None:
+                         global_word_count_score_points.append({'x': score, 'y': wc})
 
 
             quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
@@ -1715,6 +1767,16 @@ class GlobalAnalysisView(APIView):
         score_correlation.sort(key=lambda x: (global_criterion_orders.get(x['name'], 999), x['name']))
         
         response_data['score_correlation'] = score_correlation
+        
+        # Calculate Time Correlation (only if we have valid duration data)
+        if global_time_score_points:
+            time_correlation = calculate_global_correlations(global_time_score_points, "Quiz Duration")
+            response_data['time_correlation'] = [time_correlation]
+
+        # Calculate Word Count Correlation (only if we have word count data)
+        if global_word_count_score_points:
+             wc_correlation = calculate_global_correlations(global_word_count_score_points, "Word Count")
+             response_data['word_count_correlation'] = [wc_correlation]
         
         return Response(self.sanitize_data(response_data))
 

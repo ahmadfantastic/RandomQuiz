@@ -274,7 +274,33 @@ const QuizAnalyticsPage = () => {
                         <TabsContent value="correlation">
                             <AnalyticsTabContent
                                 endpoint={`/api/quizzes/${quizId}/analytics/agreement/`}
-                                renderContent={(data) => <ScoreVsRatingAnalysis data={data} />}
+                                renderContent={(data) => (
+                                    <>
+                                        {data.score_correlation && (
+                                            <ScoreVsRatingAnalysis data={data} />
+                                        )}
+                                        {data.time_correlation && data.time_correlation.length > 0 && (
+                                            <div className="mt-8">
+                                                <ScoreVsRatingAnalysis
+                                                    data={{ score_correlation: data.time_correlation }}
+                                                    title="Score vs Time Correlation Analysis"
+                                                    description="Analysis of how quiz completion time correlates with student graded scores."
+                                                    yAxisLabel="Time (minutes)"
+                                                />
+                                            </div>
+                                        )}
+                                        {data.word_count_correlation && data.word_count_correlation.length > 0 && (
+                                            <div className="mt-8">
+                                                <ScoreVsRatingAnalysis
+                                                    data={{ score_correlation: data.word_count_correlation }}
+                                                    title="Score vs Word Count Correlation Analysis"
+                                                    description="Analysis of how total word count of text answers correlates with student graded scores."
+                                                    yAxisLabel="Word Count"
+                                                />
+                                            </div>
+                                        )}
+                                    </>
+                                )}
                             />
                         </TabsContent>
 

@@ -1597,6 +1597,8 @@ class QuizInterRaterAgreementView(APIView):
         # Prepare storage
         criterion_points = {} # name -> list of {x: score, y: rating}
         weighted_points = [] # list of {x: score, y: rating}
+        time_points = [] # list of {x: score, y: duration_minutes}
+        word_count_points = [] # list of {x: score, y: word_count}
         
         for qc in quiz_criteria:
             if qc.instructor_criterion_code:
@@ -1607,33 +1609,70 @@ class QuizInterRaterAgreementView(APIView):
             ratings = record['ratings']
             score = record['score']
             
-            if score is None: continue # Skip if no grade
-            
-            # Weighted calc for this record
-            w_sum_r = 0
-            w_sum_w = 0
-            
-            for q_cid, val in ratings.items():
-                # Use raw value 'val' directly as requested
+            if score is not None:
+                # Weighted calc for this record
+                w_sum_r = 0
+                w_sum_w = 0
                 
-                # Get criterion name to plot per-criterion
-                c_name = criterion_names.get(q_cid)
-                if c_name and c_name in criterion_points:
-                     criterion_points[c_name].append({'x': score, 'y': val})
+                for q_cid, val in ratings.items():
+                    # Use raw value 'val' directly as requested
+                    
+                    # Get criterion name to plot per-criterion
+                    c_name = criterion_names.get(q_cid)
+                    if c_name and c_name in criterion_points:
+                         criterion_points[c_name].append({'x': score, 'y': val})
+                    
+                    # Weighted Calculation
+                    # We need to link this rating to a weight.
+                    # Use criterion_map to find the instructor code, then lookup weight.
+                    if q_cid in criterion_map:
+                         i_code = criterion_map[q_cid]
+                         if i_code in weight_map:
+                             weight = weight_map[i_code]
+                             w_sum_r += val * weight
+                             w_sum_w += weight
                 
-                # Weighted Calculation
-                # We need to link this rating to a weight.
-                # Use criterion_map to find the instructor code, then lookup weight.
-                if q_cid in criterion_map:
-                     i_code = criterion_map[q_cid]
-                     if i_code in weight_map:
-                         weight = weight_map[i_code]
-                         w_sum_r += val * weight
-                         w_sum_w += weight
+                if w_sum_w > 0:
+                    weighted_avg = w_sum_r / w_sum_w
+                    weighted_points.append({'x': score, 'y': weighted_avg})
+
+        # --- Time & Word Count Collection ---
+        # We perform valid collection for ALL graded attempts (present in attempt_score_map)
+        
+        # Pre-fetch text data if needed
+        has_text_slots = quiz.slots.filter(response_type='open_text').exists()
+        attempt_word_counts = {}
+        
+        if has_text_slots:
+             text_aslots = QuizAttemptSlot.objects.filter(
+                 attempt__in=attempts,
+                 slot__response_type='open_text'
+             ).values('attempt_id', 'answer_data')
+             
+             for tas in text_aslots:
+                 aid = tas['attempt_id']
+                 if tas['answer_data'] and 'text' in tas['answer_data']:
+                     txt = tas['answer_data']['text'] or ""
+                     count = len(txt.split())
+                     attempt_word_counts[aid] = attempt_word_counts.get(aid, 0) + count
+
+        attempts_data = attempts.values('id', 'started_at', 'completed_at')
+        
+        for att in attempts_data:
+            aid = att['id']
+            score = attempt_score_map.get(aid)
             
-            if w_sum_w > 0:
-                weighted_avg = w_sum_r / w_sum_w
-                weighted_points.append({'x': score, 'y': weighted_avg})
+            if score is not None:
+                # Time
+                if att['started_at'] and att['completed_at']:
+                    duration = (att['completed_at'] - att['started_at']).total_seconds() / 60.0
+                    if duration > 0:
+                        time_points.append({'x': score, 'y': duration})
+                
+                # Word Count
+                if has_text_slots:
+                    wc = attempt_word_counts.get(aid, 0)
+                    word_count_points.append({'x': score, 'y': wc})
 
         # Calculate Correlations
         def calculate_correlations(points, label):
@@ -1681,12 +1720,23 @@ class QuizInterRaterAgreementView(APIView):
             
         score_correlation.append(calculate_correlations(weighted_points, "Weighted Rating"))
 
+        # Calculate Time & Word Count Correlations
+        time_correlation = []
+        if time_points:
+            time_correlation.append(calculate_correlations(time_points, "Quiz Duration"))
+
+        word_count_correlation = []
+        if word_count_points:
+            word_count_correlation.append(calculate_correlations(word_count_points, "Word Count"))
+
         return Response(self.sanitize_data({
             'agreement': agreement_data,
             'comparison': comparison_data,
             'details': details_list,
             'criteria_columns': criteria_columns,
-            'score_correlation': score_correlation
+            'score_correlation': score_correlation,
+            'time_correlation': time_correlation,
+            'word_count_correlation': word_count_correlation
         }))
 
     def sanitize_data(self, data):
