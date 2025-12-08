@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import InstructorsRatingsTab from '@/components/global-analysis/InstructorsRatingsTab';
 import StudentRatingTab from '@/components/global-analysis/StudentRatingTab';
-import QuizTab from '@/components/global-analysis/QuizTab';
 import InstructorVsStudentKappaTab from '@/components/global-analysis/InstructorVsStudentKappaTab';
 import InstructorVsStudentTTestTab from '@/components/global-analysis/InstructorVsStudentTTestTab';
 import StudentScoreTab from '@/components/global-analysis/StudentScoreTab';
@@ -144,7 +143,6 @@ const GlobalAnalysisPage = () => {
                     <TabsList className="grid w-full grid-cols-6 mb-8 h-auto flex-wrap">
                         <TabsTrigger value="instructors-ratings">Instructors Ratings</TabsTrigger>
                         <TabsTrigger value="student-rating">Student Rating</TabsTrigger>
-                        <TabsTrigger value="quiz">Quiz</TabsTrigger>
                         <TabsTrigger value="instructor-vs-student-kappa">Instructor vs Student Kappa</TabsTrigger>
                         <TabsTrigger value="instructor-vs-student-t-test">Instructor vs Student T-Test</TabsTrigger>
                         <TabsTrigger value="student-score">Student Score</TabsTrigger>
@@ -162,11 +160,7 @@ const GlobalAnalysisPage = () => {
                     </TabsContent>
 
                     <TabsContent value="student-rating" className="space-y-8">
-                        <StudentRatingTab data={data} />
-                    </TabsContent>
-
-                    <TabsContent value="quiz" className="space-y-8">
-                        <QuizTab data={data} roundToTwo={roundToTwo} />
+                        <StudentRatingTab data={data} roundToTwo={roundToTwo} />
                     </TabsContent>
 
                     <TabsContent value="instructor-vs-student-kappa" className="space-y-8">
@@ -178,7 +172,7 @@ const GlobalAnalysisPage = () => {
                     </TabsContent>
 
                     <TabsContent value="student-score" className="space-y-8">
-                        <StudentScoreTab data={data} />
+                        <StudentScoreTab data={data} roundToTwo={roundToTwo} />
                     </TabsContent>
                 </Tabs>
             </div>
