@@ -370,6 +370,7 @@ const GlobalAnalysisPage = () => {
                                             <TableHead>Responses</TableHead>
                                             <TableHead>Avg Time (min)</TableHead>
                                             <TableHead>Avg Words</TableHead>
+                                            <TableHead>Avg Score</TableHead>
                                             {data.quiz_analysis.all_criteria.map(c => (
                                                 <TableHead key={c}>{c}</TableHead>
                                             ))}
@@ -387,6 +388,7 @@ const GlobalAnalysisPage = () => {
                                                 <TableCell>{quiz.response_count}</TableCell>
                                                 <TableCell>{roundToTwo(quiz.avg_time_minutes)}</TableCell>
                                                 <TableCell>{roundToTwo(quiz.avg_word_count)}</TableCell>
+                                                <TableCell>{roundToTwo(quiz.avg_score)}</TableCell>
                                                 {data.quiz_analysis.all_criteria.map(c => (
                                                     <TableCell key={c}>
                                                         {quiz.means && quiz.means[c] !== undefined

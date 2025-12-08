@@ -581,7 +581,8 @@ class GlobalAnalysisView(APIView):
         quizzes = Quiz.objects.filter(owner=instructor)
         
         # Collect all criteria used across all quizzes for dynamic table columns
-        all_quiz_criteria = set()
+        # Map: criterion_id -> { order: int }
+        all_quiz_criteria = {}
 
         for quiz in quizzes:
             # 1. Attempts
@@ -616,6 +617,21 @@ class GlobalAnalysisView(APIView):
                 
                 if counts:
                     avg_word_count = sum(counts) / len(counts)
+
+            # 3.5 Average Student Score & Attempt processing for Ratings
+            # Calculate Total Quiz Score per Attempt for this quiz using existing attempts
+            avg_quiz_score = None
+            if attempts.exists():
+                attempt_scores = QuizAttemptSlot.objects.filter(
+                    attempt__in=attempts,
+                    grade__isnull=False
+                ).values('attempt_id').annotate(
+                    total_score=Coalesce(Sum('grade__items__selected_level__points'), 0.0)
+                )
+                
+                scores_list = [item['total_score'] for item in attempt_scores]
+                if scores_list:
+                    avg_quiz_score = sum(scores_list) / len(scores_list)
             
             # 4. Ratings & Cronbach Alpha
             # Find rating slots
@@ -630,11 +646,16 @@ class GlobalAnalysisView(APIView):
                 rubric_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
                 
                 c_ids = [c.criterion_id for c in rubric_criteria]
-                c_names = {c.criterion_id: c.name for c in rubric_criteria}
-                
-                # Add to global set
-                for name in c_names.values():
-                    all_quiz_criteria.add(name)
+                # Collect unique criteria IDs and their minimum order
+                for c in rubric_criteria:
+                    if c.criterion_id not in all_quiz_criteria:
+                        all_quiz_criteria[c.criterion_id] = {'order': c.order}
+                    else:
+                        # Keep minimum order just in case of conflicts (should be consistent though)
+                        all_quiz_criteria[c.criterion_id]['order'] = min(
+                            all_quiz_criteria[c.criterion_id]['order'], 
+                            c.order
+                        )
 
                 # Collect ratings
                 slot_alphas = []
@@ -689,7 +710,7 @@ class GlobalAnalysisView(APIView):
                     # Collect means
                     for c_id, vals in slot_c_values.items():
                         if vals:
-                            name = c_names.get(c_id, c_id)
+                            name = c_id # Use ID as key
                             if name not in c_totals_quiz: c_totals_quiz[name] = []
                             c_totals_quiz[name].append(sum(vals)/len(vals))
                 
@@ -707,13 +728,19 @@ class GlobalAnalysisView(APIView):
                 'response_count': response_count,
                 'avg_time_minutes': avg_time,
                 'avg_word_count': avg_word_count,
+                 # Average Student Score
+                'avg_score': avg_quiz_score,
                 'cronbach_alpha': quiz_alpha,
                 'means': quiz_criteria_means
             })
             
         response_data['quiz_analysis'] = {
             'quizzes': quiz_results,
-            'all_criteria': sorted(list(all_quiz_criteria))
+            # Sort IDs by order map
+            'all_criteria': sorted(
+                list(all_quiz_criteria.keys()), 
+                key=lambda cid: (all_quiz_criteria[cid]['order'], cid)
+            )
         }
         
             # 5. Global Quiz Agreement (Aggregated across ALL quizzes)
@@ -1501,7 +1528,8 @@ class GlobalAnalysisView(APIView):
 
         # Columns for Frontend
         criteria_columns = []
-        for c in sorted_icodes:
+        all_icodes = sorted(list(global_code_to_order.keys()), key=lambda x: global_code_to_order.get(x, 999))
+        for c in all_icodes:
             criteria_columns.append({
                 'id': c,
                 'name': global_code_to_name.get(c, c),

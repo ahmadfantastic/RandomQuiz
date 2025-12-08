@@ -88,8 +88,8 @@ class GlobalAnalysisQuizTest(APITestCase):
         # C1: (5 + 3) / 2 = 4.0
         # C2: (4 + 2) / 2 = 3.0
         means = q1_stats['means']
-        self.assertEqual(means['Criterion 1'], 4.0)
-        self.assertEqual(means['Criterion 2'], 3.0)
+        self.assertEqual(means['C1'], 4.0)
+        self.assertEqual(means['C2'], 3.0)
         
         # Alpha
         # Should be calculated. Just verify it's a float or null.
