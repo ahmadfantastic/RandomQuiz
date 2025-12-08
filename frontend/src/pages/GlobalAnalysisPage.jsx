@@ -4,12 +4,13 @@ import { ChevronLeft, Loader2, Printer } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { RatingAnalysis } from '@/components/quiz-analytics/RatingSlotAnalytics';
-import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
-import ScoreVsRatingAnalysis from '@/components/quiz-analytics/ScoreVsRatingAnalysis';
-import StudentInstructorComparison from '@/components/quiz-analytics/StudentInstructorComparison';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import InstructorsRatingsTab from '@/components/global-analysis/InstructorsRatingsTab';
+import StudentRatingTab from '@/components/global-analysis/StudentRatingTab';
+import QuizTab from '@/components/global-analysis/QuizTab';
+import InstructorVsStudentKappaTab from '@/components/global-analysis/InstructorVsStudentKappaTab';
+import InstructorVsStudentTTestTab from '@/components/global-analysis/InstructorVsStudentTTestTab';
+import StudentScoreTab from '@/components/global-analysis/StudentScoreTab';
 import api from '@/lib/api';
 
 const GlobalAnalysisPage = () => {
@@ -139,487 +140,47 @@ const GlobalAnalysisPage = () => {
                     </div>
                 </div>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Instructors Inter-rater Reliability by Criteria (All Problem Banks)</CardTitle>
-                        <CardDescription>Aggregated weighted kappa for each criterion across all problem banks</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Criterion</TableHead>
-                                        {problem_groups && problem_groups.map(group => (
-                                            <TableHead key={group.name}>{group.name}</TableHead>
-                                        ))}
+                <Tabs defaultValue="instructors-ratings" className="w-full">
+                    <TabsList className="grid w-full grid-cols-6 mb-8 h-auto flex-wrap">
+                        <TabsTrigger value="instructors-ratings">Instructors Ratings</TabsTrigger>
+                        <TabsTrigger value="student-rating">Student Rating</TabsTrigger>
+                        <TabsTrigger value="quiz">Quiz</TabsTrigger>
+                        <TabsTrigger value="instructor-vs-student-kappa">Instructor vs Student Kappa</TabsTrigger>
+                        <TabsTrigger value="instructor-vs-student-t-test">Instructor vs Student T-Test</TabsTrigger>
+                        <TabsTrigger value="student-score">Student Score</TabsTrigger>
+                    </TabsList>
 
-                                        {(!problem_groups || problem_groups.length !== 2) && (
-                                            <TableHead>Sample Size (N Pairs)</TableHead>
-                                        )}
-                                        {problem_groups && problem_groups.length === 2 && (
-                                            <>
-                                                <TableHead>Sig. (2-tailed)</TableHead>
-                                                <TableHead>Sig. (1-tailed)</TableHead>
-                                            </>
-                                        )}
+                    <TabsContent value="instructors-ratings" className="space-y-8">
+                        <InstructorsRatingsTab
+                            data={data}
+                            roundToTwo={roundToTwo}
+                            problem_groups={problem_groups}
+                            criteriaList={criteriaList}
+                            banks={banks}
+                            anova={anova}
+                        />
+                    </TabsContent>
 
-                                        <TableHead>Average Score</TableHead>
+                    <TabsContent value="student-rating" className="space-y-8">
+                        <StudentRatingTab data={data} />
+                    </TabsContent>
 
-                                        <TableHead>Weighted Kappa</TableHead>
-                                    </TableRow>
+                    <TabsContent value="quiz" className="space-y-8">
+                        <QuizTab data={data} roundToTwo={roundToTwo} />
+                    </TabsContent>
 
-                                </TableHeader>
-                                <TableBody>
-                                    {data.global_criteria_irr && data.global_criteria_irr.length > 0 ? (
-                                        data.global_criteria_irr.map((item, idx) => (
-                                            <TableRow key={idx}>
-                                                <TableCell className="font-medium">{item.criterion}</TableCell>
-                                                {/* Group Columns */}
-                                                {problem_groups && problem_groups.map(group => (
-                                                    <TableCell key={group.name}>
-                                                        {group.means && group.means[item.criterion] !== undefined
-                                                            ? roundToTwo(group.means[item.criterion])
-                                                            : '-'}
-                                                    </TableCell>
-                                                ))}
+                    <TabsContent value="instructor-vs-student-kappa" className="space-y-8">
+                        <InstructorVsStudentKappaTab data={data} />
+                    </TabsContent>
 
-                                                {(!problem_groups || problem_groups.length !== 2) && (
-                                                    <TableCell>{item.n}</TableCell>
-                                                )}
+                    <TabsContent value="instructor-vs-student-t-test" className="space-y-8">
+                        <InstructorVsStudentTTestTab data={data} />
+                    </TabsContent>
 
-                                                {problem_groups && problem_groups.length === 2 && (
-                                                    <>
-                                                        <TableCell className={item.t_test?.p_2_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                            {item.t_test && item.t_test.p_2_tailed != null ? item.t_test.p_2_tailed.toFixed(4) : '-'}
-                                                        </TableCell>
-                                                        <TableCell className={item.t_test?.p_1_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                            {item.t_test && item.t_test.p_1_tailed != null ? item.t_test.p_1_tailed.toFixed(4) : '-'}
-                                                        </TableCell>
-                                                    </>
-                                                )}
-
-                                                <TableCell>
-                                                    {item.mean !== undefined ? roundToTwo(item.mean) : '-'}
-                                                </TableCell>
-
-                                                <TableCell>
-                                                    {item.kappa != null ? item.kappa.toFixed(3) : '-'}
-                                                </TableCell>
-                                            </TableRow>
-
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={4 + (problem_groups ? problem_groups.length : 0)} className="text-center text-muted-foreground h-24">
-                                                No inter-rater data available.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-
-                                    {data.overall_criteria_stats && (
-                                        <TableRow className="border-t-2 border-border font-bold bg-muted/50">
-                                            <TableCell>Weighted</TableCell>
-                                            {/* Group Columns for Weighted Row */}
-                                            {problem_groups && problem_groups.map(group => (
-                                                <TableCell key={group.name}>
-                                                    {data.overall_criteria_stats.group_means && data.overall_criteria_stats.group_means[group.name] !== undefined ? (
-                                                        roundToTwo(data.overall_criteria_stats.group_means[group.name])
-                                                    ) : '-'}
-                                                </TableCell>
-                                            ))}
-
-                                            {(!problem_groups || problem_groups.length !== 2) && (
-                                                <TableCell>{data.overall_criteria_stats.n}</TableCell>
-                                            )}
-                                            {problem_groups && problem_groups.length === 2 && (
-                                                <>
-                                                    <TableCell className={data.overall_criteria_stats.t_test?.p_2_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                        {data.overall_criteria_stats.t_test && data.overall_criteria_stats.t_test.p_2_tailed != null ? data.overall_criteria_stats.t_test.p_2_tailed.toFixed(4) : '-'}
-                                                    </TableCell>
-                                                    <TableCell className={data.overall_criteria_stats.t_test?.p_1_tailed < 0.05 ? "font-bold text-green-600" : ""}>
-                                                        {data.overall_criteria_stats.t_test && data.overall_criteria_stats.t_test.p_1_tailed != null ? data.overall_criteria_stats.t_test.p_1_tailed.toFixed(4) : '-'}
-                                                    </TableCell>
-                                                </>
-                                            )}
-                                            <TableCell>{roundToTwo(data.overall_criteria_stats.mean)}</TableCell>
-
-
-                                            <TableCell>
-
-                                            </TableCell>
-
-                                        </TableRow>
-
-
-                                    )}
-                                </TableBody>
-
-                            </Table>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Average Instructor Ratings by Bank</CardTitle>
-                        <CardDescription>Mean ratings for each criterion per bank</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Bank</TableHead>
-                                        {criteriaList.map(cid => (
-                                            <TableHead key={cid}>{cid}</TableHead>
-                                        ))}
-                                        <TableHead className="font-bold">Weighted Score</TableHead>
-                                        <TableHead>Inter-Rater Reliability</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {banks.map(bank => (
-                                        <TableRow key={bank.id}>
-                                            <TableCell className="font-medium">
-                                                <Link to={`/problem-banks/${bank.id}/analysis`} className="hover:underline text-primary">
-                                                    {bank.name}
-                                                </Link>
-                                            </TableCell>
-                                            {criteriaList.map(cid => (
-                                                <TableCell key={cid}>
-                                                    {bank.means && bank.means[cid] !== undefined && bank.means[cid] !== null
-                                                        ? roundToTwo(bank.means[cid])
-                                                        : '-'}
-                                                </TableCell>
-                                            ))}
-                                            <TableCell className="font-bold">
-                                                {(() => {
-                                                    const score = bank.means?.weighted_score;
-                                                    if (score !== undefined && score !== null) {
-                                                        return roundToTwo(score);
-                                                    }
-                                                    return '-';
-                                                })()}
-                                            </TableCell>
-
-
-                                            <TableCell>
-                                                {(() => {
-                                                    const irr = bank.inter_rater_reliability;
-                                                    if (irr === undefined || irr === null) return '-';
-                                                    if (typeof irr === 'number') return irr.toFixed(3);
-                                                    if (typeof irr === 'object') {
-                                                        const values = Object.values(irr);
-                                                        if (values.length === 0) return '-';
-                                                        const mean = values.reduce((a, b) => a + b, 0) / values.length;
-                                                        return mean.toFixed(3);
-                                                    }
-                                                    return '-';
-                                                })()}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                    {data.overall_bank_stats && (
-                                        <TableRow className="border-t-2 border-border font-bold bg-muted/50">
-                                            <TableCell>All</TableCell>
-                                            {criteriaList.map(cid => (
-                                                <TableCell key={cid}>
-                                                    {data.overall_bank_stats[cid] !== undefined
-                                                        ? roundToTwo(data.overall_bank_stats[cid])
-                                                        : '-'}
-                                                </TableCell>
-                                            ))}
-                                            <TableCell>
-                                                {(() => {
-                                                    const score = data.overall_bank_stats.weighted_score;
-                                                    if (score !== undefined && score !== null) {
-                                                        return roundToTwo(score);
-                                                    }
-                                                    return '-';
-                                                })()}
-                                            </TableCell>
-
-
-                                            <TableCell>
-                                                {data.overall_bank_stats.inter_rater_reliability !== undefined && data.overall_bank_stats.inter_rater_reliability !== null
-                                                    ? data.overall_bank_stats.inter_rater_reliability.toFixed(3)
-                                                    : '-'}
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-
-                            </Table>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {data.quiz_analysis && data.quiz_analysis.quizzes.length > 0 && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Quiz Analysis</CardTitle>
-                            <CardDescription>Performance usage statistics and ratings for your quizzes</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="rounded-md border">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Quiz Title</TableHead>
-                                            <TableHead>Responses</TableHead>
-                                            <TableHead>Avg Time (min)</TableHead>
-                                            <TableHead>Avg Words</TableHead>
-                                            <TableHead>Avg Score</TableHead>
-                                            {data.quiz_analysis.all_criteria.map(c => (
-                                                <TableHead key={c}>{c}</TableHead>
-                                            ))}
-                                            <TableHead>Cronbach Alpha</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {data.quiz_analysis.quizzes.map(quiz => (
-                                            <TableRow key={quiz.id}>
-                                                <TableCell className="font-medium">
-                                                    <Link to={`/quizzes/${quiz.id}/analytics`} className="hover:underline text-primary">
-                                                        {quiz.title}
-                                                    </Link>
-                                                </TableCell>
-                                                <TableCell>{quiz.response_count}</TableCell>
-                                                <TableCell>{roundToTwo(quiz.avg_time_minutes)}</TableCell>
-                                                <TableCell>{roundToTwo(quiz.avg_word_count)}</TableCell>
-                                                <TableCell>{roundToTwo(quiz.avg_score)}</TableCell>
-                                                {data.quiz_analysis.all_criteria.map(c => (
-                                                    <TableCell key={c}>
-                                                        {quiz.means && quiz.means[c] !== undefined
-                                                            ? roundToTwo(quiz.means[c])
-                                                            : '-'}
-                                                    </TableCell>
-                                                ))}
-                                                <TableCell>
-                                                    {roundToTwo(quiz.cronbach_alpha)}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {data.global_rating_distribution && data.global_rating_distribution.criteria.length > 0 && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Global Rating Analysis</CardTitle>
-                            <CardDescription>
-                                Aggregated rating distribution for all rating criteria across all quizzes.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-12">
-                                <RatingAnalysis title="Overall Distribution" data={data.global_rating_distribution} />
-
-                                {data.grouped_rating_distribution && data.grouped_rating_distribution.length > 0 && (
-                                    <div className="pt-8 border-t">
-                                        <RatingAnalysis
-                                            title="Group Comparison"
-                                            groupedData={data.grouped_rating_distribution}
-                                            data={(() => {
-                                                // Create a combined data object for the chart to render all series
-                                                // We follow the pattern in RatingSlotAnalytics.jsx
-                                                const combined = [];
-                                                const criteriaMap = new Map();
-
-                                                // Get all criteria names from the first group (assuming consistency or union)
-                                                // Or better, derive from global distribution keys
-                                                data.global_rating_distribution.criteria.forEach(c => {
-                                                    criteriaMap.set(c.name, c);
-                                                });
-
-                                                // Iterate collected criteria to maintain order
-                                                Array.from(criteriaMap.values()).forEach((c, idx) => {
-                                                    if (idx > 0) {
-                                                        // Separator
-                                                        combined.push({
-                                                            name: `__sep__${idx}`,
-                                                            distribution: []
-                                                        });
-                                                    }
-
-                                                    // Add this criterion for EACH Group
-                                                    data.grouped_rating_distribution.forEach(g => {
-                                                        const gc = g.data.criteria.find(item => item.name === c.name);
-
-                                                        // If gc doesn't exist (group missing this criterion), we can still push a placeholder
-                                                        // But RatingChart needs 'distribution' to be present.
-
-                                                        if (gc) {
-                                                            const label = `${c.id || c.name} (${g.group})`;
-                                                            combined.push({
-                                                                ...gc,
-                                                                id: label,
-                                                                name: label
-                                                            });
-                                                        }
-                                                    });
-                                                });
-
-                                                return { criteria: combined };
-                                            })()}
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Instructors vs Students Agreement (All Quizzes)</CardTitle>
-                        <CardDescription>
-                            Pooled agreement analysis between Student and Instructor ratings across all quizzes.
-                            Aggregated using weighted kappa per criterion.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <InterRaterAgreement data={data.global_quiz_agreement} />
-                    </CardContent>
-                </Card>
-
-                {data.global_comparison && (
-                    <div className="space-y-4">
-                        <h2 className="text-xl font-semibold tracking-tight">Global Student vs Instructor Comparison</h2>
-                        <StudentInstructorComparison data={data.global_comparison} />
-                    </div>
-                )}
-
-                {data.score_correlation && (
-                    <ScoreVsRatingAnalysis data={data} />
-                )}
-
-                {data.time_correlation && (
-                    <ScoreVsRatingAnalysis
-                        data={{ score_correlation: data.time_correlation }}
-                        title="Score vs Time Correlation Analysis"
-                        description="Analysis of how quiz completion time correlates with student graded scores."
-                        yAxisLabel="Time (minutes)"
-                    />
-                )}
-
-                {data.word_count_correlation && (
-                    <ScoreVsRatingAnalysis
-                        data={{ score_correlation: data.word_count_correlation }}
-                        title="Score vs Word Count Correlation Analysis"
-                        description="Analysis of how total word count of text answers correlates with student graded scores."
-                        yAxisLabel="Word Count"
-                    />
-                )}
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>ANOVA Results for Problem Banks</CardTitle>
-                        <CardDescription>Statistical comparison of instructor ratings across banks (One-way ANOVA)</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Criterion</TableHead>
-                                        <TableHead>F-statistic</TableHead>
-                                        <TableHead>p-value</TableHead>
-                                        <TableHead>Post-hoc Analysis (Tukey's HSD)</TableHead>
-                                    </TableRow>
-
-                                </TableHeader>
-                                <TableBody>
-                                    {anova.map((res, idx) => (
-                                        <TableRow key={idx}>
-                                            <TableCell className="font-medium">{res.criterion_id}</TableCell>
-                                            <TableCell>{res.f_stat?.toFixed(3) || '-'}</TableCell>
-                                            <TableCell className={res.significant ? "font-bold text-green-600" : ""}>
-                                                {res.p_value?.toFixed(4) || '-'}
-                                            </TableCell>
-                                            <TableCell>
-                                                {res.significant ? (
-                                                    res.tukey_results && res.tukey_results.length > 0 ? (
-                                                        <div className="text-xs space-y-1">
-                                                            {res.tukey_results.map((tukeyRes, tukeyIdx) => (
-                                                                <div key={tukeyIdx}>{tukeyRes}</div>
-                                                            ))}
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-muted-foreground italic text-xs">No significant pairwise differences</span>
-                                                    )
-                                                ) : (
-                                                    '-'
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                    {anova.length === 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={4} className="text-center text-muted-foreground h-24">
-                                                No common criteria found for comparison or insufficient data.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {data.quiz_anova && data.quiz_anova.length > 0 && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>ANOVA Results for Quizzes</CardTitle>
-                            <CardDescription>Statistical comparison of student ratings across quizzes (One-way ANOVA)</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="rounded-md border">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Criterion</TableHead>
-                                            <TableHead>F-statistic</TableHead>
-                                            <TableHead>p-value</TableHead>
-                                            <TableHead>Post-hoc Analysis (Tukey's HSD)</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {data.quiz_anova.map((res, idx) => (
-                                            <TableRow key={idx}>
-                                                <TableCell className="font-medium">{res.criterion_id}</TableCell>
-                                                <TableCell>{res.f_stat?.toFixed(3) || '-'}</TableCell>
-                                                <TableCell className={res.significant ? "font-bold text-green-600" : ""}>
-                                                    {res.p_value?.toFixed(4) || '-'}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {res.significant ? (
-                                                        res.tukey_results && res.tukey_results.length > 0 ? (
-                                                            <div className="text-xs space-y-1">
-                                                                {res.tukey_results.map((tukeyRes, tukeyIdx) => (
-                                                                    <div key={tukeyIdx}>{tukeyRes}</div>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <span className="text-muted-foreground italic text-xs">No significant pairwise differences</span>
-                                                        )
-                                                    ) : (
-                                                        '-'
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
+                    <TabsContent value="student-score" className="space-y-8">
+                        <StudentScoreTab data={data} />
+                    </TabsContent>
+                </Tabs>
             </div>
         </AppShell >
     );
