@@ -417,7 +417,60 @@ const GlobalAnalysisPage = () => {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <RatingAnalysis title="Overall Distribution" data={data.global_rating_distribution} />
+                            <div className="space-y-12">
+                                <RatingAnalysis title="Overall Distribution" data={data.global_rating_distribution} />
+
+                                {data.grouped_rating_distribution && data.grouped_rating_distribution.length > 0 && (
+                                    <div className="pt-8 border-t">
+                                        <RatingAnalysis
+                                            title="Group Comparison"
+                                            groupedData={data.grouped_rating_distribution}
+                                            data={(() => {
+                                                // Create a combined data object for the chart to render all series
+                                                // We follow the pattern in RatingSlotAnalytics.jsx
+                                                const combined = [];
+                                                const criteriaMap = new Map();
+
+                                                // Get all criteria names from the first group (assuming consistency or union)
+                                                // Or better, derive from global distribution keys
+                                                data.global_rating_distribution.criteria.forEach(c => {
+                                                    criteriaMap.set(c.name, c);
+                                                });
+
+                                                // Iterate collected criteria to maintain order
+                                                Array.from(criteriaMap.values()).forEach((c, idx) => {
+                                                    if (idx > 0) {
+                                                        // Separator
+                                                        combined.push({
+                                                            name: `__sep__${idx}`,
+                                                            distribution: []
+                                                        });
+                                                    }
+
+                                                    // Add this criterion for EACH Group
+                                                    data.grouped_rating_distribution.forEach(g => {
+                                                        const gc = g.data.criteria.find(item => item.name === c.name);
+
+                                                        // If gc doesn't exist (group missing this criterion), we can still push a placeholder
+                                                        // But RatingChart needs 'distribution' to be present.
+
+                                                        if (gc) {
+                                                            const label = `${c.id || c.name} (${g.group})`;
+                                                            combined.push({
+                                                                ...gc,
+                                                                id: label,
+                                                                name: label
+                                                            });
+                                                        }
+                                                    });
+                                                });
+
+                                                return { criteria: combined };
+                                            })()}
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
                 )}

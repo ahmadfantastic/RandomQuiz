@@ -231,3 +231,154 @@ class GlobalAnalysisAnovaTest(TestCase):
         # Verify ID is present and matches code
         self.assertIn('id', item)
         self.assertEqual(item['id'], 'QUAL')
+
+    def test_grouped_rating_distribution(self):
+        # Create problems in different groups
+        p1 = Problem.objects.create(problem_bank=self.bank_a, statement="P1", order_in_bank=1, group="Easy")
+        p2 = Problem.objects.create(problem_bank=self.bank_a, statement="P2", order_in_bank=2, group="Easy")
+        p3 = Problem.objects.create(problem_bank=self.bank_a, statement="P3", order_in_bank=3, group="Hard")
+        p4 = Problem.objects.create(problem_bank=self.bank_a, statement="P4", order_in_bank=4, group="Hard")
+
+        # Create Quiz Environment
+        from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizRatingCriterion, QuizRatingScaleOption
+        quiz = Quiz.objects.create(title="Test Quiz Group", owner=self.instructor)
+        
+        # Link 'Quality' Criterion
+        # Global Analysis aggregates by Name. 
+        # API requires criteria mapping
+        qc = QuizRatingCriterion.objects.create(
+            quiz=quiz, order=1, criterion_id='Q_QUAL', name='Quality', instructor_criterion_code='QUAL'
+        )
+        
+        # Scale (needed for View to process)
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=1, label="1", mapped_value=1, order=1)
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=5, label="5", mapped_value=5, order=2)
+
+        # Slots
+        slot1 = QuizSlot.objects.create(quiz=quiz, order=1, label="Slot1", response_type=QuizSlot.ResponseType.RATING, problem_bank=self.bank_a)
+        slot2 = QuizSlot.objects.create(quiz=quiz, order=2, label="Slot2", response_type=QuizSlot.ResponseType.RATING, problem_bank=self.bank_a)
+        slot3 = QuizSlot.objects.create(quiz=quiz, order=3, label="Slot3", response_type=QuizSlot.ResponseType.RATING, problem_bank=self.bank_a)
+        slot4 = QuizSlot.objects.create(quiz=quiz, order=4, label="Slot4", response_type=QuizSlot.ResponseType.RATING, problem_bank=self.bank_a)
+
+        # Attempt
+        attempt = QuizAttempt.objects.create(quiz=quiz, student_identifier="student1", completed_at="2023-01-01T12:00:00Z")
+        
+        # Add Answer Data (Student Ratings)
+        # Using the criterion_id 'Q_QUAL' which maps to 'Quality'
+        
+        # P1 (Easy, Val 1)
+        QuizAttemptSlot.objects.create(
+            attempt=attempt, slot=slot1, assigned_problem=p1,
+            answer_data={'ratings': {'Q_QUAL': 1}}, answered_at="2023-01-01T12:00:00Z"
+        )
+        
+        # P2 (Easy, Val 1 => Count 2 for 'Easy'-'Quality'-1)
+        QuizAttemptSlot.objects.create(
+            attempt=attempt, slot=slot2, assigned_problem=p2,
+            answer_data={'ratings': {'Q_QUAL': 1}}, answered_at="2023-01-01T12:00:00Z"
+        )
+        
+        # P3 (Hard, Val 5)
+        QuizAttemptSlot.objects.create(
+            attempt=attempt, slot=slot3, assigned_problem=p3,
+            answer_data={'ratings': {'Q_QUAL': 5}}, answered_at="2023-01-01T12:00:00Z"
+        )
+        
+        # P4 (Hard, Val 5 => Count 2 for 'Hard'-'Quality'-5)
+        QuizAttemptSlot.objects.create(
+            attempt=attempt, slot=slot4, assigned_problem=p4,
+            answer_data={'ratings': {'Q_QUAL': 5}}, answered_at="2023-01-01T12:00:00Z"
+        )
+            
+        url = reverse('global-analysis')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        data = response.data
+        self.assertIn('grouped_rating_distribution', data)
+        grouped_dist = data['grouped_rating_distribution']
+        
+        # Should have 2 groups
+        self.assertEqual(len(grouped_dist), 2)
+        
+        easy_group = next((g for g in grouped_dist if g['group'] == 'Easy'), None)
+        hard_group = next((g for g in grouped_dist if g['group'] == 'Hard'), None)
+        
+        self.assertIsNotNone(easy_group)
+        self.assertIsNotNone(hard_group)
+        
+        # Check Easy Group Data for 'Quality'
+        # Expect values 1 to have count 2 (from logic above)
+        easy_criteria = easy_group['data']['criteria']
+        qual_easy = next((c for c in easy_criteria if c['name'] == 'Quality'), None)
+        self.assertIsNotNone(qual_easy)
+        
+        dist_easy = qual_easy['distribution']
+        val_1 = next((v for v in dist_easy if v['value'] == 1.0), None)
+        self.assertIsNotNone(val_1)
+        self.assertEqual(val_1['count'], 2)
+        
+        # Check Hard Group Data for 'Quality'
+        # Expect values 5 to have count 2
+        hard_criteria = hard_group['data']['criteria']
+        qual_hard = next((c for c in hard_criteria if c['name'] == 'Quality'), None)
+        
+        dist_hard = qual_hard['distribution']
+        val_5 = next((v for v in dist_hard if v['value'] == 5.0), None)
+        self.assertIsNotNone(val_5)
+        self.assertEqual(val_5['count'], 2)
+
+    def test_grouped_rating_distribution_zero_filling(self):
+        # Verify that if a group doesn't use a scale value, it is still reported with count 0
+        p1 = Problem.objects.create(problem_bank=self.bank_a, statement="P1", order_in_bank=1, group="GroupA")
+
+        # Quiz Setup
+        from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizRatingCriterion, QuizRatingScaleOption
+        quiz = Quiz.objects.create(title="Test Quiz Zero Fill", owner=self.instructor)
+        
+        qc = QuizRatingCriterion.objects.create(
+            quiz=quiz, order=1, criterion_id='Q_QUAL', name='Quality', instructor_criterion_code='QUAL'
+        )
+        
+        # Scale 1, 2, 3
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=1, label="1", mapped_value=1, order=1)
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=2, label="2", mapped_value=2, order=2)
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=3, label="3", mapped_value=3, order=3)
+
+        slot = QuizSlot.objects.create(quiz=quiz, order=1, label="Slot", response_type=QuizSlot.ResponseType.RATING, problem_bank=self.bank_a)
+        attempt = QuizAttempt.objects.create(quiz=quiz, student_identifier="student1", completed_at="2023-01-01T12:00:00Z")
+        
+        # Answer ONLY with value 1
+        QuizAttemptSlot.objects.create(
+            attempt=attempt, slot=slot, assigned_problem=p1,
+            answer_data={'ratings': {'Q_QUAL': 1}}, answered_at="2023-01-01T12:00:00Z"
+        )
+        
+        url = reverse('global-analysis')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        grouped_dist = response.data.get('grouped_rating_distribution', [])
+        group_a = next((g for g in grouped_dist if g['group'] == 'GroupA'), None)
+        self.assertIsNotNone(group_a)
+        
+        # Check distribution for 'Quality'
+        qual_dist = next((c['distribution'] for c in group_a['data']['criteria'] if c['name'] == 'Quality'), [])
+        
+        # Verify 1 is present (count 1)
+        v1 = next((x for x in qual_dist if x['value'] == 1.0), None)
+        self.assertIsNotNone(v1)
+        self.assertEqual(v1['count'], 1)
+        self.assertEqual(v1['label'], "1") # Label matches defined scale label
+        
+        # Verify 2 is present (count 0) - This confirms zero-filling works
+        v2 = next((x for x in qual_dist if x['value'] == 2.0), None)
+        self.assertIsNotNone(v2, "Value 2.0 (unused) should be present in distribution")
+        self.assertEqual(v2['count'], 0)
+        self.assertEqual(v2['label'], "2")
+        
+        # Verify 3 is present (count 0)
+        v3 = next((x for x in qual_dist if x['value'] == 3.0), None)
+        self.assertIsNotNone(v3, "Value 3.0 (unused) should be present in distribution")
+        self.assertEqual(v3['count'], 0)
+        self.assertEqual(v3['label'], "3")

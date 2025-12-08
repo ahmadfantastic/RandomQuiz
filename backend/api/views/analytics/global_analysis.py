@@ -765,6 +765,7 @@ class GlobalAnalysisView(APIView):
 
         # Global Rating Distribution (for Chart/Table)
         global_rating_counts = {} 
+        global_grouped_student_counts = {} # group -> criterion -> value -> count
         # criterion_name -> { total_score: float, count: int, scale_labels: {} }
         global_rating_stats = {}
         global_criterion_orders = {} # {criterion_name: min_order}
@@ -1006,15 +1007,18 @@ class GlobalAnalysisView(APIView):
             # ProblemID -> { InstructorCriterionCode -> [List of dicts {'raw':, 'mapped':}] }
             student_ratings_data = {} 
             
+            # Fetch slots
             attempt_slots = QuizAttemptSlot.objects.filter(
                 attempt__in=attempts,
                 slot__in=quiz.slots.filter(response_type=QuizSlot.ResponseType.RATING),
                 answer_data__ratings__isnull=False
-            ).values('assigned_problem_id', 'answer_data', 'attempt__student_identifier')
+            ).values('assigned_problem_id', 'answer_data', 'attempt__student_identifier', 'assigned_problem__group')
 
             for entry in attempt_slots:
                 # Accumulate for Global Rating Distribution
                 ratings = entry['answer_data'].get('ratings', {})
+                p_group = entry.get('assigned_problem__group') or 'Ungrouped'
+                
                 for c_id, raw_val in ratings.items():
                     # Find criterion name
                     c_obj = quiz_criteria_map.get(c_id)
@@ -1042,6 +1046,17 @@ class GlobalAnalysisView(APIView):
                             global_rating_counts[c_name][val] = 0
                         
                         global_rating_counts[c_name][val] += 1
+                        
+                        # --- Accumulate for Group Comparison (Student Ratings) ---
+                        if p_group not in global_grouped_student_counts:
+                            global_grouped_student_counts[p_group] = {}
+                        if c_name not in global_grouped_student_counts[p_group]:
+                            global_grouped_student_counts[p_group][c_name] = {}
+                        
+                        if val not in global_grouped_student_counts[p_group][c_name]:
+                            global_grouped_student_counts[p_group][c_name][val] = 0
+                        global_grouped_student_counts[p_group][c_name][val] += 1
+                        # -------------------------------------------------------
                         
                         # Stats
                         if isinstance(val, (int, float)):
@@ -1297,6 +1312,97 @@ class GlobalAnalysisView(APIView):
             })
 
         response_data['global_rating_distribution'] = global_rating_distribution_data
+
+        # --- Grouped Rating Distribution (for Group Comparison Chart) ---
+        formatted_grouped_distribution = []
+        
+        # We need to construct the data structure:
+        # [ { group: "G1", data: { criteria: [ {name, distribution: []} ] } } ]
+        
+        # We have 'group_stats' which currently only holds MEANS: group -> criterion -> [list of avg scores]
+        # But we need DISTRIBUTIONS (counts of values).
+        # 'group_stats' was populated from 'problem_scores' around line 273.
+        # 'problem_scores' (line 91) keys are problem_ids, and it has 'criteria' -> {c_name -> [list of ratings]}
+        
+        # We need to re-scan `all_problem_scores` (which aggregates problem_scores from all banks)
+        # to build distributions per group.
+        
+        # --- Grouped Rating Distribution (for Group Comparison Chart) ---
+        formatted_grouped_distribution = []
+        
+        # Now using STUDENT RATINGS accumulated in global_grouped_student_counts
+        # Structure: global_grouped_student_counts[group][c_name][value] = count
+        
+        group_dist_acc = global_grouped_student_counts # Alias for reuse of below logic structure if matches
+        
+        # Note: Previous logic iterated 'all_problem_scores' to build 'group_dist_acc'.
+        # We already built 'global_grouped_student_counts' in the quiz loop.
+        # So we just use it directly.
+        
+        # (Deleted the block that re-scanned all_problem_scores)
+        
+        # Now format it
+        
+        # Now format it
+        # Sorted groups
+        sorted_groups = sorted(group_dist_acc.keys())
+        
+        # We need a unified list of criteria names that exist in at least one group
+        # Or better, iterate over `sorted_criteria` (from earlier) to keep order
+        
+        for g_name in sorted_groups:
+            g_criteria_list = []
+            
+            # Use sorted_criteria (which is sorted by rubric order)
+            # but also include any that might not be in sorted_criteria if any (though unlikely if gathered correctly)
+            # Let's iterate sorted_criteria
+            
+            for c_name in sorted_criteria_names:
+                # Find or create distribution
+                group_c_dist = group_dist_acc[g_name].get(c_name, {})
+                
+                # Get all possible values (scale) for this criterion across ALL GLOBAL DATA
+                # 'global_rating_scales' tracks all observed scale values for each criterion across all quizzes
+                
+                all_raw_vals = set(global_rating_scales.get(c_name, []))
+                
+                # Also include observed values in this specific distribution just in case
+                for og in sorted_groups:
+                    all_raw_vals.update(group_dist_acc[og].get(c_name, {}).keys())
+                
+                sorted_vals = sorted(list(all_raw_vals))
+                
+                c_dist_list = []
+                total_count = sum(group_c_dist.values())
+                
+                for v in sorted_vals:
+                    count = group_c_dist.get(v, 0)
+                    pct = (count / total_count * 100) if total_count > 0 else 0
+                    # Label? logic is tricky without explicit scale object handy per value.
+                    # We can use str(v). Or try to fallback to known labels if they were gathered.
+                    # In `global_rating_stats` we gathered labels!
+                    label = str(v)
+                    if c_name in global_rating_stats and 'scale_labels' in global_rating_stats[c_name]:
+                         label = global_rating_stats[c_name]['scale_labels'].get(v, str(v))
+                    
+                    c_dist_list.append({
+                        'value': v,
+                        'label': label,
+                        'count': count,
+                        'percentage': pct
+                    })
+                    
+                g_criteria_list.append({
+                    'name': c_name,
+                    'distribution': c_dist_list
+                })
+                
+            formatted_grouped_distribution.append({
+                'group': g_name,
+                'data': { 'criteria': g_criteria_list }
+            })
+            
+        response_data['grouped_rating_distribution'] = formatted_grouped_distribution
 
         # 6. Global Student vs Instructor Comparison
         # ---------------------------------------------------------------------
