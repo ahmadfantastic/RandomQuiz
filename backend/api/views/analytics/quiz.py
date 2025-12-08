@@ -1189,15 +1189,40 @@ class QuizInterRaterAgreementView(APIView):
         problem_group_map = {p.id: p.group or '' for p in quiz_problems}
 
         # Fetch all relevant attempt slots
+        # We need the attempt ID to link to the total score
         attempt_slots = QuizAttemptSlot.objects.filter(
             attempt__in=attempts,
             slot__response_type='rating',
             answer_data__ratings__isnull=False
-        ).values('assigned_problem_id', 'answer_data')
+        ).values('id', 'assigned_problem_id', 'answer_data', 'attempt_id')
+        
+        # Calculate Total Quiz Score per Attempt
+        # Sum up points from all graded slots in the attempt
+        attempt_scores = QuizAttemptSlot.objects.filter(
+            attempt__in=attempts,
+            grade__isnull=False
+        ).values('attempt_id').annotate(
+            total_score=Coalesce(Sum('grade__items__selected_level__points'), 0.0)
+        )
+        
+        attempt_score_map = {item['attempt_id']: item['total_score'] for item in attempt_scores}
+
+        raw_score_data = [] # List of {pid, ratings, score}
 
         for entry in attempt_slots:
             pid = entry['assigned_problem_id']
             ratings = entry['answer_data'].get('ratings', {})
+            # Get score from the attempt map, default to 0 if not found (though it should be if graded)
+            # Check if attempting student even has a score (might be ungraded)
+            attempt_id = entry['attempt_id']
+            score = attempt_score_map.get(attempt_id)
+            
+            # Store raw data for score correlation analysis
+            raw_score_data.append({
+                'pid': pid,
+                'ratings': ratings,
+                'score': score
+            })
             
             if pid not in student_ratings_data:
                 student_ratings_data[pid] = {}
@@ -1230,6 +1255,8 @@ class QuizInterRaterAgreementView(APIView):
         # (RubricCriterion ID vs Code). The Entry links to RubricCriterion(db model).
         # RubricCriterion has .criterion_id field which matches instructor_criterion_code.
         
+        weight_map = {} # instructor_code -> weight
+
         for rating in instructor_ratings:
             pid = rating.problem_id
             if pid not in instructor_ratings_data:
@@ -1239,6 +1266,9 @@ class QuizInterRaterAgreementView(APIView):
                 code = entry.criterion.criterion_id
                 val = entry.scale_option.value
                 
+                if code not in weight_map:
+                     weight_map[code] = entry.criterion.weight
+
                 if code not in instructor_ratings_data[pid]:
                     instructor_ratings_data[pid][code] = []
                 instructor_ratings_data[pid][code].append({
@@ -1364,13 +1394,7 @@ class QuizInterRaterAgreementView(APIView):
         # Add Overall group
         groups['Overall'] = relevant_problem_ids
         
-        # Build Weight Map beforehand (needed for weighted calc)
-        weight_map = {}
-        for r in instructor_ratings:
-            for entry in r.entries.all():
-                cid = entry.criterion.criterion_id
-                if cid not in weight_map:
-                    weight_map[cid] = entry.criterion.weight
+        # Pre-calculate weight_map was done above
 
         # Iterate Groups
         for group_name in sorted(groups.keys()):
@@ -1564,11 +1588,105 @@ class QuizInterRaterAgreementView(APIView):
                      'code': qc.instructor_criterion_code
                  })
 
+        # 7. Score vs Rating Correlation Analysis
+        score_correlation = []
+        
+        # We need to collect pairs of (Rating, Score) for each criterion
+        # And (WeightedRating, Score)
+        
+        # Prepare storage
+        criterion_points = {} # name -> list of {x: score, y: rating}
+        weighted_points = [] # list of {x: score, y: rating}
+        
+        for qc in quiz_criteria:
+            if qc.instructor_criterion_code:
+                criterion_points[qc.name] = []
+        
+        for record in raw_score_data:
+            pid = record['pid']
+            ratings = record['ratings']
+            score = record['score']
+            
+            if score is None: continue # Skip if no grade
+            
+            # Weighted calc for this record
+            w_sum_r = 0
+            w_sum_w = 0
+            
+            for q_cid, val in ratings.items():
+                # Use raw value 'val' directly as requested
+                
+                # Get criterion name to plot per-criterion
+                c_name = criterion_names.get(q_cid)
+                if c_name and c_name in criterion_points:
+                     criterion_points[c_name].append({'x': score, 'y': val})
+                
+                # Weighted Calculation
+                # We need to link this rating to a weight.
+                # Use criterion_map to find the instructor code, then lookup weight.
+                if q_cid in criterion_map:
+                     i_code = criterion_map[q_cid]
+                     if i_code in weight_map:
+                         weight = weight_map[i_code]
+                         w_sum_r += val * weight
+                         w_sum_w += weight
+            
+            if w_sum_w > 0:
+                weighted_avg = w_sum_r / w_sum_w
+                weighted_points.append({'x': score, 'y': weighted_avg})
+
+        # Calculate Correlations
+        def calculate_correlations(points, label):
+             if len(points) < 2:
+                 return {
+                     'name': label,
+                     'count': len(points),
+                     'pearson_r': None,
+                     'pearson_p': None,
+                     'spearman_rho': None,
+                     'spearman_p': None,
+                     'points': points
+                 }
+            
+             xs = [p['x'] for p in points]
+             ys = [p['y'] for p in points]
+             
+             try:
+                 p_res = stats.pearsonr(xs, ys)
+                 s_res = stats.spearmanr(xs, ys)
+                 
+                 return {
+                     'name': label,
+                     'count': len(points),
+                     'pearson_r': round(p_res.statistic, 4),
+                     'pearson_p': round(p_res.pvalue, 5),
+                     'spearman_rho': round(s_res.statistic, 4),
+                     'spearman_p': round(s_res.pvalue, 5),
+                     'points': points
+                 }
+             except Exception as e:
+                 print(f"Error calculating correlation for {label}: {e}")
+                 return {
+                     'name': label,
+                     'count': len(points),
+                     'pearson_r': None,
+                     'pearson_p': None,
+                     'spearman_rho': None,
+                     'spearman_p': None,
+                     'points': points
+                 }
+
+        for c_name, points in criterion_points.items():
+            score_correlation.append(calculate_correlations(points, c_name))
+            
+        score_correlation.append(calculate_correlations(weighted_points, "Weighted Rating"))
+
         return Response(self.sanitize_data({
             'agreement': agreement_data,
             'comparison': comparison_data,
             'details': details_list,
-            'criteria_columns': criteria_columns
+            'criteria_columns': criteria_columns,
+            'score_correlation': score_correlation
         }))
 
     def sanitize_data(self, data):
