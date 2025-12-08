@@ -20,90 +20,94 @@ const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating"
                 <CardHeader>
                     <CardTitle>{title || "Score vs Rating Correlation Analysis"}</CardTitle>
                     <CardDescription>
-                        {description || "Analysis of how student ratings correlate with their graded scores per criterion."}
+                        {description || "Analysis of how student ratings correlate with graded scores."}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Criterion</TableHead>
-                                <TableHead>Sample Size</TableHead>
-                                <TableHead>Pearson r</TableHead>
-                                <TableHead>P-Value (Pearson)</TableHead>
-                                <TableHead>Spearman rho</TableHead>
-                                <TableHead>P-Value (Spearman)</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {score_correlation.map((item, index) => (
-                                <TableRow key={index}>
-                                    <TableCell className="font-medium">{item.name}</TableCell>
-                                    <TableCell>{item.count}</TableCell>
-                                    <TableCell className={Math.abs(item.pearson_r) > 0.5 ? "font-bold text-primary" : ""}>
-                                        {item.pearson_r !== null ? item.pearson_r : '-'}
-                                    </TableCell>
-                                    <TableCell>
-                                        {item.pearson_p !== null ? (
-                                            <span className={item.pearson_p < 0.05 ? "text-green-600 font-bold" : ""}>
-                                                {item.pearson_p}{item.pearson_p < 0.05 && "*"}
-                                            </span>
-                                        ) : '-'}
-                                    </TableCell>
-                                    <TableCell className={Math.abs(item.spearman_rho) > 0.5 ? "font-bold text-primary" : ""}>
-                                        {item.spearman_rho !== null ? item.spearman_rho : '-'}
-                                    </TableCell>
-                                    <TableCell>
-                                        {item.spearman_p !== null ? (
-                                            <span className={item.spearman_p < 0.05 ? "text-green-600 font-bold" : ""}>
-                                                {item.spearman_p}{item.spearman_p < 0.05 && "*"}
-                                            </span>
-                                        ) : '-'}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                    <div className="space-y-12">
+                        {score_correlation.map((item, index) => (
+                            <div key={index} className="flex flex-col lg:flex-row gap-6 items-start border-b pb-12 last:border-0 last:pb-0">
+                                {/* Left Column: Transposed Stats Table */}
+                                <div className="w-full lg:w-1/3 shrink-0">
+                                    <h3 className="text-lg font-semibold mb-4">{item.name}</h3>
+                                    <div className="rounded-md border">
+                                        <Table>
+                                            <TableBody>
+                                                <TableRow>
+                                                    <TableCell className="font-medium bg-muted/50 w-1/2">Sample Size</TableCell>
+                                                    <TableCell>{item.count}</TableCell>
+                                                </TableRow>
+                                                <TableRow>
+                                                    <TableCell className="font-medium bg-muted/50">Pearson r</TableCell>
+                                                    <TableCell className={Math.abs(item.pearson_r) > 0.5 ? "font-bold text-primary" : ""}>
+                                                        {item.pearson_r !== null ? item.pearson_r : '-'}
+                                                    </TableCell>
+                                                </TableRow>
+                                                <TableRow>
+                                                    <TableCell className="font-medium bg-muted/50">P-Value (Pearson)</TableCell>
+                                                    <TableCell>
+                                                        {item.pearson_p !== null ? (
+                                                            <span className={item.pearson_p < 0.05 ? "text-green-600 font-bold" : ""}>
+                                                                {item.pearson_p}{item.pearson_p < 0.05 && "*"}
+                                                            </span>
+                                                        ) : '-'}
+                                                    </TableCell>
+                                                </TableRow>
+                                                <TableRow>
+                                                    <TableCell className="font-medium bg-muted/50">Spearman rho</TableCell>
+                                                    <TableCell className={Math.abs(item.spearman_rho) > 0.5 ? "font-bold text-primary" : ""}>
+                                                        {item.spearman_rho !== null ? item.spearman_rho : '-'}
+                                                    </TableCell>
+                                                </TableRow>
+                                                <TableRow>
+                                                    <TableCell className="font-medium bg-muted/50">P-Value (Spearman)</TableCell>
+                                                    <TableCell>
+                                                        {item.spearman_p !== null ? (
+                                                            <span className={item.spearman_p < 0.05 ? "text-green-600 font-bold" : ""}>
+                                                                {item.spearman_p}{item.spearman_p < 0.05 && "*"}
+                                                            </span>
+                                                        ) : '-'}
+                                                    </TableCell>
+                                                </TableRow>
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </div>
+
+                                {/* Right Column: Scatter Plot */}
+                                <div className="w-full lg:w-2/3 h-[350px]">
+                                    {item.points && item.points.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <ScatterChart
+                                                margin={{
+                                                    top: 20,
+                                                    right: 20,
+                                                    bottom: 20,
+                                                    left: 20,
+                                                }}
+                                            >
+                                                <CartesianGrid />
+                                                <XAxis type="number" dataKey="x" name="Score">
+                                                    <Label value="Grade Score" offset={-10} position="insideBottom" />
+                                                </XAxis>
+                                                <YAxis type="number" dataKey="y" name={yAxisLabel}>
+                                                    <Label value={yAxisLabel} angle={-90} position="insideLeft" />
+                                                </YAxis>
+                                                <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                                <Scatter name="Students" data={item.points} fill="hsl(var(--primary))" />
+                                            </ScatterChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="flex h-full items-center justify-center text-muted-foreground border rounded-md bg-muted/10">
+                                            No data points available for plot
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </CardContent>
             </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {score_correlation.map((item, index) => (
-                    <Card key={index} className="h-[400px] flex flex-col">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-base">{item.name}</CardTitle>
-                        </CardHeader>
-                        <CardContent className="flex-1 min-h-0">
-                            {item.points && item.points.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <ScatterChart
-                                        margin={{
-                                            top: 20,
-                                            right: 20,
-                                            bottom: 20,
-                                            left: 20,
-                                        }}
-                                    >
-                                        <CartesianGrid />
-                                        <XAxis type="number" dataKey="x" name="Score">
-                                            <Label value="Grade Score" offset={-10} position="insideBottom" />
-                                        </XAxis>
-                                        <YAxis type="number" dataKey="y" name={yAxisLabel}>
-                                            <Label value={yAxisLabel} angle={-90} position="insideLeft" />
-                                        </YAxis>
-                                        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                                        <Scatter name="Students" data={item.points} fill="hsl(var(--primary))" />
-                                    </ScatterChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="flex h-full items-center justify-center text-muted-foreground">
-                                    No data points
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
         </div>
     );
 };
