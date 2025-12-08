@@ -41,7 +41,7 @@ const RatingChart = ({ data, dense = false }) => {
 
         // 2. Transform data
         const chartData = criteria.map(criterion => {
-            const row = { name: criterion.name };
+            const row = { name: criterion.id || criterion.name };
             const distMap = {};
             criterion.distribution.forEach(d => {
                 distMap[d.label] = d;

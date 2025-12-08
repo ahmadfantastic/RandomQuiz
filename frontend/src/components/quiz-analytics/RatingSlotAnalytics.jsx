@@ -236,9 +236,11 @@ const RatingSlotAnalytics = ({ slot }) => {
                                                 slot.data.grouped_data.forEach(g => {
                                                     const gc = g.data.criteria.find(item => item.name === c.name);
                                                     if (gc) {
+                                                        const label = `${c.id || c.name} (${g.group})`;
                                                         combined.push({
                                                             ...gc,
-                                                            name: `${c.name} (${g.group})`
+                                                            id: label,
+                                                            name: label
                                                         });
                                                     }
                                                 });

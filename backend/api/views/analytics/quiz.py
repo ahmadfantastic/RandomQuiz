@@ -930,6 +930,7 @@ class QuizSlotAnalyticsView(APIView):
             # Create a mapping from ID/Name to canonical Name
             # We want to merge "SC" (id) and "Scenario Quality (SC)" (name) into one entry
             canonical_names = {} # key -> canonical_name
+            name_to_id = {} # canonical_name -> id
             
             # Pre-populate with rubric criteria to ensure order/existence
             for c in criteria:
@@ -949,6 +950,9 @@ class QuizSlotAnalyticsView(APIView):
                 if c_id:
                     canonical_names[c_id] = c_name
                     canonical_names[c_id.lower()] = c_name
+                    
+                    # Store ID for this name
+                    name_to_id[c_name] = c_id
 
             groups = set()
             grouped_stats = {} # group -> { criteria_name -> { distribution, values } }
@@ -1021,6 +1025,7 @@ class QuizSlotAnalyticsView(APIView):
                         'percentage': percentage
                     })
                 formatted_criteria.append({
+                    'id': name_to_id.get(c_name, c_name),
                     'name': c_name,
                     'distribution': dist
                 })
@@ -1056,6 +1061,7 @@ class QuizSlotAnalyticsView(APIView):
                             })
                             
                     g_criteria.append({
+                        'id': name_to_id.get(c_name, c_name),
                         'name': c_name,
                         'distribution': dist
                     })

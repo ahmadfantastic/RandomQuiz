@@ -181,3 +181,53 @@ class GlobalAnalysisAnovaTest(TestCase):
         quality_mean = ungrouped['means'].get('Quality')
         self.assertEqual(quality_mean, 1.5)
 
+    def test_global_analysis_rating_distribution_ids(self):
+        # Create Quiz Setup
+        from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizRatingCriterion, QuizRatingScaleOption
+        
+        quiz = Quiz.objects.create(title="Test Quiz", owner=self.instructor)
+        
+        # Create Quiz Rating Criterion matching the Rubric one? 
+        # Global Analysis aggregates by Name usually, or Code. 
+        # The view maps quiz criteria. 
+        # We need a QuizRatingCriterion.
+        qc = QuizRatingCriterion.objects.create(
+            quiz=quiz, order=1, criterion_id='Q_QUAL', name='Quality', instructor_criterion_code='QUAL'
+        )
+        
+        # Scale
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=1, label="1", mapped_value=1, order=1)
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=5, label="5", mapped_value=5, order=2)
+        
+        # Slot
+        slot = QuizSlot.objects.create(quiz=quiz, order=1, label="Rating Slot", response_type=QuizSlot.ResponseType.RATING, problem_bank=self.bank_a)
+        
+        # Attempt
+        attempt = QuizAttempt.objects.create(quiz=quiz, student_identifier="student1", completed_at="2023-01-01T12:00:00Z")
+        
+        # Answer with Rating
+        p1 = Problem.objects.create(problem_bank=self.bank_a, statement="P1", order_in_bank=1)
+        
+        # We need answer_data with ratings matching criterion_id
+        QuizAttemptSlot.objects.create(
+            attempt=attempt, 
+            slot=slot, 
+            assigned_problem=p1,
+            answer_data={'ratings': {'Q_QUAL': 5}},
+            answered_at="2023-01-01T12:00:00Z"
+        )
+        
+        url = reverse('global-analysis')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        dist_data = response.data.get('global_rating_distribution', {})
+        criteria_dist = dist_data.get('criteria', [])
+        
+        self.assertTrue(len(criteria_dist) > 0)
+        item = next((c for c in criteria_dist if c['name'] == 'Quality'), None)
+        self.assertIsNotNone(item)
+        
+        # Verify ID is present and matches code
+        self.assertIn('id', item)
+        self.assertEqual(item['id'], 'QUAL')

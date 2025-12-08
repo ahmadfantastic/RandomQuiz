@@ -1285,7 +1285,11 @@ class GlobalAnalysisView(APIView):
                     'percentage': percentage
                 })
             
+            # Retrieve code/ID
+            c_code = all_criteria_columns_map.get(c_name, {}).get('code', c_name)
+            
             global_rating_distribution_data['criteria'].append({
+                'id': c_code,
                 'name': c_name,
                 'distribution': dist_data,
                 'total': total_responses,
