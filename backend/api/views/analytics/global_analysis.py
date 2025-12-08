@@ -583,6 +583,9 @@ class GlobalAnalysisView(APIView):
         # Collect all criteria used across all quizzes for dynamic table columns
         # Map: criterion_id -> { order: int }
         all_quiz_criteria = {}
+        
+        # Collection for Quiz Score ANOVA
+        all_quiz_scores = []
 
         for quiz in quizzes:
             # 1. Attempts
@@ -632,6 +635,17 @@ class GlobalAnalysisView(APIView):
                 scores_list = [item['total_score'] for item in attempt_scores]
                 if scores_list:
                     avg_quiz_score = sum(scores_list) / len(scores_list)
+                    score_std_dev = None
+                    if len(scores_list) > 1:
+                        score_std_dev = float(np.std(scores_list, ddof=1))
+                        
+                    # Collect for ANOVA (min 2 samples to be useful)
+                    if len(scores_list) > 1:
+                        all_quiz_scores.append({
+                            'id': quiz.id,
+                            'title': quiz.title,
+                            'scores': scores_list
+                        })
             
             # 4. Ratings & Cronbach Alpha
             # Find rating slots
@@ -730,6 +744,7 @@ class GlobalAnalysisView(APIView):
                 'avg_word_count': avg_word_count,
                  # Average Student Score
                 'avg_score': avg_quiz_score,
+                'score_std_dev': score_std_dev if 'score_std_dev' in locals() else None,
                 'cronbach_alpha': quiz_alpha,
                 'means': quiz_criteria_means
             })
@@ -743,6 +758,49 @@ class GlobalAnalysisView(APIView):
             )
         }
         
+        # 4.5 Quiz Score ANOVA
+        quiz_score_anova = None
+        if len(all_quiz_scores) > 1:
+            try:
+                groups = [q['scores'] for q in all_quiz_scores]
+                group_names = [q['title'] for q in all_quiz_scores]
+                
+                with warnings.catch_warnings():
+                     warnings.simplefilter("ignore", RuntimeWarning)
+                     f_stat, p_val = stats.f_oneway(*groups)
+                
+                if f_stat is not None and (np.isinf(f_stat) or np.isnan(f_stat)):
+                     f_stat = None
+                if p_val is not None and (np.isinf(p_val) or np.isnan(p_val)):
+                     p_val = None
+                
+                significant = p_val < 0.05 if p_val is not None else False
+                tukey_results = []
+                
+                if significant and len(groups) > 2:
+                    try:
+                        res = stats.tukey_hsd(*groups)
+                        matrix = res.pvalue
+                        for i in range(len(group_names)):
+                            for j in range(i + 1, len(group_names)):
+                                if matrix[i, j] < 0.05:
+                                    tukey_results.append(f"{group_names[i]} vs {group_names[j]} (p={matrix[i, j]:.3f})")
+                    except Exception:
+                        pass
+
+                quiz_score_anova = {
+                    'f_stat': float(f_stat) if f_stat is not None else None,
+                    'p_value': float(p_val) if p_val is not None else None,
+                    'significant': significant,
+                    'quizzes_included': group_names,
+                    'tukey_results': tukey_results
+                }
+            except Exception:
+                pass
+
+        if quiz_score_anova:
+            response_data['quiz_score_anova'] = quiz_score_anova
+
             # 5. Global Quiz Agreement (Aggregated across ALL quizzes)
         # Refactored to match Quiz Analytics structure for consistent UI
         

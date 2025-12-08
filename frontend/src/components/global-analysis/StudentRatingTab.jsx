@@ -11,7 +11,7 @@ const StudentRatingTab = ({ data, roundToTwo }) => {
                 <Card>
                     <CardHeader>
                         <CardTitle>Quiz Analysis</CardTitle>
-                        <CardDescription>Performance usage statistics and ratings for your quizzes</CardDescription>
+                        <CardDescription>Ratings for your quizzes</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border">

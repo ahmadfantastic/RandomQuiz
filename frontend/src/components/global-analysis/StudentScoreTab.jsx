@@ -12,7 +12,7 @@ const StudentScoreTab = ({ data, roundToTwo }) => {
                 <Card>
                     <CardHeader>
                         <CardTitle>Quiz Analysis</CardTitle>
-                        <CardDescription>Performance usage statistics and ratings for your quizzes</CardDescription>
+                        <CardDescription>Performance usage statistics for your quizzes</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border">
@@ -24,6 +24,7 @@ const StudentScoreTab = ({ data, roundToTwo }) => {
                                         <TableHead>Avg Time (min)</TableHead>
                                         <TableHead>Avg Words</TableHead>
                                         <TableHead>Avg Score</TableHead>
+                                        <TableHead>Std Dev</TableHead>
                                         <TableHead>Cronbach Alpha</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -39,11 +40,59 @@ const StudentScoreTab = ({ data, roundToTwo }) => {
                                             <TableCell>{roundToTwo(quiz.avg_time_minutes)}</TableCell>
                                             <TableCell>{quiz.avg_word_count !== undefined ? roundToTwo(quiz.avg_word_count) : '-'}</TableCell>
                                             <TableCell>{quiz.avg_score !== undefined ? roundToTwo(quiz.avg_score) : '-'}</TableCell>
+                                            <TableCell>{quiz.score_std_dev !== undefined && quiz.score_std_dev !== null ? roundToTwo(quiz.score_std_dev) : '-'}</TableCell>
                                             <TableCell>
                                                 {roundToTwo(quiz.cronbach_alpha)}
                                             </TableCell>
                                         </TableRow>
                                     ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {data.quiz_score_anova && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>ANOVA Results for Quiz Scores</CardTitle>
+                        <CardDescription>Statistical comparison of student scores across quizzes (One-way ANOVA)</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="rounded-md border">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Comparison</TableHead>
+                                        <TableHead>F-statistic</TableHead>
+                                        <TableHead>p-value</TableHead>
+                                        <TableHead>Post-hoc Analysis (Tukey's HSD)</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    <TableRow>
+                                        <TableCell className="font-medium">All Quizzes</TableCell>
+                                        <TableCell>{data.quiz_score_anova.f_stat !== null ? data.quiz_score_anova.f_stat.toFixed(3) : '-'}</TableCell>
+                                        <TableCell className={data.quiz_score_anova.significant ? "font-bold text-green-600" : ""}>
+                                            {data.quiz_score_anova.p_value !== null ? data.quiz_score_anova.p_value.toFixed(4) : '-'}
+                                        </TableCell>
+                                        <TableCell>
+                                            {data.quiz_score_anova.significant ? (
+                                                data.quiz_score_anova.tukey_results && data.quiz_score_anova.tukey_results.length > 0 ? (
+                                                    <div className="text-xs space-y-1">
+                                                        {data.quiz_score_anova.tukey_results.map((tukeyRes, tukeyIdx) => (
+                                                            <div key={tukeyIdx}>{tukeyRes}</div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground italic text-xs">No significant pairwise differences</span>
+                                                )
+                                            ) : (
+                                                '-'
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
                                 </TableBody>
                             </Table>
                         </div>
