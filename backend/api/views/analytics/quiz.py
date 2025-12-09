@@ -1227,7 +1227,8 @@ class QuizInterRaterAgreementView(APIView):
             raw_score_data.append({
                 'pid': pid,
                 'ratings': ratings,
-                'score': score
+                'score': score,
+                'attempt_id': attempt_id
             })
             
             if pid not in student_ratings_data:
@@ -1591,7 +1592,8 @@ class QuizInterRaterAgreementView(APIView):
                  criteria_columns.append({
                      'id': qc.criterion_id,
                      'name': qc.name,
-                     'code': qc.instructor_criterion_code
+                     'code': qc.instructor_criterion_code,
+                     'order': qc.order
                  })
 
         # 7. Score vs Rating Correlation Analysis
@@ -1606,45 +1608,66 @@ class QuizInterRaterAgreementView(APIView):
         time_points = [] # list of {x: score, y: duration_minutes}
         word_count_points = [] # list of {x: score, y: word_count}
         
+        # Time vs Rating Storage
+        time_vs_rating_points = {} # name -> list of {x: duration, y: rating}
+        weighted_time_vs_rating_points = [] # list of {x: duration, y: weighted_rating}
+        
         for qc in quiz_criteria:
             if qc.instructor_criterion_code:
                 criterion_points[qc.name] = []
+                time_vs_rating_points[qc.name] = []
         
+        # Pre-calc durations for Time vs Rating
+        # We perform valid collection for ALL graded attempts (present in attempt_score_map)
+        attempts_data = attempts.values('id', 'started_at', 'completed_at')
+        attempt_durations = {} # aid -> duration
+        
+        for att in attempts_data:
+            if att['started_at'] and att['completed_at']:
+                d = (att['completed_at'] - att['started_at']).total_seconds() / 60.0
+                if d > 0:
+                    attempt_durations[att['id']] = d
+
         for record in raw_score_data:
             pid = record['pid']
             ratings = record['ratings']
             score = record['score']
+            aid = record.get('attempt_id')
+            duration = attempt_durations.get(aid)
             
-            if score is not None:
-                # Weighted calc for this record
-                w_sum_r = 0
-                w_sum_w = 0
+            # Weighted calc for this record
+            w_sum_r = 0
+            w_sum_w = 0
+            
+            for q_cid, val in ratings.items():
+                # Use raw value 'val' directly as requested
                 
-                for q_cid, val in ratings.items():
-                    # Use raw value 'val' directly as requested
-                    
-                    # Get criterion name to plot per-criterion
-                    c_name = criterion_names.get(q_cid)
-                    if c_name and c_name in criterion_points:
-                         criterion_points[c_name].append({'x': score, 'y': val})
-                    
-                    # Weighted Calculation
-                    # We need to link this rating to a weight.
-                    # Use criterion_map to find the instructor code, then lookup weight.
-                    if q_cid in criterion_map:
-                         i_code = criterion_map[q_cid]
-                         if i_code in weight_map:
-                             weight = weight_map[i_code]
-                             w_sum_r += val * weight
-                             w_sum_w += weight
+                # Get criterion name to plot per-criterion
+                c_name = criterion_names.get(q_cid)
+                if c_name:
+                    if score is not None and c_name in criterion_points:
+                        criterion_points[c_name].append({'x': score, 'y': val})
+                    if duration is not None and c_name in time_vs_rating_points:
+                        time_vs_rating_points[c_name].append({'x': duration, 'y': val})
                 
-                if w_sum_w > 0:
-                    weighted_avg = w_sum_r / w_sum_w
+                # Weighted Calculation
+                # We need to link this rating to a weight.
+                # Use criterion_map to find the instructor code, then lookup weight.
+                if q_cid in criterion_map:
+                        i_code = criterion_map[q_cid]
+                        if i_code in weight_map:
+                            weight = weight_map[i_code]
+                            w_sum_r += val * weight
+                            w_sum_w += weight
+            
+            if w_sum_w > 0:
+                weighted_avg = w_sum_r / w_sum_w
+                if score is not None:
                     weighted_points.append({'x': score, 'y': weighted_avg})
+                if duration is not None:
+                    weighted_time_vs_rating_points.append({'x': duration, 'y': weighted_avg})
 
-        # --- Time & Word Count Collection ---
-        # We perform valid collection for ALL graded attempts (present in attempt_score_map)
-        
+        # --- Time & Word Count Collection --- (Simplified now that attempts_data is fetched)
         # Pre-fetch text data if needed
         has_text_slots = quiz.slots.filter(response_type='open_text').exists()
         attempt_word_counts = {}
@@ -1662,18 +1685,14 @@ class QuizInterRaterAgreementView(APIView):
                      count = len(txt.split())
                      attempt_word_counts[aid] = attempt_word_counts.get(aid, 0) + count
 
-        attempts_data = attempts.values('id', 'started_at', 'completed_at')
-        
         for att in attempts_data:
             aid = att['id']
             score = attempt_score_map.get(aid)
             
             if score is not None:
                 # Time
-                if att['started_at'] and att['completed_at']:
-                    duration = (att['completed_at'] - att['started_at']).total_seconds() / 60.0
-                    if duration > 0:
-                        time_points.append({'x': score, 'y': duration})
+                if aid in attempt_durations:
+                    time_points.append({'x': score, 'y': attempt_durations[aid]})
                 
                 # Word Count
                 if has_text_slots:
@@ -1744,12 +1763,8 @@ class QuizInterRaterAgreementView(APIView):
         word_count_vs_time_points = []
         for att in attempts_data:
             aid = att['id']
-            duration = None
+            duration = attempt_durations.get(aid) # Use pre-calc
             wc = None
-            
-            # Time
-            if att['started_at'] and att['completed_at']:
-                duration = (att['completed_at'] - att['started_at']).total_seconds() / 60.0
             
             # Word Count
             if has_text_slots:
@@ -1762,6 +1777,22 @@ class QuizInterRaterAgreementView(APIView):
         if word_count_vs_time_points:
             word_count_vs_time_correlation.append(calculate_correlations(word_count_vs_time_points, "Time vs Word Count"))
 
+        # Time vs Rating Correlation Calculation
+        time_vs_rating_correlation = []
+        
+        # Per Criterion
+        for c_name, points in time_vs_rating_points.items():
+            time_vs_rating_correlation.append(calculate_correlations(points, c_name))
+        
+        # Weighted
+        time_vs_rating_correlation.append(calculate_correlations(weighted_time_vs_rating_points, "Weighted Rating"))
+
+        # Sort
+        time_vs_rating_correlation.sort(key=lambda x: (
+            next((c['order'] for c in criteria_columns if c['name'] == x['name']), 999), 
+            x['name']
+        ))
+
         return Response(self.sanitize_data({
             'agreement': agreement_data,
             'comparison': comparison_data,
@@ -1770,7 +1801,8 @@ class QuizInterRaterAgreementView(APIView):
             'score_correlation': score_correlation,
             'time_correlation': time_correlation,
             'word_count_correlation': word_count_correlation,
-            'word_count_vs_time_correlation': word_count_vs_time_correlation
+            'word_count_vs_time_correlation': word_count_vs_time_correlation,
+            'time_vs_rating_correlation': time_vs_rating_correlation
         }))
 
     def sanitize_data(self, data):

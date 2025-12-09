@@ -109,6 +109,7 @@ const QuizAnalyticsPage = () => {
         if (tab === 'agreement') return 'agreement';
         if (tab === 'comparison') return 'comparison';
         if (tab === 'correlation') return 'correlation';
+        if (tab === 'time_correlation') return 'time_correlation';
 
         if (tab === 'slot' && index !== null && slots.length > 0) {
             // Find slot by index (preserving order)
@@ -142,6 +143,9 @@ const QuizAnalyticsPage = () => {
             newParams.delete('index');
         } else if (value === 'correlation') {
             newParams.set('tab', 'correlation');
+            newParams.delete('index');
+        } else if (value === 'time_correlation') {
+            newParams.set('tab', 'time_correlation');
             newParams.delete('index');
         } else if (value.startsWith('slot-')) {
             const slotId = parseInt(value.replace('slot-', ''), 10);
@@ -233,7 +237,9 @@ const QuizAnalyticsPage = () => {
                             <TabsTrigger value="interaction">Student Interactions</TabsTrigger>
                             <TabsTrigger value="agreement">Stu. vs. Inst (Kappa)</TabsTrigger>
                             <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
+                            <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
                             <TabsTrigger value="correlation">Score Correlation</TabsTrigger>
+                            <TabsTrigger value="time_correlation">Time Correlation</TabsTrigger>
                             {slots.map(slot => (
                                 <TabsTrigger key={slot.id} value={`slot-${slot.id}`}>
                                     {slot.label || `Slot ${slot.order}`}
@@ -297,6 +303,25 @@ const QuizAnalyticsPage = () => {
                                                 yAxisLabel="Word Count"
                                             />
                                         </div>
+
+
+                                    </>
+                                )}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="time_correlation">
+                            <AnalyticsTabContent
+                                endpoint={`/api/quizzes/${quizId}/analytics/agreement/`}
+                                renderContent={(data) => (
+                                    <>
+                                        <ScoreVsRatingAnalysis
+                                            data={{ score_correlation: data.time_vs_rating_correlation }}
+                                            title="Time vs Rating Correlation Analysis"
+                                            description="Analysis of how quiz completion time correlates with ratings (per criterion and weighted)."
+                                            xAxisLabel="Time (minutes)"
+                                            yAxisLabel="Rating"
+                                        />
 
                                         {data.word_count_vs_time_correlation && data.word_count_vs_time_correlation.length > 0 && (
                                             <div className="mt-8">
