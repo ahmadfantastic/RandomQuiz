@@ -10,7 +10,7 @@ import InteractionAnalytics from '@/components/quiz-analytics/InteractionAnalyti
 import SlotAnalytics from '@/components/quiz-analytics/SlotAnalytics';
 import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
 import StudentInstructorComparison from '@/components/quiz-analytics/StudentInstructorComparison';
-import ScoreVsRatingAnalysis from '@/components/quiz-analytics/ScoreVsRatingAnalysis';
+import CorrelationAnalysis from '@/components/quiz-analytics/CorrelationAnalysis';
 
 const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     const [loading, setLoading] = useState(true);
@@ -237,7 +237,6 @@ const QuizAnalyticsPage = () => {
                             <TabsTrigger value="interaction">Student Interactions</TabsTrigger>
                             <TabsTrigger value="agreement">Stu. vs. Inst (Kappa)</TabsTrigger>
                             <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
-                            <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
                             <TabsTrigger value="correlation">Score Correlation</TabsTrigger>
                             <TabsTrigger value="time_correlation">Time Correlation</TabsTrigger>
                             {slots.map(slot => (
@@ -283,11 +282,11 @@ const QuizAnalyticsPage = () => {
                                 renderContent={(data) => (
                                     <>
                                         {data.score_correlation && (
-                                            <ScoreVsRatingAnalysis data={data} />
+                                            <CorrelationAnalysis data={data} />
                                         )}
                                         {data.time_correlation && data.time_correlation.length > 0 && (
                                             <div className="mt-8">
-                                                <ScoreVsRatingAnalysis
+                                                <CorrelationAnalysis
                                                     data={{ score_correlation: data.time_correlation }}
                                                     title="Score vs Time Correlation Analysis"
                                                     description="Analysis of how quiz completion time correlates with student graded scores."
@@ -296,7 +295,7 @@ const QuizAnalyticsPage = () => {
                                             </div>
                                         )}
                                         <div className="mt-8">
-                                            <ScoreVsRatingAnalysis
+                                            <CorrelationAnalysis
                                                 data={{ score_correlation: data.word_count_correlation }}
                                                 title="Score vs Word Count Correlation Analysis"
                                                 description="Analysis of how total word count of text answers correlates with student graded scores."
@@ -315,7 +314,7 @@ const QuizAnalyticsPage = () => {
                                 endpoint={`/api/quizzes/${quizId}/analytics/agreement/`}
                                 renderContent={(data) => (
                                     <>
-                                        <ScoreVsRatingAnalysis
+                                        <CorrelationAnalysis
                                             data={{ score_correlation: data.time_vs_rating_correlation }}
                                             title="Time vs Rating Correlation Analysis"
                                             description="Analysis of how quiz completion time correlates with ratings (per criterion and weighted)."
@@ -325,7 +324,7 @@ const QuizAnalyticsPage = () => {
 
                                         {data.word_count_vs_time_correlation && data.word_count_vs_time_correlation.length > 0 && (
                                             <div className="mt-8">
-                                                <ScoreVsRatingAnalysis
+                                                <CorrelationAnalysis
                                                     data={{ score_correlation: data.word_count_vs_time_correlation }}
                                                     title="Time vs Word Count Correlation Analysis"
                                                     description="Analysis of how time taken correlates with total word count."

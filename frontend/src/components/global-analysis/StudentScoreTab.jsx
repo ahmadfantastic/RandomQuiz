@@ -1,5 +1,5 @@
 import React from 'react';
-import ScoreVsRatingAnalysis from '@/components/quiz-analytics/ScoreVsRatingAnalysis';
+import CorrelationAnalysis from '@/components/quiz-analytics/CorrelationAnalysis';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Link } from 'react-router-dom';
@@ -101,25 +101,33 @@ const StudentScoreTab = ({ data, roundToTwo }) => {
             )}
 
             {data.score_correlation && (
-                <ScoreVsRatingAnalysis data={data} />
+                <CorrelationAnalysis
+                    data={{ score_correlation: data.score_correlation }}
+                    title="Score vs Rating Correlation Analysis"
+                    description="Analysis of how student ratings correlate with their graded scores."
+                />
             )}
 
-            {data.time_correlation && (
-                <ScoreVsRatingAnalysis
-                    data={{ score_correlation: data.time_correlation }}
-                    title="Score vs Time Correlation Analysis"
-                    description="Analysis of how quiz completion time correlates with student graded scores."
-                    yAxisLabel="Time (minutes)"
-                />
+            {data.time_correlation && data.time_correlation.length > 0 && (
+                <div className="mt-8">
+                    <CorrelationAnalysis
+                        data={{ score_correlation: data.time_correlation }}
+                        title="Score vs Time Correlation Analysis"
+                        description="Analysis of how quiz completion time correlates with student graded scores."
+                        yAxisLabel="Time (minutes)"
+                    />
+                </div>
             )}
 
             {data.word_count_correlation && (
-                <ScoreVsRatingAnalysis
-                    data={{ score_correlation: data.word_count_correlation }}
-                    title="Score vs Word Count Correlation Analysis"
-                    description="Analysis of how total word count of text answers correlates with student graded scores."
-                    yAxisLabel="Word Count"
-                />
+                <div className="mt-8">
+                    <CorrelationAnalysis
+                        data={{ score_correlation: data.word_count_correlation }}
+                        title="Score vs Word Count Correlation Analysis"
+                        description="Analysis of how total word count of text answers correlates with student graded scores."
+                        yAxisLabel="Word Count"
+                    />
+                </div>
             )}
         </div>
     );

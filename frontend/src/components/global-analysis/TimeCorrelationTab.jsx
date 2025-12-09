@@ -1,5 +1,5 @@
 import React from 'react';
-import ScoreVsRatingAnalysis from '@/components/quiz-analytics/ScoreVsRatingAnalysis';
+import CorrelationAnalysis from '@/components/quiz-analytics/CorrelationAnalysis';
 
 const TimeCorrelationTab = ({ data }) => {
     return (
@@ -11,7 +11,7 @@ const TimeCorrelationTab = ({ data }) => {
                 </p>
             </div>
 
-            <ScoreVsRatingAnalysis
+            <CorrelationAnalysis
                 data={{ score_correlation: data.time_vs_rating_correlation }}
                 title="Global Time vs Rating Correlation Analysis"
                 description="Global analysis of how quiz completion time correlates with ratings (per criterion and weighted)."
@@ -21,7 +21,7 @@ const TimeCorrelationTab = ({ data }) => {
 
             {data.word_count_vs_time_correlation && data.word_count_vs_time_correlation.length > 0 && (
                 <div className="mt-12">
-                    <ScoreVsRatingAnalysis
+                    <CorrelationAnalysis
                         data={{ score_correlation: data.word_count_vs_time_correlation }}
                         title="Global Time vs Word Count Correlation Analysis"
                         description="Global analysis of how time taken correlates with total word count across all quizzes."

@@ -1,31 +1,34 @@
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label } from 'recharts';
 
-const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating", xAxisLabel = "Grade Score" }) => {
-    if (!data || !data.score_correlation) {
-        return (
-            <div className="p-4">
-                <p>No score correlation data available.</p>
-            </div>
-        );
-    }
-
-    const { score_correlation } = data;
+const CorrelationAnalysis = ({ data, title, description, xAxisLabel = "Score", yAxisLabel = "Rating" }) => {
+    // Merge score correlation data
+    // If we have 'score_correlation' key (from global or quiz analytics), use it directly.
+    const mergedData = React.useMemo(() => {
+        if (data.score_correlation) {
+            return data.score_correlation;
+        }
+        // If it's a list, wrap it for consistent processing
+        if (Array.isArray(data)) {
+            return data;
+        }
+        return [];
+    }, [data]);
 
     return (
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>{title || "Score vs Rating Correlation Analysis"}</CardTitle>
+                    <CardTitle>{title || "Correlation Analysis"}</CardTitle>
                     <CardDescription>
-                        {description || "Analysis of how student ratings correlate with graded scores."}
+                        {description || "Analysis of correlation between variables."}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-12">
-                        {score_correlation.map((item, index) => (
+                        {mergedData.map((item, index) => (
                             <div key={index} className="flex flex-col lg:flex-row gap-6 items-start border-b pb-12 last:border-0 last:pb-0">
                                 {/* Left Column: Transposed Stats Table */}
                                 <div className="w-full lg:w-1/3 shrink-0">
@@ -87,7 +90,7 @@ const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating"
                                                 }}
                                             >
                                                 <CartesianGrid />
-                                                <XAxis type="number" dataKey="x" name="Score">
+                                                <XAxis type="number" dataKey="x" name={xAxisLabel}>
                                                     <Label value={xAxisLabel} offset={-10} position="insideBottom" />
                                                 </XAxis>
                                                 <YAxis type="number" dataKey="y" name={yAxisLabel}>
@@ -112,4 +115,4 @@ const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating"
     );
 };
 
-export default ScoreVsRatingAnalysis;
+export default CorrelationAnalysis;
