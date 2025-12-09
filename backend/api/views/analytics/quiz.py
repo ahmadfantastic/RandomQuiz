@@ -1731,9 +1731,36 @@ class QuizInterRaterAgreementView(APIView):
         if time_points:
             time_correlation.append(calculate_correlations(time_points, "Quiz Duration"))
 
+        # Calculate Time & Word Count Correlations
+        time_correlation = []
+        if time_points:
+            time_correlation.append(calculate_correlations(time_points, "Quiz Duration"))
+
         word_count_correlation = []
         if word_count_points:
             word_count_correlation.append(calculate_correlations(word_count_points, "Word Count"))
+
+        # Time vs Word Count Correlation
+        word_count_vs_time_points = []
+        for att in attempts_data:
+            aid = att['id']
+            duration = None
+            wc = None
+            
+            # Time
+            if att['started_at'] and att['completed_at']:
+                duration = (att['completed_at'] - att['started_at']).total_seconds() / 60.0
+            
+            # Word Count
+            if has_text_slots:
+                wc = attempt_word_counts.get(aid, 0)
+            
+            if duration is not None and wc is not None:
+                word_count_vs_time_points.append({'x': duration, 'y': wc})
+
+        word_count_vs_time_correlation = []
+        if word_count_vs_time_points:
+            word_count_vs_time_correlation.append(calculate_correlations(word_count_vs_time_points, "Time vs Word Count"))
 
         return Response(self.sanitize_data({
             'agreement': agreement_data,
@@ -1742,7 +1769,8 @@ class QuizInterRaterAgreementView(APIView):
             'criteria_columns': criteria_columns,
             'score_correlation': score_correlation,
             'time_correlation': time_correlation,
-            'word_count_correlation': word_count_correlation
+            'word_count_correlation': word_count_correlation,
+            'word_count_vs_time_correlation': word_count_vs_time_correlation
         }))
 
     def sanitize_data(self, data):

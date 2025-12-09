@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label } from 'recharts';
 
-const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating" }) => {
+const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating", xAxisLabel = "Grade Score" }) => {
     if (!data || !data.score_correlation) {
         return (
             <div className="p-4">
@@ -88,7 +88,7 @@ const ScoreVsRatingAnalysis = ({ data, title, description, yAxisLabel = "Rating"
                                             >
                                                 <CartesianGrid />
                                                 <XAxis type="number" dataKey="x" name="Score">
-                                                    <Label value="Grade Score" offset={-10} position="insideBottom" />
+                                                    <Label value={xAxisLabel} offset={-10} position="insideBottom" />
                                                 </XAxis>
                                                 <YAxis type="number" dataKey="y" name={yAxisLabel}>
                                                     <Label value={yAxisLabel} angle={-90} position="insideLeft" />

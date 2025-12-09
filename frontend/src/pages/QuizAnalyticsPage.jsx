@@ -289,12 +289,22 @@ const QuizAnalyticsPage = () => {
                                                 />
                                             </div>
                                         )}
-                                        {data.word_count_correlation && data.word_count_correlation.length > 0 && (
+                                        <div className="mt-8">
+                                            <ScoreVsRatingAnalysis
+                                                data={{ score_correlation: data.word_count_correlation }}
+                                                title="Score vs Word Count Correlation Analysis"
+                                                description="Analysis of how total word count of text answers correlates with student graded scores."
+                                                yAxisLabel="Word Count"
+                                            />
+                                        </div>
+
+                                        {data.word_count_vs_time_correlation && data.word_count_vs_time_correlation.length > 0 && (
                                             <div className="mt-8">
                                                 <ScoreVsRatingAnalysis
-                                                    data={{ score_correlation: data.word_count_correlation }}
-                                                    title="Score vs Word Count Correlation Analysis"
-                                                    description="Analysis of how total word count of text answers correlates with student graded scores."
+                                                    data={{ score_correlation: data.word_count_vs_time_correlation }}
+                                                    title="Time vs Word Count Correlation Analysis"
+                                                    description="Analysis of how time taken correlates with total word count."
+                                                    xAxisLabel="Time (minutes)"
                                                     yAxisLabel="Word Count"
                                                 />
                                             </div>

@@ -842,6 +842,10 @@ class GlobalAnalysisView(APIView):
         # list of {x: score, y: word_count}
         global_word_count_score_points = []
         
+        # Global Time vs Word Count Correlation Data
+        # list of {x: duration_minutes, y: word_count}
+        global_word_count_vs_time_points = []
+        
         # Helper map for Bank Weights: BankID -> { InstructorCode -> Weight }
         bank_weights_cache = {}
 
@@ -947,6 +951,8 @@ class GlobalAnalysisView(APIView):
                 started_at__isnull=False
             ).values('id', 'started_at', 'completed_at')
             
+            attempt_durations = {} # aid -> duration
+            
             for attempt in quiz_attempts:
                 attempt_id = attempt['id']
                 score = quiz_attempt_score_map.get(attempt_id)
@@ -956,6 +962,7 @@ class GlobalAnalysisView(APIView):
                     duration = (attempt['completed_at'] - attempt['started_at']).total_seconds() / 60.0
                     if duration > 0:  # Only include positive durations
                         global_time_score_points.append({'x': score, 'y': duration})
+                        attempt_durations[attempt_id] = duration
 
             # --- Word Count Correlation Logic ---
             text_slots = quiz.slots.filter(response_type='open_text')
@@ -982,6 +989,11 @@ class GlobalAnalysisView(APIView):
                      score = quiz_attempt_score_map.get(aid)
                      if score is not None:
                          global_word_count_score_points.append({'x': score, 'y': wc})
+                         
+                         # Time vs Word Count
+                         if aid in attempt_durations:
+                             duration = attempt_durations[aid]
+                             global_word_count_vs_time_points.append({'x': duration, 'y': wc})
 
 
             quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
@@ -1945,6 +1957,11 @@ class GlobalAnalysisView(APIView):
         if global_word_count_score_points:
              wc_correlation = calculate_global_correlations(global_word_count_score_points, "Word Count")
              response_data['word_count_correlation'] = [wc_correlation]
+
+        # Calculate Time vs Word Count Correlation
+        if global_word_count_vs_time_points:
+             wc_time_correlation = calculate_global_correlations(global_word_count_vs_time_points, "Time vs Word Count")
+             response_data['word_count_vs_time_correlation'] = [wc_time_correlation]
         
         return Response(self.sanitize_data(response_data))
 
