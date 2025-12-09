@@ -10,6 +10,7 @@ import StudentRatingTab from '@/components/global-analysis/StudentRatingTab';
 import InstructorVsStudentKappaTab from '@/components/global-analysis/InstructorVsStudentKappaTab';
 import InstructorVsStudentTTestTab from '@/components/global-analysis/InstructorVsStudentTTestTab';
 import StudentScoreTab from '@/components/global-analysis/StudentScoreTab';
+import TimeCorrelationTab from '@/components/global-analysis/TimeCorrelationTab';
 import api from '@/lib/api';
 
 const GlobalAnalysisPage = () => {
@@ -146,6 +147,7 @@ const GlobalAnalysisPage = () => {
                         <TabsTrigger value="instructor-vs-student-kappa">Instructor vs Student Kappa</TabsTrigger>
                         <TabsTrigger value="instructor-vs-student-t-test">Instructor vs Student T-Test</TabsTrigger>
                         <TabsTrigger value="student-score">Student Score</TabsTrigger>
+                        <TabsTrigger value="time-correlation">Time Correlation</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="instructors-ratings" className="space-y-8">
@@ -173,6 +175,10 @@ const GlobalAnalysisPage = () => {
 
                     <TabsContent value="student-score" className="space-y-8">
                         <StudentScoreTab data={data} roundToTwo={roundToTwo} />
+                    </TabsContent>
+
+                    <TabsContent value="time-correlation" className="space-y-8">
+                        <TimeCorrelationTab data={data} />
                     </TabsContent>
                 </Tabs>
             </div>

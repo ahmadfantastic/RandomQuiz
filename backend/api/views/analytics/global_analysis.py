@@ -846,6 +846,10 @@ class GlobalAnalysisView(APIView):
         # list of {x: duration_minutes, y: word_count}
         global_word_count_vs_time_points = []
         
+        # Global Time vs Rating Correlation Data
+        global_time_vs_rating_points = {} # name -> list of {x: duration, y: rating}
+        global_weighted_time_vs_rating_points = [] # list of {x: duration, y: weighted_rating}
+
         # Helper map for Bank Weights: BankID -> { InstructorCode -> Weight }
         bank_weights_cache = {}
 
@@ -872,13 +876,22 @@ class GlobalAnalysisView(APIView):
                 if qc.name not in global_rating_scales:
                     global_rating_scales[qc.name] = set()
 
+                if qc.name not in global_time_vs_rating_points:
+                    global_time_vs_rating_points[qc.name] = []
+
                 if qc.instructor_criterion_code:
                     criterion_map[qc.criterion_id] = qc.instructor_criterion_code
                     criterion_names[qc.criterion_id] = qc.name
                     # ...
             
-            # --- Score Correlation Logic ---
-            # Now that maps are ready, we can process slots for this quiz
+            # --- Time Correlation Logic ---
+            # Collect duration for each completed attempt
+            # We need this map for the Score Correlation loop below
+            quiz_attempts = QuizAttempt.objects.filter(
+                quiz=quiz,
+                completed_at__isnull=False,
+                started_at__isnull=False
+            ).values('id', 'started_at', 'completed_at')
             
             # 1. Calculate Total Quiz Score per Attempt for this quiz
             attempt_scores_qs = QuizAttemptSlot.objects.filter(
@@ -889,6 +902,23 @@ class GlobalAnalysisView(APIView):
                 total_score=Coalesce(Sum('grade__items__selected_level__points'), 0.0)
             )
             quiz_attempt_score_map = {item['attempt_id']: item['total_score'] for item in attempt_scores_qs}
+            
+            attempt_durations = {} # aid -> duration
+            
+            for attempt in quiz_attempts:
+                attempt_id = attempt['id']
+                score = quiz_attempt_score_map.get(attempt_id)
+                
+                if score is not None:
+                    # Calculate duration in minutes
+                    duration = (attempt['completed_at'] - attempt['started_at']).total_seconds() / 60.0
+                    if duration > 0:  # Only include positive durations
+                        global_time_score_points.append({'x': score, 'y': duration})
+                        attempt_durations[attempt_id] = duration
+
+
+            # --- Score & Time vs Rating Correlation Logic ---
+            # Now that maps are ready, we can process slots for this quiz
             
             # 2. Fetch rating slots with attempt_id and bank info
             quiz_rating_slots = QuizAttemptSlot.objects.filter(
@@ -903,8 +933,12 @@ class GlobalAnalysisView(APIView):
             for entry in quiz_rating_slots:
                 aid = entry['attempt_id']
                 score = quiz_attempt_score_map.get(aid)
+                duration = attempt_durations.get(aid)
                 
-                if score is not None:
+                # Check for score OR duration (we can plot one without the other technically, but logic usually requires score for standard plots)
+                # But here we are collecting points.
+                
+                if score is not None or duration is not None:
                     ratings = entry['answer_data'].get('ratings', {})
                     bank_id = entry['assigned_problem__problem_bank__id']
                     
@@ -912,9 +946,6 @@ class GlobalAnalysisView(APIView):
                     if bank_id not in bank_weights_cache:
                         try:
                             bank = ProblemBank.objects.get(id=bank_id)
-                            # We need Rubric Criterion Code -> Weight
-                            # bank.get_rubric() returns structure with id=code.
-                            # Usually criterion_id in rubric dict matches instructor_criterion_code.
                             rubric = bank.get_rubric()
                             w_map = {c['id']: c.get('weight', 1) for c in rubric.get('criteria', [])}
                             bank_weights_cache[bank_id] = w_map
@@ -931,7 +962,10 @@ class GlobalAnalysisView(APIView):
                         i_code = criterion_map.get(q_cid)
                         
                         if c_name:
-                             global_score_points[c_name].append({'x': score, 'y': val})
+                             if score is not None:
+                                 global_score_points[c_name].append({'x': score, 'y': val})
+                             if duration is not None:
+                                 global_time_vs_rating_points[c_name].append({'x': duration, 'y': val})
                              
                         # Weighted Calc
                         if i_code:
@@ -941,28 +975,11 @@ class GlobalAnalysisView(APIView):
                             
                     if w_total > 0:
                         weighted_avg = w_sum / w_total
-                        global_weighted_score_points.append({'x': score, 'y': weighted_avg})
+                        if score is not None:
+                            global_weighted_score_points.append({'x': score, 'y': weighted_avg})
+                        if duration is not None:
+                            global_weighted_time_vs_rating_points.append({'x': duration, 'y': weighted_avg})
 
-            # --- Time Correlation Logic ---
-            # Collect duration for each completed attempt along with its score
-            quiz_attempts = QuizAttempt.objects.filter(
-                quiz=quiz,
-                completed_at__isnull=False,
-                started_at__isnull=False
-            ).values('id', 'started_at', 'completed_at')
-            
-            attempt_durations = {} # aid -> duration
-            
-            for attempt in quiz_attempts:
-                attempt_id = attempt['id']
-                score = quiz_attempt_score_map.get(attempt_id)
-                
-                if score is not None:
-                    # Calculate duration in minutes
-                    duration = (attempt['completed_at'] - attempt['started_at']).total_seconds() / 60.0
-                    if duration > 0:  # Only include positive durations
-                        global_time_score_points.append({'x': score, 'y': duration})
-                        attempt_durations[attempt_id] = duration
 
             # --- Word Count Correlation Logic ---
             text_slots = quiz.slots.filter(response_type='open_text')
@@ -1962,6 +1979,18 @@ class GlobalAnalysisView(APIView):
         if global_word_count_vs_time_points:
              wc_time_correlation = calculate_global_correlations(global_word_count_vs_time_points, "Time vs Word Count")
              response_data['word_count_vs_time_correlation'] = [wc_time_correlation]
+             
+        # Calculate Time vs Rating Correlation
+        time_vs_rating_correlation = []
+        for c_name, points in global_time_vs_rating_points.items():
+            time_vs_rating_correlation.append(calculate_global_correlations(points, c_name))
+            
+        time_vs_rating_correlation.append(calculate_global_correlations(global_weighted_time_vs_rating_points, "Weighted Rating"))
+        
+        # Sort
+        time_vs_rating_correlation.sort(key=lambda x: (global_criterion_orders.get(x['name'], 999), x['name']))
+        
+        response_data['time_vs_rating_correlation'] = time_vs_rating_correlation
         
         return Response(self.sanitize_data(response_data))
 

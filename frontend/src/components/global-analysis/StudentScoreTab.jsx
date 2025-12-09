@@ -121,16 +121,6 @@ const StudentScoreTab = ({ data, roundToTwo }) => {
                     yAxisLabel="Word Count"
                 />
             )}
-
-            {data.word_count_vs_time_correlation && (
-                <ScoreVsRatingAnalysis
-                    data={{ score_correlation: data.word_count_vs_time_correlation }}
-                    title="Global Time vs Word Count Correlation Analysis"
-                    description="Global analysis of how time taken correlates with total word count across all quizzes."
-                    xAxisLabel="Time (minutes)"
-                    yAxisLabel="Word Count"
-                />
-            )}
         </div>
     );
 };
