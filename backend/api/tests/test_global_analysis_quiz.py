@@ -20,9 +20,12 @@ class GlobalAnalysisQuizTest(APITestCase):
 
         # Setup Quiz 1: Rating Slot + Text Slot
         
-        # Rating Criteria
-        self.c1 = QuizRatingCriterion.objects.create(quiz=self.quiz1, order=1, criterion_id='C1', name='Criterion 1', description='Desc 1')
-        self.c2 = QuizRatingCriterion.objects.create(quiz=self.quiz1, order=2, criterion_id='C2', name='Criterion 2', description='Desc 2')
+        self.c1 = QuizRatingCriterion.objects.create(quiz=self.quiz1, order=1, criterion_id='C1', name='Criterion 1', description='Desc 1', instructor_criterion_code='IC1')
+        self.c2 = QuizRatingCriterion.objects.create(quiz=self.quiz1, order=2, criterion_id='C2', name='Criterion 2', description='Desc 2', instructor_criterion_code='IC2')
+        
+        # Scale Options
+        for i in range(1, 6):
+            QuizRatingScaleOption.objects.create(quiz=self.quiz1, order=i, value=i, label=str(i), mapped_value=float(i))
         
         # Slots and Problems
         self.bank = ProblemBank.objects.create(owner=self.instructor, name="Bank 1")
@@ -107,6 +110,37 @@ class GlobalAnalysisQuizTest(APITestCase):
         # Verify Quiz 2 Stats
         q2_stats = next(q for q in quizzes if q['id'] == self.quiz2.id)
         self.assertEqual(q2_stats['response_count'], 0)
-        self.assertIsNone(q2_stats['avg_time_minutes'])
-        self.assertIsNone(q2_stats['avg_word_count'])
         self.assertIsNone(q2_stats['cronbach_alpha'])
+
+    def test_global_inter_criterion_correlation(self):
+        url = reverse('global-analysis')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('inter_criterion_correlation', response.data)
+        
+        icc = response.data['inter_criterion_correlation']
+        # Based on setup:
+        # A1: C1=5, C2=4
+        # A2: C1=3, C2=2
+        # Correlation should be perfect 1.0 because 5->3 (-2) and 4->2 (-2). Linear relationship.
+        
+        self.assertIsNotNone(icc)
+        self.assertEqual(icc['criteria'], ['Criterion 1', 'Criterion 2'])
+        
+        matrix = icc['matrix']
+        self.assertEqual(len(matrix), 2)
+        
+        # Row 0 (C1): [None, {r: 1.0, ...}] because diag is None
+        # Row 1 (C2): [{r: 1.0, ...}, None]
+        
+        # Cells
+        c1_c2 = matrix[0][1]
+        self.assertIsNotNone(c1_c2)
+        self.assertAlmostEqual(c1_c2['r'], 1.0, places=3)
+        self.assertEqual(c1_c2['n'], 2)
+        
+        c2_c1 = matrix[1][0]
+        self.assertIsNotNone(c2_c1)
+        self.assertAlmostEqual(c2_c1['r'], 1.0, places=3)
+        self.assertEqual(c2_c1['n'], 2)

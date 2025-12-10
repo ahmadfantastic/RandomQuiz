@@ -127,3 +127,57 @@ class QuizAnalyticsCorrelationTest(APITestCase):
         self.assertEqual(word_c[0]['count'], 3)
         # 100->100 words, 50->10 words, 75->50 words. Perfect positive correlation (mostly)
         self.assertAlmostEqual(word_c[0]['pearson_r'], 1.0, places=1)
+
+    def test_inter_criterion_correlation(self):
+        # Setup second criterion
+        c2 = QuizRatingCriterion.objects.create(quiz=self.quiz, order=2, criterion_id='C2', name='Criterion 2', instructor_criterion_code='IC2')
+        
+        # Update attempt data creation to include C2
+        # We need to recreate data or update existing attempt slots
+        # For simplicity, let's just create new attempts for this specific test or modify the helper
+        
+        # Let's modify the existing attempts to have C2 ratings
+        # A1: C1=5, C2=5 (High correlation)
+        # A2: C1=1, C2=1
+        # A3: C1=3, C2=3
+        
+        # Fetch existing attempt slots
+        as1 = QuizAttemptSlot.objects.get(attempt=self.a1, slot=self.slot1)
+        as1.answer_data['ratings']['C2'] = 5
+        as1.save()
+        
+        as2 = QuizAttemptSlot.objects.get(attempt=self.a2, slot=self.slot1)
+        as2.answer_data['ratings']['C2'] = 1
+        as2.save()
+        
+        as3 = QuizAttemptSlot.objects.get(attempt=self.a3, slot=self.slot1)
+        as3.answer_data['ratings']['C2'] = 3
+        as3.save()
+        
+        url = reverse('quiz-analytics-agreement', args=[self.quiz.id])
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('inter_criterion_correlation', response.data)
+        
+        matrix = response.data['inter_criterion_correlation']
+        # Structure: { criteria: [names], matrix: [[val, val], [val, val]] }
+        self.assertIn('criteria', matrix)
+        self.assertIn('matrix', matrix)
+        
+        self.assertEqual(len(matrix['criteria']), 2)
+        # Check C1 vs C2 correlation (should be 1.0)
+        # Find indices
+        c1_idx = -1
+        c2_idx = -1
+        for idx, name in enumerate(matrix['criteria']):
+            if name == 'C1': c1_idx = idx
+            if name == 'Criterion 2': c2_idx = idx
+            
+        self.assertNotEqual(c1_idx, -1)
+        self.assertNotEqual(c2_idx, -1)
+        
+        # Correlation between C1 and C2
+        corr = matrix['matrix'][c1_idx][c2_idx]
+        self.assertEqual(corr['r'], 1.0)
+        self.assertLess(corr['p'], 0.05)

@@ -853,6 +853,9 @@ class GlobalAnalysisView(APIView):
         # Helper map for Bank Weights: BankID -> { InstructorCode -> Weight }
         bank_weights_cache = {}
 
+        # Global Rating Rows for Inter-Criterion Correlation
+        global_rating_rows = []
+
         for quiz in quizzes:
             # 1. Get Criteria Mapping & Scale Mapping 
             quiz_criteria = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
@@ -1095,6 +1098,7 @@ class GlobalAnalysisView(APIView):
             student_ratings_data = {} 
             
             # Fetch slots
+            # Fetch slots
             attempt_slots = QuizAttemptSlot.objects.filter(
                 attempt__in=attempts,
                 slot__in=quiz.slots.filter(response_type=QuizSlot.ResponseType.RATING),
@@ -1106,6 +1110,9 @@ class GlobalAnalysisView(APIView):
                 ratings = entry['answer_data'].get('ratings', {})
                 p_group = entry.get('assigned_problem__group') or 'Ungrouped'
                 
+                # Capture row for correlation
+                current_row = {}
+
                 for c_id, raw_val in ratings.items():
                     # Find criterion name
                     c_obj = quiz_criteria_map.get(c_id)
@@ -1134,6 +1141,11 @@ class GlobalAnalysisView(APIView):
                         
                         global_rating_counts[c_name][val] += 1
                         
+                        # Add to correlation row
+                        try:
+                             current_row[c_name] = float(val)
+                        except: pass
+                        
                         # --- Accumulate for Group Comparison (Student Ratings) ---
                         if p_group not in global_grouped_student_counts:
                             global_grouped_student_counts[p_group] = {}
@@ -1153,6 +1165,9 @@ class GlobalAnalysisView(APIView):
                         # Update label (using the raw value as key)
                         if raw_val in scale_labels:
                             global_rating_stats[c_name]['scale_labels'][val] = scale_labels[raw_val]
+
+                if len(current_row) > 1:
+                     global_rating_rows.append(current_row)
 
                 pid = entry['assigned_problem_id']
                 sid = entry['attempt__student_identifier']
@@ -1399,6 +1414,53 @@ class GlobalAnalysisView(APIView):
             })
 
         response_data['global_rating_distribution'] = global_rating_distribution_data
+
+        # Calculate Inter-Criterion Correlation Matrix
+        inter_criterion_correlation = None
+        if global_rating_rows:
+             # Identify all criteria found in rows
+             matrix_c_names = sorted(list(set().union(*(r.keys() for r in global_rating_rows))), key=lambda x: global_criterion_orders.get(x, 999))
+             
+             if len(matrix_c_names) > 1:
+                 corr_matrix = []
+                 n_criteria = len(matrix_c_names)
+                 
+                 for i in range(n_criteria):
+                     row_res = []
+                     c_i = matrix_c_names[i]
+                     
+                     for j in range(n_criteria):
+                         c_j = matrix_c_names[j]
+                         
+                         xs = []
+                         ys = []
+                         for row in global_rating_rows:
+                             if c_i in row and c_j in row:
+                                 xs.append(row[c_i])
+                                 ys.append(row[c_j])
+                         
+                         if len(xs) >= 2:
+                             try:
+                                 r_res = stats.spearmanr(xs, ys)
+                                 r_val = r_res.statistic if hasattr(r_res, 'statistic') else r_res.correlation
+                                 row_res.append({
+                                     'r': round(r_val, 4),
+                                     'p': round(r_res.pvalue, 5),
+                                     'n': len(xs)
+                                 })
+                             except:
+                                 row_res.append(None)
+                         else:
+                             row_res.append(None)
+                     
+                     corr_matrix.append(row_res)
+                 
+                 inter_criterion_correlation = {
+                     'criteria': matrix_c_names,
+                     'matrix': corr_matrix
+                 }
+
+        response_data['inter_criterion_correlation'] = inter_criterion_correlation
 
         # --- Grouped Rating Distribution (for Group Comparison Chart) ---
         formatted_grouped_distribution = []

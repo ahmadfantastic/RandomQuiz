@@ -11,6 +11,7 @@ import SlotAnalytics from '@/components/quiz-analytics/SlotAnalytics';
 import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement';
 import StudentInstructorComparison from '@/components/quiz-analytics/StudentInstructorComparison';
 import CorrelationAnalysis from '@/components/quiz-analytics/CorrelationAnalysis';
+import CorrelationMatrix from '@/components/quiz-analytics/CorrelationMatrix';
 
 const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     const [loading, setLoading] = useState(true);
@@ -303,7 +304,9 @@ const QuizAnalyticsPage = () => {
                                             />
                                         </div>
 
-
+                                        {data.inter_criterion_correlation && (
+                                            <CorrelationMatrix data={data.inter_criterion_correlation} />
+                                        )}
                                     </>
                                 )}
                             />
