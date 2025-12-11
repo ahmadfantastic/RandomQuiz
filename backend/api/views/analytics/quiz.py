@@ -11,6 +11,7 @@ from accounts.models import ensure_instructor
 from problems.models import Problem, InstructorProblemRating
 from .utils import calculate_weighted_kappa, calculate_average_nearest
 from .kappa import quadratic_weighted_kappa
+from scipy import stats as sp_stats
 from statistics import median_low, mean
 from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizAttemptInteraction, QuizSlotGrade, QuizRatingCriterion, QuizRatingScaleOption
 
@@ -1130,6 +1131,109 @@ class QuizSlotAnalyticsView(APIView):
                 print(f"Error calculating slot alpha: {e}")
             
             data['cronbach_alpha'] = slot_cronbach_alpha
+
+            # Inter-Criterion Correlation for this Slot
+            slot_inter_criterion_correlation = None
+            try:
+                 # Reuse logic from alpha calculation if available, or fetch fresh
+                 # We need `scores_matrix` and `item_keys` (criterion IDs)
+                 
+                 # Ensure we have the data
+                 alpha_criteria_corr = QuizRatingCriterion.objects.filter(quiz=quiz).order_by('order')
+                 if alpha_criteria_corr:
+                    slot_attempt_ratings_corr = {}
+                    for attempt_slot in attempt_slots:
+                        a_id = attempt_slot.attempt_id
+                        if attempt_slot.answer_data and 'ratings' in attempt_slot.answer_data:
+                            slot_attempt_ratings_corr[a_id] = attempt_slot.answer_data['ratings']
+                    
+                    existing_c_ids_corr = set()
+                    for r_map in slot_attempt_ratings_corr.values():
+                        existing_c_ids_corr.update(r_map.keys())
+                    
+                    active_criteria_corr = [c for c in alpha_criteria_corr if c.criterion_id in existing_c_ids_corr]
+                    item_keys_corr = [c.criterion_id for c in active_criteria_corr]
+                    item_names_corr = [c.name for c in active_criteria_corr]
+                    
+                    K_corr = len(item_keys_corr)
+                    
+                    if K_corr > 1:
+                        # Build columns for correlation
+                        # cid -> list of values
+                        c_columns = {cid: [] for cid in item_keys_corr}
+                        
+                        # Populate columns (dense)
+                        # We should likely use only complete cases for pairwise, or handle missing
+                        # Let's iterate attempts
+                        for ratings in slot_attempt_ratings_corr.values():
+                            # We don't strictly require 'all' keys for pairwise correlation, just presence
+                            for cid in item_keys_corr:
+                                c_columns[cid].append(ratings.get(cid)) # Might be None
+                        
+                        corr_matrix = []
+                        for i in range(K_corr):
+                            row_res = []
+                            cid_i = item_keys_corr[i]
+                            vals_i = c_columns[cid_i]
+                            
+                            for j in range(K_corr):
+                                cid_j = item_keys_corr[j]
+                                vals_j = c_columns[cid_j]
+                                
+                                
+                                xs = []
+                                ys = []
+                                for idx in range(len(vals_i)):
+                                    if vals_i[idx] is not None and vals_j[idx] is not None:
+                                        try:
+                                            xs.append(float(vals_i[idx]))
+                                            ys.append(float(vals_j[idx]))
+                                        except Exception:
+                                            pass
+                                
+                                if len(xs) >= 2:
+                                    try:
+                                        r_res = sp_stats.spearmanr(xs, ys)
+                                        r_val = r_res.statistic if hasattr(r_res, 'statistic') else r_res.correlation
+                                        p_val = r_res.pvalue
+                                        
+                                        import math
+                                        # Handle NaN for R
+                                        if r_val is None or (isinstance(r_val, float) and math.isnan(r_val)):
+                                            safe_r = None
+                                        else:
+                                            # Convert numpy float to python float
+                                            safe_r = round(float(r_val), 4)
+                                            
+                                        # Handle NaN for P
+                                        if p_val is None or (isinstance(p_val, float) and math.isnan(p_val)):
+                                            safe_p = None
+                                        else:
+                                            safe_p = round(float(p_val), 5)
+
+                                        if safe_r is None:
+                                                row_res.append(None)
+                                        else:
+                                            row_res.append({
+                                                'r': safe_r,
+                                                'p': safe_p,
+                                                'n': len(xs)
+                                            })
+                                    except Exception:
+                                        row_res.append(None)
+                                else:
+                                    row_res.append(None)
+                            corr_matrix.append(row_res)
+                        
+                        slot_inter_criterion_correlation = {
+                            'criteria': item_names_corr,
+                            'matrix': corr_matrix
+                        }
+
+            except Exception as e:
+                print(f"Error calculating slot correlation: {e}")
+
+            data['inter_criterion_correlation'] = slot_inter_criterion_correlation
 
         return Response({
             'id': slot.id,

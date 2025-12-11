@@ -235,16 +235,16 @@ const QuizAnalyticsPage = () => {
                     <div className="overflow-x-auto pb-2 print:hidden">
                         <TabsList className="w-full justify-start">
                             <TabsTrigger value="overview">Quiz Overview</TabsTrigger>
-                            <TabsTrigger value="interaction">Student Interactions</TabsTrigger>
-                            <TabsTrigger value="agreement">Stu. vs. Inst (Kappa)</TabsTrigger>
-                            <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
-                            <TabsTrigger value="correlation">Score Correlation</TabsTrigger>
-                            <TabsTrigger value="time_correlation">Time Correlation</TabsTrigger>
                             {slots.map(slot => (
                                 <TabsTrigger key={slot.id} value={`slot-${slot.id}`}>
                                     {slot.label || `Slot ${slot.order}`}
                                 </TabsTrigger>
                             ))}
+                            <TabsTrigger value="interaction">Student Interactions</TabsTrigger>
+                            <TabsTrigger value="agreement">Stu. vs. Inst (Kappa)</TabsTrigger>
+                            <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
+                            <TabsTrigger value="correlation">Score Correlation</TabsTrigger>
+                            <TabsTrigger value="time_correlation">Time Correlation</TabsTrigger>
                         </TabsList>
                     </div>
 
@@ -304,9 +304,6 @@ const QuizAnalyticsPage = () => {
                                             />
                                         </div>
 
-                                        {data.inter_criterion_correlation && (
-                                            <CorrelationMatrix data={data.inter_criterion_correlation} />
-                                        )}
                                     </>
                                 )}
                             />

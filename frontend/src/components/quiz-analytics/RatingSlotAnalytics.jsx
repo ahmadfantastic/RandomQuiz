@@ -5,6 +5,7 @@ import { Activity } from 'lucide-react';
 import RatingChart from './RatingChart';
 import ProblemStatsTable from './ProblemStatsTable';
 import StudentProblemDetailsModal from './StudentProblemDetailsModal';
+import CorrelationMatrix from './CorrelationMatrix';
 
 const calculateStats = (distribution) => {
     let totalScore = 0;
@@ -252,6 +253,12 @@ const RatingSlotAnalytics = ({ slot }) => {
                                 )}
                             </div>
                         </div>
+
+                        {slot.data.inter_criterion_correlation && (
+                            <div className="w-full border-t pt-4">
+                                <CorrelationMatrix data={slot.data.inter_criterion_correlation} />
+                            </div>
+                        )}
                         {slot.problem_distribution && slot.problem_distribution.length > 0 && (
                             <div className="w-full border-t pt-4">
                                 <h4 className="text-sm font-semibold mb-4">Problem-Level Statistics</h4>

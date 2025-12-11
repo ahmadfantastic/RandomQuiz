@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RatingAnalysis } from '@/components/quiz-analytics/RatingSlotAnalytics';
 import { Link } from 'react-router-dom';
+import CorrelationMatrix from '../quiz-analytics/CorrelationMatrix';
 
 const StudentRatingTab = ({ data, roundToTwo }) => {
     return (
@@ -164,6 +165,9 @@ const StudentRatingTab = ({ data, roundToTwo }) => {
                         </div>
                     </CardContent>
                 </Card>
+            )}
+            {data.inter_criterion_correlation && (
+                <CorrelationMatrix data={data.inter_criterion_correlation} />
             )}
         </div>
     );
