@@ -13,7 +13,9 @@ from .utils import calculate_weighted_kappa, calculate_average_nearest
 from .kappa import quadratic_weighted_kappa
 from scipy import stats as sp_stats
 from statistics import median_low, mean
+from django.http import HttpResponse
 from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizAttemptInteraction, QuizSlotGrade, QuizRatingCriterion, QuizRatingScaleOption
+import csv
 
 
 class QuizAnalyticsView(APIView):
@@ -735,6 +737,56 @@ class QuizInteractionAnalyticsView(APIView):
             attempts = attempts.filter(attempt_slots__assigned_problem_id=problem_id).distinct()
 
         quiz_slots = quiz.slots.all().order_by('order')
+        
+        # Check for CSV download
+        if request.query_params.get('download') == 'csv':
+            response = HttpResponse(content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{quiz.title}_interactions.csv"'
+            
+            writer = csv.writer(response)
+            writer.writerow([
+                'Student ID', 
+                'Slot', 
+                'Event Type', 
+                'Timestamp', 
+                'Relative Position (%)', 
+                'Metadata', 
+                'Attempt Started', 
+                'Attempt Completed'
+            ])
+            
+            # Map slot IDs to labels
+            slot_map = {s.id: s.label or f"Slot {s.order}" for s in quiz_slots}
+            
+            interactions = QuizAttemptInteraction.objects.filter(
+                attempt_slot__attempt__in=attempts
+            ).select_related('attempt_slot', 'attempt_slot__attempt', 'attempt_slot__slot').order_by('created_at')
+            
+            for interaction in interactions:
+                # Calculate relative position
+                position = 0
+                attempt = interaction.attempt_slot.attempt
+                start = attempt.started_at
+                end = attempt.completed_at
+                
+                if start and end:
+                    total_duration = (end - start).total_seconds()
+                    if total_duration > 0:
+                        event_time = (interaction.created_at - start).total_seconds()
+                        position = min(max(event_time / total_duration, 0), 1) * 100
+                
+                writer.writerow([
+                    attempt.student_identifier,
+                    slot_map.get(interaction.attempt_slot.slot_id, 'Unknown Slot'),
+                    interaction.event_type,
+                    interaction.created_at.isoformat() if interaction.created_at else '',
+                    f"{position:.1f}",
+                    interaction.metadata,
+                    start.isoformat() if start else '',
+                    end.isoformat() if end else ''
+                ])
+                
+            return response
         
         interactions_by_slot = {}
         all_interactions = QuizAttemptInteraction.objects.filter(
