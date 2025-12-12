@@ -36,6 +36,34 @@ const InteractionAnalytics = ({ data }) => {
         }
     };
 
+    const handleDownloadMetricsCSV = async () => {
+        try {
+            const response = await api.get(`/api/quizzes/${quizId}/analytics/interactions/`, {
+                params: { download: 'metrics' },
+                responseType: 'blob',
+            });
+
+            // Try to get filename from header
+            const contentDisposition = response.headers['content-disposition'];
+            let filename = `quiz-${quizId}-interaction-metrics.csv`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                if (filenameMatch && filenameMatch.length === 2)
+                    filename = filenameMatch[1];
+            }
+
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (error) {
+            console.error('Failed to download Metrics CSV', error);
+        }
+    };
+
     if (!data || data.length === 0) {
         return (
             <div className="flex h-64 items-center justify-center rounded-lg border border-dashed p-8 text-center animate-in fade-in-50">
@@ -52,10 +80,14 @@ const InteractionAnalytics = ({ data }) => {
     // AllSlotInteractions expects { slots } prop
     return (
         <div className="space-y-4">
-            <div className="flex justify-end print:hidden">
+            <div className="flex justify-end gap-2 print:hidden">
                 <Button variant="outline" size="sm" onClick={handleDownloadCSV}>
                     <Download className="mr-2 h-4 w-4" />
-                    Download CSV
+                    Download Log CSV
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDownloadMetricsCSV}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Metrics CSV
                 </Button>
             </div>
             <AllSlotInteractions slots={data} />

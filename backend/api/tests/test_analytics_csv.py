@@ -94,3 +94,82 @@ class QuizAnalyticsCSVTests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['id'], self.slot.id)
         self.assertEqual(len(response.data[0]['interactions']), 1)
+
+    def test_metrics_csv_export(self):
+        # Clear setup interaction to avoid interference
+        self.interaction.delete()
+
+        # Create interactions for metrics calculation
+        
+        # 1. Typing start - should set IPL
+        start_time = self.attempt.started_at
+        first_typing_time = start_time + timedelta(seconds=15)
+        
+        i1 = QuizAttemptInteraction.objects.create(
+            attempt_slot=self.attempt_slot,
+            event_type='typing',
+            metadata={'text_length': 10, 'diff': {'added': 'Hello world', 'removed': ''}}
+        )
+        QuizAttemptInteraction.objects.filter(id=i1.id).update(created_at=first_typing_time)
+        
+        # 2. Typing edits - should affect RR
+        # Added 5 chars, removed 2 chars
+        i2 = QuizAttemptInteraction.objects.create(
+            attempt_slot=self.attempt_slot,
+            event_type='typing',
+            metadata={'text_length': 13, 'diff': {'added': '12345', 'removed': '12'}}
+        )
+        QuizAttemptInteraction.objects.filter(id=i2.id).update(created_at=first_typing_time + timedelta(seconds=2))
+        
+        # 3. Burstiness check - gap > 10s
+        last_typing_time = first_typing_time + timedelta(seconds=20)
+        i3 = QuizAttemptInteraction.objects.create(
+            attempt_slot=self.attempt_slot,
+            event_type='typing',
+            metadata={'text_length': 20, 'diff': {'added': ' more', 'removed': ''}}
+        )
+        QuizAttemptInteraction.objects.filter(id=i3.id).update(created_at=last_typing_time)
+        
+        url = reverse('quiz-analytics-interactions', args=[self.quiz.id])
+        response = self.client.get(url, {'download': 'metrics'})
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        self.assertTrue('interaction_metrics.csv' in response['Content-Disposition'])
+        
+        content = response.content.decode('utf-8')
+        csv_reader = csv.reader(io.StringIO(content))
+        rows = list(csv_reader)
+        
+        header = rows[0]
+        self.assertIn('Initial Planning Latency (s)', header)
+        self.assertIn('Revision Ratio', header)
+        self.assertIn('Burstiness (>10s)', header)
+        self.assertIn('Text Production Rate (WPM)', header)
+        
+        data = rows[1]
+        
+        # Verify IPL: 15 seconds
+        ipl_idx = header.index('Initial Planning Latency (s)')
+        self.assertEqual(float(data[ipl_idx]), 15.0)
+        
+        # Verify RR: 
+        # Total Added: "Hello world" (11) + "12345" (5) + " more" (5) = 21
+        # Total Removed: "" (0) + "12" (2) + "" (0) = 2
+        # RR = 2 / 21 = 0.0952
+        rr_idx = header.index('Revision Ratio')
+        self.assertAlmostEqual(float(data[rr_idx]), 2/21, places=4)
+        
+        # Verify Burstiness:
+        # Event 1 -> Event 2 (2s gap) -> Not bursty
+        # Event 2 -> Event 3 (18s gap) -> Bursty (>10s)
+        # Count should be 1
+        burst_idx = header.index('Burstiness (>10s)')
+        self.assertEqual(int(data[burst_idx]), 1)
+        
+        # Verify WPM:
+        # Final word count estimate: text_length 20 / 5 = 4 words
+        # Active time: (last_typing - first_typing) = 20s = 0.333 min
+        # WPM = 4 / 0.333 = 12
+        wpm_idx = header.index('Text Production Rate (WPM)')
+        self.assertAlmostEqual(float(data[wpm_idx]), 12.0, delta=0.5)
