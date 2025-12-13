@@ -1,0 +1,5 @@
+from .instructor import GlobalInstructorAnalysisView
+from .student import GlobalStudentAnalysisView
+from .correlation import GlobalCorrelationAnalysisView
+from .agreement import GlobalAgreementAnalysisView
+from .interactions import GlobalInteractionAnalyticsView

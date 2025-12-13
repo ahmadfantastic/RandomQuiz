@@ -51,11 +51,22 @@ from .analytics import (
     QuizAnalyticsView, 
     QuizSlotProblemStudentsView, 
     QuizOverviewAnalyticsView, 
-    QuizInteractionAnalyticsView, 
+    QuizAnalyticsView,
+    QuizSlotProblemStudentsView,
+    QuizOverviewAnalyticsView,
+    QuizInteractionAnalyticsView,
     QuizSlotAnalyticsView,
     GlobalAnalysisView,
     ProblemBankAnalysisView,
     calculate_weighted_kappa,
     QuizInterRaterAgreementView,
+    GlobalInteractionAnalyticsView,
+)
+
+from .analytics.global_pkg import (
+    GlobalInstructorAnalysisView,
+    GlobalStudentAnalysisView,
+    GlobalCorrelationAnalysisView,
+    GlobalAgreementAnalysisView,
     GlobalInteractionAnalyticsView
 )
