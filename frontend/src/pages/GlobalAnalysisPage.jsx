@@ -10,7 +10,9 @@ import StudentRatingTab from '@/components/global-analysis/StudentRatingTab';
 import InstructorVsStudentKappaTab from '@/components/global-analysis/InstructorVsStudentKappaTab';
 import InstructorVsStudentTTestTab from '@/components/global-analysis/InstructorVsStudentTTestTab';
 import StudentScoreTab from '@/components/global-analysis/StudentScoreTab';
+
 import TimeCorrelationTab from '@/components/global-analysis/TimeCorrelationTab';
+import GlobalInteractionsTab from '@/components/global-analysis/GlobalInteractionsTab';
 import api from '@/lib/api';
 
 const GlobalAnalysisPage = () => {
@@ -141,13 +143,14 @@ const GlobalAnalysisPage = () => {
                 </div>
 
                 <Tabs defaultValue="instructors-ratings" className="w-full">
-                    <TabsList className="grid w-full grid-cols-6 mb-8 h-auto flex-wrap">
+                    <TabsList className="grid w-full grid-cols-7 mb-8 h-auto flex-wrap">
                         <TabsTrigger value="instructors-ratings">Instructors Ratings</TabsTrigger>
                         <TabsTrigger value="student-rating">Student Rating</TabsTrigger>
                         <TabsTrigger value="instructor-vs-student-kappa">Instructor vs Student Kappa</TabsTrigger>
                         <TabsTrigger value="instructor-vs-student-t-test">Instructor vs Student T-Test</TabsTrigger>
                         <TabsTrigger value="student-score">Student Score</TabsTrigger>
                         <TabsTrigger value="time-correlation">Time Correlation</TabsTrigger>
+                        <TabsTrigger value="interactions">Student Interactions</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="instructors-ratings" className="space-y-8">
@@ -179,6 +182,10 @@ const GlobalAnalysisPage = () => {
 
                     <TabsContent value="time-correlation" className="space-y-8">
                         <TimeCorrelationTab data={data} />
+                    </TabsContent>
+
+                    <TabsContent value="interactions" className="space-y-8">
+                        <GlobalInteractionsTab />
                     </TabsContent>
                 </Tabs>
             </div>

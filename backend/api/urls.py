@@ -49,6 +49,7 @@ from .views import (
     QuizInteractionAnalyticsView,
     QuizSlotAnalyticsView,
     QuizInterRaterAgreementView,
+    GlobalInteractionAnalyticsView,
 )
 
 router = DefaultRouter()
@@ -68,6 +69,7 @@ urlpatterns = [
     path('problem-banks/<int:bank_id>/rubric/', ProblemBankRubricView.as_view(), name='bank-rubric'),
     path('problem-banks/<int:bank_id>/analysis/', ProblemBankAnalysisView.as_view(), name='bank-analysis'),
     path('problem-banks/analysis/global/', GlobalAnalysisView.as_view(), name='global-analysis'),
+    path('problem-banks/analysis/global/interactions/', GlobalInteractionAnalyticsView.as_view(), name='global-interactions'),
     path('problem-banks/<int:bank_id>/import-ratings/', ProblemBankRatingImportView.as_view(), name='bank-import-ratings'),
     path('problems/<int:problem_id>/rate/', InstructorProblemRatingView.as_view(), name='problem-rate'),
     path('quizzes/<int:quiz_id>/slots/', QuizSlotListCreate.as_view(), name='quiz-slots'),
