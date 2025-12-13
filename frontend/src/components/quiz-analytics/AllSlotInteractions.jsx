@@ -52,6 +52,22 @@ const AllSlotInteractions = ({ slots }) => {
                         <CardTitle className="text-base font-medium">{slot.label}</CardTitle>
                     </CardHeader>
                     <CardContent>
+                        {selectedStudent && slot.metrics && slot.metrics[selectedStudent] && slot.response_type !== 'rating' && (
+                            <div className="mb-6 rounded-md border text-sm">
+                                <div className="grid grid-cols-4 divide-x bg-muted/50 p-2 font-medium text-muted-foreground text-center">
+                                    <div>Initial Planning Latency</div>
+                                    <div>Revision Ratio</div>
+                                    <div>Burstiness (&gt;10s)</div>
+                                    <div>WPM</div>
+                                </div>
+                                <div className="grid grid-cols-4 divide-x p-2 font-semibold text-center">
+                                    <div>{slot.metrics[selectedStudent].ipl?.toFixed(2)}s</div>
+                                    <div>{slot.metrics[selectedStudent].revision_ratio?.toFixed(4)}</div>
+                                    <div>{slot.metrics[selectedStudent].burstiness}</div>
+                                    <div>{slot.metrics[selectedStudent].wpm?.toFixed(2)}</div>
+                                </div>
+                            </div>
+                        )}
                         <div className="-mt-4 -pt-4 border-t-0">
                             <SlotInteractionTimeline
                                 interactions={slot.interactions}

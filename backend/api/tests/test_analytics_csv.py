@@ -173,3 +173,39 @@ class QuizAnalyticsCSVTests(APITestCase):
         # WPM = 4 / 0.333 = 12
         wpm_idx = header.index('Text Production Rate (WPM)')
         self.assertAlmostEqual(float(data[wpm_idx]), 12.0, delta=0.5)
+
+    def test_interaction_metrics_json(self):
+        # reuse logic from csv test to create interactions
+        # Clear setup interaction first
+        self.interaction.delete()
+
+        start_time = self.attempt.started_at
+        first_typing_time = start_time + timedelta(seconds=15)
+        
+        i1 = QuizAttemptInteraction.objects.create(
+            attempt_slot=self.attempt_slot,
+            event_type='typing',
+            metadata={'text_length': 10, 'diff': {'added': 'Hello world', 'removed': ''}}
+        )
+        QuizAttemptInteraction.objects.filter(id=i1.id).update(created_at=first_typing_time)
+        
+        url = reverse('quiz-analytics-interactions', args=[self.quiz.id])
+        response = self.client.get(url) # Normal JSON request
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Locate the slot data
+        slot_data = next((s for s in response.data if s['id'] == self.slot.id), None)
+        self.assertIsNotNone(slot_data)
+        self.assertEqual(slot_data.get('response_type'), 'open_text')
+        
+        # Check metrics existence
+        metrics = slot_data.get('metrics', {})
+        student_id = self.attempt.student_identifier
+        self.assertIn(student_id, metrics)
+        
+        s_metrics = metrics[student_id]
+        self.assertEqual(float(s_metrics['ipl']), 15.0)
+        # Only 1 interaction, so RR = 0, Burst = 0, WPM ~ 0 (active time 0)
+        self.assertEqual(s_metrics['revision_ratio'], 0)
+        self.assertEqual(s_metrics['burstiness'], 0)

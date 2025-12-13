@@ -720,6 +720,79 @@ class QuizOverviewAnalyticsView(APIView):
         })
 
 
+def calculate_typing_metrics(typing_events, attempt_started_at):
+    """
+    Calculate interaction metrics from a list of typing events.
+    typing_events: List of objects/dicts with 'created_at' and 'metadata'.
+    attempt_started_at: datetime
+    """
+    ipl = 0
+    revision_ratio = 0
+    burstiness = 0
+    wpm = 0
+    active_time = 0
+    final_word_count = 0
+    
+    if not typing_events:
+        return ipl, revision_ratio, burstiness, wpm, active_time, final_word_count
+
+    # Ensure sorted by created_at
+    # Assuming input is already sorted or we sort here if needed
+    # typing_events.sort(key=lambda x: x.created_at if hasattr(x, 'created_at') else x['created_at'])
+
+    # Helper to get attr or item
+    def get_val(obj, key):
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key)
+
+    first_typing = typing_events[0]
+    first_time = get_val(first_typing, 'created_at')
+    
+    # A. Initial Planning Latency
+    if attempt_started_at:
+        ipl = (first_time - attempt_started_at).total_seconds()
+        ipl = max(0, ipl)
+    
+    # B. Revision Ratio & Word Count
+    total_removed = 0
+    total_added = 0
+    
+    for event in typing_events:
+        meta = get_val(event, 'metadata') or {}
+        diff = meta.get('diff')
+        if diff:
+            removed = diff.get('removed', '')
+            added = diff.get('added', '')
+            total_removed += len(removed)
+            total_added += len(added)
+        
+        if 'text_length' in meta:
+            final_word_count = meta['text_length'] / 5.0
+            
+    if total_added > 0:
+        revision_ratio = total_removed / total_added
+
+    # C. Burstiness
+    for j in range(1, len(typing_events)):
+        curr = get_val(typing_events[j], 'created_at')
+        prev = get_val(typing_events[j-1], 'created_at')
+        gap = (curr - prev).total_seconds()
+        if gap > 10:
+            burstiness += 1
+
+    # D. WPM
+    last_typing = typing_events[-1]
+    last_time = get_val(last_typing, 'created_at')
+    active_writing_seconds = (last_time - first_time).total_seconds()
+    
+    if active_writing_seconds > 0:
+        active_time = active_writing_seconds / 60.0
+        wpm = final_word_count / active_time
+
+    return ipl, revision_ratio, burstiness, wpm, active_time, final_word_count
+
+
 class QuizInteractionAnalyticsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -839,63 +912,9 @@ class QuizInteractionAnalyticsView(APIView):
                 final_word_count = 0
                 
                 if typing_events:
-                    # A. Initial Planning Latency
-                    first_typing = typing_events[0]
-                    if attempt.started_at:
-                        ipl = (first_typing.created_at - attempt.started_at).total_seconds()
-                        ipl = max(0, ipl)
-                    
-                    # B. Revision Ratio
-                    total_removed = 0
-                    total_added = 0
-                    for event in typing_events:
-                        meta = event.metadata or {}
-                        diff = meta.get('diff')
-                        if diff:
-                            removed = diff.get('removed', '')
-                            added = diff.get('added', '')
-                            total_removed += len(removed)
-                            total_added += len(added)
-                        
-                        # Get final length from last event metadata if available
-                        if 'text_length' in meta:
-                            # Estimate word count roughly chars / 5 or grab actual text if we had it (we don't store full text in interaction)
-                            # Actually, we might need to rely on 'text_length' to estimate words
-                            # Or if we have access to the attempt_slot.answer_data['text'] but that's not in interaction
-                            # Using text_length / 5 is a reasonable proxy for WPM if actual word count isn't in metadata
-                            final_word_count = meta['text_length'] / 5
-                    
-                    if total_added > 0:
-                        revision_ratio = total_removed / total_added
-                        
-                    # C. Burstiness
-                    # Gaps > 10s between keystrokes (typing events)
-                    # Note: event timestamp is when the flush happened or when the typing started?
-                    # The frontend flushes every 1.2s or on specific triggers.
-                    # This metric might be sensitive to the flush interval.
-                    # Defining burstiness here as per spec: gaps > 10s between captured events.
-                    for j in range(1, len(typing_events)):
-                        gap = (typing_events[j].created_at - typing_events[j-1].created_at).total_seconds()
-                        if gap > 10:
-                            burstiness += 1
-                            
-                    # D. WPM
-                    # (Final Word Count) / (Active Writing Time)
-                    # Active Writing Time = Time from first typing to last typing
-                    last_typing = typing_events[-1]
-                    active_writing_seconds = (last_typing.created_at - first_typing.created_at).total_seconds()
-                    
-                    if active_writing_seconds > 0:
-                        active_time = active_writing_seconds / 60.0
-                        wpm = final_word_count / active_time
-                    
-                    # Fetch actual word count from answer_data if possible?
-                    # We only have interactions here. The View has access to attempts. 
-                    # We can optimistically use the text_length/5 proxy or try to join with attempt_slots answer_data logic.
-                    # For accuracy, let's try to get actual word count if the loop above is just proxy.
-                    # However, strictly for the interaction export, using the metadata is safer than specific join unless we fetch attempts slots too.
-                    # Let's stick to metadata proxy or improve if final_word_count is 0 but we have events.
-                    
+                    ipl, revision_ratio, burstiness, wpm, active_time, final_word_count = calculate_typing_metrics(
+                        typing_events, attempt.started_at
+                    )
                 writer.writerow([
                     attempt.student_identifier,
                     slot_label,
@@ -947,13 +966,44 @@ class QuizInteractionAnalyticsView(APIView):
                 'attempt_completed_at': end
             })
 
+        # Calculate metrics for JSON response
+        metrics_by_slot = {} # slot_id -> { student_id -> metrics_dict }
+        
+        for slot_id, interactions in interactions_by_slot.items():
+            metrics_by_slot[slot_id] = {}
+            # Group by student
+            from collections import defaultdict
+            by_student = defaultdict(list)
+            for i in interactions:
+                by_student[i['student_id']].append(i)
+            
+            for student_id, student_interactions in by_student.items():
+                # Filter typing and sort
+                typing_events = [i for i in student_interactions if i['event_type'] == 'typing']
+                typing_events.sort(key=lambda x: x['created_at'])
+                
+                attempt_started_at = student_interactions[0]['attempt_started_at'] if student_interactions else None
+                
+                ipl, rr, burst, wpm, active_time, fwc = calculate_typing_metrics(typing_events, attempt_started_at)
+                
+                metrics_by_slot[slot_id][student_id] = {
+                    'ipl': ipl,
+                    'revision_ratio': rr,
+                    'burstiness': burst,
+                    'wpm': wpm,
+                    'active_time': active_time,
+                    'word_count': fwc
+                }
+
         slots_data = []
         for slot in quiz_slots:
             if slot.id in interactions_by_slot:
                 slots_data.append({
                     'id': slot.id,
                     'label': slot.label,
-                    'interactions': interactions_by_slot[slot.id]
+                    'response_type': slot.response_type,
+                    'interactions': interactions_by_slot[slot.id],
+                    'metrics': metrics_by_slot.get(slot.id, {})
                 })
 
         return Response(slots_data)
