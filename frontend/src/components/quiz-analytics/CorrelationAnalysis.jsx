@@ -96,7 +96,21 @@ const CorrelationAnalysis = ({ data, title, description, xAxisLabel = "Score", y
                                                 <YAxis type="number" dataKey="y" name={yAxisLabel}>
                                                     <Label value={yAxisLabel} angle={-90} position="insideLeft" />
                                                 </YAxis>
-                                                <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                                <Tooltip content={({ active, payload }) => {
+                                                    if (active && payload && payload.length) {
+                                                        const data = payload[0].payload;
+                                                        return (
+                                                            <div className="bg-background border rounded p-2 shadow-md text-sm">
+                                                                {data.student_id && (
+                                                                    <div className="font-semibold mb-1">{data.student_id}</div>
+                                                                )}
+                                                                <div>{xAxisLabel}: {data.x}</div>
+                                                                <div>{yAxisLabel}: {data.y}</div>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
+                                                }} cursor={{ strokeDasharray: '3 3' }} />
                                                 <Scatter name="Students" data={item.points} fill="hsl(var(--primary))" />
                                             </ScatterChart>
                                         </ResponsiveContainer>

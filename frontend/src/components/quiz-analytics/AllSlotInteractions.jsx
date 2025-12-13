@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import SlotInteractionTimeline from './SlotInteractionTimeline';
+import CorrelationAnalysis from './CorrelationAnalysis';
 
 const AllSlotInteractions = ({ slots }) => {
     const [selectedStudent, setSelectedStudent] = useState('');
@@ -74,6 +75,17 @@ const AllSlotInteractions = ({ slots }) => {
                                 selectedStudent={selectedStudent}
                             />
                         </div>
+                        {slot.metric_correlations && slot.response_type !== 'rating' && (
+                            <div className="mt-6">
+                                <CorrelationAnalysis
+                                    data={Object.values(slot.metric_correlations).filter(Boolean)}
+                                    title="Usage vs Score Correlations"
+                                    description="Correlation between writing metrics and slot score."
+                                    xAxisLabel="Metric Value"
+                                    yAxisLabel="Score"
+                                />
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             ))}

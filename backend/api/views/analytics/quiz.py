@@ -13,6 +13,10 @@ from .utils import calculate_weighted_kappa, calculate_average_nearest
 from .kappa import quadratic_weighted_kappa
 from scipy import stats as sp_stats
 from statistics import median_low, mean
+from django.utils import timezone
+import math
+from django.db.models.functions import Coalesce
+from django.db.models import Sum, Avg, Min, Max
 from django.http import HttpResponse
 from quizzes.models import Quiz, QuizSlot, QuizAttempt, QuizAttemptSlot, QuizAttemptInteraction, QuizSlotGrade, QuizRatingCriterion, QuizRatingScaleOption
 import csv
@@ -929,6 +933,7 @@ class QuizInteractionAnalyticsView(APIView):
             return response
         
         interactions_by_slot = {}
+        
         all_interactions = QuizAttemptInteraction.objects.filter(
             attempt_slot__attempt__in=attempts
         ).values(
@@ -968,11 +973,31 @@ class QuizInteractionAnalyticsView(APIView):
 
         # Calculate metrics for JSON response
         metrics_by_slot = {} # slot_id -> { student_id -> metrics_dict }
+        correlations_by_slot = {} # slot_id -> { metric_name: {r, p, n} }
+
+        from collections import defaultdict
+
+        # Pre-fetch slot grades for all attempts
+        # We need student_identifier -> score per slot
+        slot_grades = QuizSlotGrade.objects.filter(
+            attempt_slot__attempt__in=attempts
+        ).values(
+            'attempt_slot__slot_id',
+            'attempt_slot__attempt__student_identifier',
+        ).annotate(
+            score=Coalesce(Sum('items__selected_level__points'), 0.0)
+        )
+        
+        grades_map = defaultdict(dict) # slot_id -> { student_id -> score }
+        for g in slot_grades:
+            grades_map[g['attempt_slot__slot_id']][g['attempt_slot__attempt__student_identifier']] = g['score']
         
         for slot_id, interactions in interactions_by_slot.items():
             metrics_by_slot[slot_id] = {}
+            correlations_by_slot[slot_id] = {}
+            
             # Group by student
-            from collections import defaultdict
+            # from collections import defaultdict (Already imported above)
             by_student = defaultdict(list)
             for i in interactions:
                 by_student[i['student_id']].append(i)
@@ -995,6 +1020,68 @@ class QuizInteractionAnalyticsView(APIView):
                     'word_count': fwc
                 }
 
+            # Calculate Correlations for this slot
+            # Vectors
+            scores = []
+            vec_ipl = []
+            vec_rr = []
+            vec_burst = []
+            vec_wpm = []
+            student_ids = []
+            
+            for student_id, m in metrics_by_slot[slot_id].items():
+                # Only if we have a score for this student in this slot
+                if student_id in grades_map[slot_id]:
+                    s = grades_map[slot_id][student_id]
+                    scores.append(s)
+                    vec_ipl.append(m['ipl'])
+                    vec_rr.append(m['revision_ratio'])
+                    vec_burst.append(m['burstiness'])
+                    vec_wpm.append(m['wpm'])
+                    student_ids.append(student_id)
+            
+
+
+            def compute_full_stats(x, y, ids, name="Metric"):
+                if len(x) < 2: return None
+                # Check for variance
+                if len(set(x)) == 1 or len(set(y)) == 1: return None
+                
+                try:
+                    # Pearson
+                    p_res = sp_stats.pearsonr(x, y)
+                    p_r = p_res.statistic
+                    p_p = p_res.pvalue
+                    
+                    # Spearman
+                    s_res = sp_stats.spearmanr(x, y)
+                    s_rho = s_res.correlation
+                    s_p = s_res.pvalue
+                    
+                    if math.isnan(p_r) or math.isnan(p_p):
+                        return None
+                    
+                    points = [{'x': round(xv, 4), 'y': round(yv, 2), 'student_id': sid} for xv, yv, sid in zip(x, y, ids)]
+                        
+                    return {
+                        'name': name,
+                        'count': len(x),
+                        'pearson_r': round(p_r, 4),
+                        'pearson_p': round(p_p, 5),
+                        'spearman_rho': round(s_rho, 4) if not math.isnan(s_rho) else None,
+                        'spearman_p': round(s_p, 5) if not math.isnan(s_p) else None,
+                        'points': points
+                    }
+                except:
+                    return None
+
+            correlations_by_slot[slot_id] = {
+                'ipl': compute_full_stats(vec_ipl, scores, student_ids, "Initial Planning Latency vs Score"),
+                'revision_ratio': compute_full_stats(vec_rr, scores, student_ids, "Revision Ratio vs Score"),
+                'burstiness': compute_full_stats(vec_burst, scores, student_ids, "Burstiness vs Score"),
+                'wpm': compute_full_stats(vec_wpm, scores, student_ids, "Text Production Rate (WPM) vs Score")
+            }
+
         slots_data = []
         for slot in quiz_slots:
             if slot.id in interactions_by_slot:
@@ -1003,7 +1090,9 @@ class QuizInteractionAnalyticsView(APIView):
                     'label': slot.label,
                     'response_type': slot.response_type,
                     'interactions': interactions_by_slot[slot.id],
-                    'metrics': metrics_by_slot.get(slot.id, {})
+                    'interactions': interactions_by_slot[slot.id],
+                    'metrics': metrics_by_slot.get(slot.id, {}),
+                    'metric_correlations': correlations_by_slot.get(slot.id, {})
                 })
 
         return Response(slots_data)
