@@ -218,15 +218,15 @@ const GlobalAnalysisPage = () => {
                     </div>
                 )}
 
-                <Tabs defaultValue="instructors-ratings" className="w-full" onValueChange={handleTabChange}>
+                <Tabs value={activeTab} className="w-full" onValueChange={handleTabChange}>
                     <TabsList className="grid w-full grid-cols-7 mb-8 h-auto flex-wrap">
-                        <TabsTrigger value="instructors-ratings">Instructors Ratings</TabsTrigger>
-                        <TabsTrigger value="student-rating">Student Rating</TabsTrigger>
-                        <TabsTrigger value="instructor-vs-student-kappa">Instructor vs Student (Kappa)</TabsTrigger>
-                        <TabsTrigger value="instructor-vs-student-t-test">Instructor vs Student (T-Test)</TabsTrigger>
-                        <TabsTrigger value="student-score">Student Score</TabsTrigger>
-                        <TabsTrigger value="time-correlation">Time Correlation</TabsTrigger>
-                        <TabsTrigger value="global-interactions">Student Interactions</TabsTrigger>
+                        <TabsTrigger value="instructors-ratings">Inst. Ratings</TabsTrigger>
+                        <TabsTrigger value="student-rating">Stu. Rating</TabsTrigger>
+                        <TabsTrigger value="instructor-vs-student-kappa">Inst. vs Stu. (Kappa)</TabsTrigger>
+                        <TabsTrigger value="instructor-vs-student-t-test">Inst. vs Stu. (T-Test)</TabsTrigger>
+                        <TabsTrigger value="student-score">Stu. Score</TabsTrigger>
+                        <TabsTrigger value="time-correlation">Time Correl.</TabsTrigger>
+                        <TabsTrigger value="global-interactions">Stu. Interactions</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="instructors-ratings" className="space-y-8">
