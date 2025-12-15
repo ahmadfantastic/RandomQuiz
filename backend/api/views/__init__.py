@@ -56,11 +56,9 @@ from .analytics import (
     QuizOverviewAnalyticsView,
     QuizInteractionAnalyticsView,
     QuizSlotAnalyticsView,
-    GlobalAnalysisView,
     ProblemBankAnalysisView,
     calculate_weighted_kappa,
     QuizInterRaterAgreementView,
-    GlobalInteractionAnalyticsView,
 )
 
 from .analytics.global_pkg import (

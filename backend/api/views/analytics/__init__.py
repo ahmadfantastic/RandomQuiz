@@ -7,6 +7,6 @@ from .quiz import (
     QuizSlotAnalyticsView,
     QuizInterRaterAgreementView
 )
-from .global_analysis import GlobalAnalysisView, GlobalInteractionAnalyticsView
+from .global_pkg.interactions import GlobalInteractionAnalyticsView
 from .problem_bank import ProblemBankAnalysisView
 from .utils import calculate_weighted_kappa
