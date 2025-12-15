@@ -209,14 +209,28 @@ class GlobalCorrelationAnalysisView(APIView):
                      xs = [p['x'] for p in pts]
                      ys = [p['y'] for p in pts]
                      
+                     # Calculate Spearman
                      res = stats.spearmanr(xs, ys)
                      r_val = res.statistic if hasattr(res, 'statistic') else res.correlation
                      
+                     # Calculate Pearson
+                     try:
+                         pres = stats.pearsonr(xs, ys)
+                         p_r_val = pres.statistic
+                         p_p_val = pres.pvalue
+                     except:
+                         p_r_val = None
+                         p_p_val = None
+
                      results.append({
+                         'name': c_name, # Frontend uses 'name'
                          'criterion': c_name,
-                         'r': r_val,
-                         'p_value': res.pvalue,
-                         'n': len(pts)
+                         'spearman_rho': round(r_val, 4),
+                         'spearman_p': round(res.pvalue, 5),
+                         'pearson_r': round(p_r_val, 4) if p_r_val is not None else None,
+                         'pearson_p': round(p_p_val, 5) if p_p_val is not None else None,
+                         'count': len(pts),
+                         'points': pts
                      })
             
              # Weighted Score
@@ -227,11 +241,23 @@ class GlobalCorrelationAnalysisView(APIView):
                  res_w = stats.spearmanr(xs, ys)
                  r_val_w = res_w.statistic if hasattr(res_w, 'statistic') else res_w.correlation
                  
+                 try:
+                     pres = stats.pearsonr(xs, ys)
+                     p_r_val = pres.statistic
+                     p_p_val = pres.pvalue
+                 except:
+                     p_r_val = None
+                     p_p_val = None
+                 
                  results.append({
+                     'name': 'Weighted Score',
                      'criterion': 'Weighted Score',
-                     'r': r_val_w,
-                     'p_value': res_w.pvalue,
-                     'n': len(global_weight_points)
+                     'spearman_rho': round(r_val_w, 4),
+                     'spearman_p': round(res_w.pvalue, 5),
+                     'pearson_r': round(p_r_val, 4) if p_r_val is not None else None,
+                     'pearson_p': round(p_p_val, 5) if p_p_val is not None else None,
+                     'count': len(global_weight_points),
+                     'points': global_weight_points
                  })
              
              return results
@@ -241,17 +267,30 @@ class GlobalCorrelationAnalysisView(APIView):
 
         # 2. Score vs Time (Just a single correlation, not per criterion really, but we can structure similar if needed)
         # But this is just [Score, Time].
+        # 2. Score vs Time
         time_correlation = []
         if len(global_time_score_points) > 1:
             xs = [p['x'] for p in global_time_score_points]
             ys = [p['y'] for p in global_time_score_points]
             res_t = stats.spearmanr(xs, ys)
             rv = res_t.statistic if hasattr(res_t, 'statistic') else res_t.correlation
+            
+            try:
+                pres = stats.pearsonr(xs, ys)
+                pr = pres.statistic
+                pp = pres.pvalue
+            except:
+                pr, pp = None, None
+
             time_correlation.append({
+                'name': 'Total Quiz Score',
                 'criterion': 'Total Quiz Score',
-                'r': rv,
-                'p_value': res_t.pvalue,
-                'n': len(global_time_score_points)
+                'spearman_rho': round(rv, 4),
+                'spearman_p': round(res_t.pvalue, 5),
+                'pearson_r': round(pr, 4) if pr is not None else None,
+                'pearson_p': round(pp, 5) if pp is not None else None,
+                'count': len(global_time_score_points),
+                'points': global_time_score_points
             })
             
         # 3. Time vs Rating
@@ -264,11 +303,23 @@ class GlobalCorrelationAnalysisView(APIView):
             ys = [p['y'] for p in global_word_count_score_points]
             res_wc = stats.spearmanr(xs, ys)
             rv = res_wc.statistic if hasattr(res_wc, 'statistic') else res_wc.correlation
+            
+            try:
+                pres = stats.pearsonr(xs, ys)
+                pr = pres.statistic
+                pp = pres.pvalue
+            except:
+                pr, pp = None, None
+
             word_count_correlation.append({
+                'name': 'Total Word Count',
                 'criterion': 'Total Word Count (Text Slots)',
-                'r': rv,
-                'p_value': res_wc.pvalue,
-                'n': len(global_word_count_score_points)
+                'spearman_rho': round(rv, 4),
+                'spearman_p': round(res_wc.pvalue, 5),
+                'pearson_r': round(pr, 4) if pr is not None else None,
+                'pearson_p': round(pp, 5) if pp is not None else None,
+                'count': len(global_word_count_score_points),
+                'points': global_word_count_score_points
             })
 
         # 5. Time vs Word Count
@@ -278,11 +329,23 @@ class GlobalCorrelationAnalysisView(APIView):
             ys = [p['y'] for p in global_word_count_vs_time_points]
             res_wct = stats.spearmanr(xs, ys)
             rv = res_wct.statistic if hasattr(res_wct, 'statistic') else res_wct.correlation
+            
+            try:
+                pres = stats.pearsonr(xs, ys)
+                pr = pres.statistic
+                pp = pres.pvalue
+            except:
+                pr, pp = None, None
+
             word_count_vs_time_correlation.append({
+                'name': 'Word Count vs Time',
                 'criterion': 'Word Count vs Time',
-                'r': rv,
-                'p_value': res_wct.pvalue,
-                'n': len(global_word_count_vs_time_points)
+                'spearman_rho': round(rv, 4),
+                'spearman_p': round(res_wct.pvalue, 5),
+                'pearson_r': round(pr, 4) if pr is not None else None,
+                'pearson_p': round(pp, 5) if pp is not None else None,
+                'count': len(global_word_count_vs_time_points),
+                'points': global_word_count_vs_time_points
             })
 
         # 6. Inter-Criterion Correlation (Spearman Matrix)
