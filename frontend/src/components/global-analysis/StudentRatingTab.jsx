@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { RatingAnalysis } from '@/components/quiz-analytics/RatingSlotAnalytics';
 import { Link } from 'react-router-dom';
 import CorrelationMatrix from '../quiz-analytics/CorrelationMatrix';
+import CFAAnalysis from './CFAAnalysis';
 
 const StudentRatingTab = ({ data, roundToTwo }) => {
     return (
@@ -168,6 +169,10 @@ const StudentRatingTab = ({ data, roundToTwo }) => {
             )}
             {data.inter_criterion_correlation && (
                 <CorrelationMatrix data={data.inter_criterion_correlation} />
+            )}
+
+            {data.factor_analysis && (
+                <CFAAnalysis results={data.factor_analysis} />
             )}
         </div>
     );

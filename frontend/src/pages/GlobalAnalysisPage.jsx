@@ -251,7 +251,8 @@ const GlobalAnalysisPage = () => {
                             <StudentRatingTab
                                 data={{
                                     ...(studentData || {}),
-                                    inter_criterion_correlation: correlationData?.inter_criterion_correlation
+                                    inter_criterion_correlation: correlationData?.inter_criterion_correlation,
+                                    factor_analysis: correlationData?.factor_analysis
                                 }}
                                 roundToTwo={roundToTwo}
                             />

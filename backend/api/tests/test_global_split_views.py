@@ -144,3 +144,50 @@ class GlobalSplitViewsTest(TestCase):
         row = next((r for r in comp if r['group'] == 'Overall' and r['criterion_name'] == 'Quality'), None)
         self.assertIsNotNone(row)
         self.assertEqual(row['mean_difference'], 0.0)
+
+    def test_cfa_integration(self):
+        # Create Quiz with 3 criteria (minimum for CFA)
+        quiz = Quiz.objects.create(title="CFA Quiz", owner=self.instructor)
+        c1 = QuizRatingCriterion.objects.create(quiz=quiz, order=1, criterion_id='C1', name='C1', instructor_criterion_code='C1')
+        c2 = QuizRatingCriterion.objects.create(quiz=quiz, order=2, criterion_id='C2', name='C2', instructor_criterion_code='C2')
+        c3 = QuizRatingCriterion.objects.create(quiz=quiz, order=3, criterion_id='C3', name='C3', instructor_criterion_code='C3')
+        
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=1, label="1", mapped_value=1, order=1)
+        QuizRatingScaleOption.objects.create(quiz=quiz, value=5, label="5", mapped_value=5, order=2)
+
+        slot = QuizSlot.objects.create(quiz=quiz, order=1, label="Slot", response_type=QuizSlot.ResponseType.RATING, problem_bank=self.bank_a)
+        p1 = Problem.objects.create(problem_bank=self.bank_a, statement="P1", order_in_bank=1)
+
+        # Create 25 attempts to satisfy N >= 20
+        # Make them highly correlated (Halo Effect)
+        import random
+        for i in range(25):
+            attempt = QuizAttempt.objects.create(quiz=quiz, student_identifier=f"s{i}", completed_at="2023-01-01T12:00:00Z", started_at="2023-01-01T11:00:00Z")
+            
+            # Random data to ensure positive definiteness
+            # Just random integers 1-5
+            r1 = float(random.randint(1, 5))
+            r2 = float(random.randint(1, 5))
+            r3 = float(random.randint(1, 5))
+            
+            QuizAttemptSlot.objects.create(
+                attempt=attempt, slot=slot, assigned_problem=p1,
+                answer_data={'ratings': {'C1': r1, 'C2': r2, 'C3': r3}}, 
+                answered_at="2023-01-01T12:00:00Z",
+                grade=None
+            )
+
+
+        url = '/api/problem-banks/analysis/global/correlation/'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        
+        self.assertIn('factor_analysis', data)
+        cfa = data['factor_analysis']
+        # Should not be None because we met requirements
+        self.assertIsNotNone(cfa)
+        self.assertIn('fit_indices', cfa)
+        self.assertIn('loadings', cfa)
+        self.assertGreaterEqual(len(cfa['loadings']), 3)
+

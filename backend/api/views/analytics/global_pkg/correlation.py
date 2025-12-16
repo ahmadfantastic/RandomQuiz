@@ -1,5 +1,5 @@
 import numpy as np
-from scipy import stats as sp_stats, stats
+from scipy import stats as sp_stats, stats, optimize
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
 
@@ -13,6 +13,124 @@ from quizzes.models import (
     Quiz, QuizAttempt, QuizAttemptSlot, 
     QuizRatingCriterion
 )
+
+def compute_cfa_one_factor(data_rows, criterion_map_order):
+    """
+    Performs a 1-Factor CFA (Confirmatory Factor Analysis) using Maximum Likelihood estimation.
+    Tests the 'Halo Effect' hypothesis (single latent factor).
+    
+    Args:
+        data_rows: List of dicts, each containing ratings for criteria {crit_name: val, ...}
+        criterion_map_order: List of criterion names in order.
+    
+    Returns:
+        dict: CFA results including fit indices and loadings, or None if failed.
+    """
+    # 1. Prepare Data (Listwise Deletion for consistent Covariance Matrix)
+    # Filter rows that have ALL target criteria
+    clean_rows = []
+    for row in data_rows:
+        if all(c in row and row[c] is not None for c in criterion_map_order):
+            clean_rows.append([row[c] for c in criterion_map_order])
+            
+    n_samples = len(clean_rows)
+    p_vars = len(criterion_map_order)
+    
+    # Requirements
+    if p_vars < 3 or n_samples < 20: 
+        return None
+
+    X = np.array(clean_rows)
+    
+    # 2. Compute Observed Correlation Matrix (S)
+    try:
+        S = np.corrcoef(X, rowvar=False)
+    except Exception:
+        return None
+        
+    if np.any(np.isnan(S)) or np.any(np.isinf(S)):
+        return None
+
+    # 3. Define ML Discrepancy Function
+    def get_sigma(params):
+        lam = params[:p_vars].reshape(-1, 1)
+        psi_diag = params[p_vars:]
+        psi_diag = np.maximum(psi_diag, 0.001) 
+        Sigma = np.dot(lam, lam.T) + np.diag(psi_diag)
+        return Sigma
+
+    def objective(params):
+        Sigma = get_sigma(params)
+        try:
+            sign, logdet_sigma = np.linalg.slogdet(Sigma)
+            if sign <= 0: return 1e10
+            Sigma_inv = np.linalg.inv(Sigma)
+            trace_term = np.trace(np.dot(S, Sigma_inv))
+            return logdet_sigma + trace_term
+        except np.linalg.LinAlgError:
+            return 1e10
+
+    initial_guess = np.concatenate([np.full(p_vars, 0.5), np.full(p_vars, 0.5)])
+    bounds = [(None, None)] * p_vars + [(0.001, None)] * p_vars
+    
+    # Optimize
+    res = optimize.minimize(objective, initial_guess, method='L-BFGS-B', bounds=bounds)
+    
+    if not res.success:
+        return None
+        
+    # 4. Calculate Fit Indices
+    final_params = res.x
+    Sigma_hat = get_sigma(final_params)
+    
+    sign_s, logdet_s = np.linalg.slogdet(S)
+    sign_sigma, logdet_sigma = np.linalg.slogdet(Sigma_hat)
+    
+    if sign_s <= 0 or sign_sigma <= 0:
+        return None
+        
+    try:
+        Sigma_inv = np.linalg.inv(Sigma_hat)
+        trace_term = np.trace(np.dot(S, Sigma_inv))
+        f_min = logdet_sigma - logdet_s + trace_term - p_vars
+        f_min = max(0, f_min)
+    except:
+        return None
+
+    chi_square = (n_samples - 1) * f_min
+    df = (p_vars * (p_vars + 1) / 2) - (2 * p_vars)
+    
+    rmsea = 0
+    if df > 0:
+        rmsea = np.sqrt(max(0, chi_square - df) / ((n_samples - 1) * df))
+
+    # CFI
+    f_null = -logdet_s 
+    chi_null = (n_samples - 1) * f_null
+    df_null = (p_vars * (p_vars + 1) / 2) - p_vars 
+    
+    cfi = 1.0
+    if (chi_null - df_null) > 0:
+        cfi = 1 - max(0, chi_square - df) / max(0, chi_null - df_null)
+    
+    loadings = final_params[:p_vars]
+    loadings_list = []
+    for idx, c_name in enumerate(criterion_map_order):
+        loadings_list.append({
+            'criterion': c_name,
+            'loading': round(float(loadings[idx]), 3)
+        })
+        
+    return {
+        'n_samples': n_samples,
+        'fit_indices': {
+            'chi_square': round(chi_square, 2),
+            'df': int(df),
+            'rmsea': round(rmsea, 3),
+            'cfi': round(cfi, 3)
+        },
+        'loadings': loadings_list
+    }
 
 class GlobalCorrelationAnalysisView(APIView):
     permission_classes = [IsInstructor]
@@ -68,11 +186,26 @@ class GlobalCorrelationAnalysisView(APIView):
 
 
             # --- Time Correlation Logic ---
+            print(f"DEBUG: Criteria Map: {criterion_names}")
+
             quiz_attempts = QuizAttempt.objects.filter(
                 quiz=quiz,
                 completed_at__isnull=False,
                 started_at__isnull=False
             ).values('id', 'started_at', 'completed_at')
+            
+            # DEBUG RAW
+            # base_qs removed debug
+            
+            quiz_rating_slots = QuizAttemptSlot.objects.filter(
+                attempt__quiz=quiz,
+                attempt__completed_at__isnull=False,
+                slot__response_type='rating',
+            ).select_related('assigned_problem__problem_bank').values(
+                'id', 'answer_data', 'attempt_id', 'assigned_problem__problem_bank__id'
+            )
+            
+
             
             attempt_scores_qs = QuizAttemptSlot.objects.filter(
                 attempt__quiz=quiz,
@@ -89,11 +222,14 @@ class GlobalCorrelationAnalysisView(APIView):
                 attempt_id = attempt['id']
                 score = quiz_attempt_score_map.get(attempt_id)
                 
+                # Calc duration regardless of score
+                duration = (attempt['completed_at'] - attempt['started_at']).total_seconds() / 60.0
+                if duration > 0:
+                     attempt_durations[attempt_id] = duration
+                
                 if score is not None:
-                    duration = (attempt['completed_at'] - attempt['started_at']).total_seconds() / 60.0
                     if duration > 0:  
                         global_time_score_points.append({'x': score, 'y': duration})
-                        attempt_durations[attempt_id] = duration
 
 
             # --- Score & Time vs Rating Correlation Logic ---
@@ -101,7 +237,6 @@ class GlobalCorrelationAnalysisView(APIView):
                 attempt__quiz=quiz,
                 attempt__completed_at__isnull=False,
                 slot__response_type='rating',
-                answer_data__ratings__isnull=False
             ).select_related('assigned_problem__problem_bank').values(
                 'id', 'answer_data', 'attempt_id', 'assigned_problem__problem_bank__id'
             )
@@ -111,7 +246,7 @@ class GlobalCorrelationAnalysisView(APIView):
                 score = quiz_attempt_score_map.get(aid)
                 duration = attempt_durations.get(aid)
                 
-                if score is not None or duration is not None:
+                if True:
                     ratings = entry['answer_data'].get('ratings', {})
                     bank_id = entry['assigned_problem__problem_bank__id']
                     
@@ -143,10 +278,12 @@ class GlobalCorrelationAnalysisView(APIView):
                             val_float = None
 
                         if c_name and val_float is not None:
-                             if score is not None:
-                                 global_score_points[c_name].append({'x': score, 'y': val_float})
-                             if duration is not None:
-                                 global_time_vs_rating_points[c_name].append({'x': duration, 'y': val_float})
+                             # if score is not None:
+                             #     global_score_points[c_name].append({'x': score, 'y': val_float})
+                             # if duration is not None:
+                             #     global_time_vs_rating_points[c_name].append({'x': duration, 'y': val_float})
+                             
+                             global_score_points[c_name].append({'x': score or 0, 'y': val_float}) # safe append
                              
                              current_row[c_name] = val_float
                              
@@ -209,15 +346,17 @@ class GlobalCorrelationAnalysisView(APIView):
                      xs = [p['x'] for p in pts]
                      ys = [p['y'] for p in pts]
                      
-                     # Calculate Spearman
                      res = stats.spearmanr(xs, ys)
                      r_val = res.statistic if hasattr(res, 'statistic') else res.correlation
+                     if np.isnan(r_val): r_val = None
                      
                      # Calculate Pearson
                      try:
                          pres = stats.pearsonr(xs, ys)
                          p_r_val = pres.statistic
+                         if np.isnan(p_r_val): p_r_val = None
                          p_p_val = pres.pvalue
+                         if np.isnan(p_p_val): p_p_val = None
                      except:
                          p_r_val = None
                          p_p_val = None
@@ -225,8 +364,8 @@ class GlobalCorrelationAnalysisView(APIView):
                      results.append({
                          'name': c_name, # Frontend uses 'name'
                          'criterion': c_name,
-                         'spearman_rho': round(r_val, 4),
-                         'spearman_p': round(res.pvalue, 5),
+                         'spearman_rho': round(r_val, 4) if r_val is not None else None,
+                         'spearman_p': round(res.pvalue, 5) if not np.isnan(res.pvalue) else None,
                          'pearson_r': round(p_r_val, 4) if p_r_val is not None else None,
                          'pearson_p': round(p_p_val, 5) if p_p_val is not None else None,
                          'count': len(pts),
@@ -285,8 +424,8 @@ class GlobalCorrelationAnalysisView(APIView):
             time_correlation.append({
                 'name': 'Total Quiz Score',
                 'criterion': 'Total Quiz Score',
-                'spearman_rho': round(rv, 4),
-                'spearman_p': round(res_t.pvalue, 5),
+                'spearman_rho': round(rv, 4) if rv is not None and not np.isnan(rv) else None,
+                'spearman_p': round(res_t.pvalue, 5) if not np.isnan(res_t.pvalue) else None,
                 'pearson_r': round(pr, 4) if pr is not None else None,
                 'pearson_p': round(pp, 5) if pp is not None else None,
                 'count': len(global_time_score_points),
@@ -376,9 +515,11 @@ class GlobalCorrelationAnalysisView(APIView):
                              try:
                                  r_res = stats.spearmanr(xs, ys)
                                  r_val = r_res.statistic if hasattr(r_res, 'statistic') else r_res.correlation
+                                 if np.isnan(r_val): r_val = None
+                                 
                                  row_res.append({
-                                     'r': round(r_val, 4),
-                                     'p': round(r_res.pvalue, 5),
+                                     'r': round(r_val, 4) if r_val is not None else None,
+                                     'p': round(r_res.pvalue, 5) if not np.isnan(r_res.pvalue) else None,
                                      'n': len(xs)
                                  })
                              except:
@@ -394,11 +535,19 @@ class GlobalCorrelationAnalysisView(APIView):
                  }
 
 
+        # 7. CFA
+        cfa_results = None
+        if global_rating_rows:
+             matrix_c_names = sorted(list(set().union(*(r.keys() for r in global_rating_rows))), key=lambda x: global_criterion_orders.get(x, 999))
+             if len(matrix_c_names) >= 3:
+                 cfa_results = compute_cfa_one_factor(global_rating_rows, matrix_c_names)
+
         return Response({
             'score_correlation': score_correlation,
             'time_correlation': time_correlation,
             'time_vs_rating_correlation': time_vs_rating_correlation,
             'word_count_correlation': word_count_correlation,
             'word_count_vs_time_correlation': word_count_vs_time_correlation,
-            'inter_criterion_correlation': inter_criterion_correlation
+            'inter_criterion_correlation': inter_criterion_correlation,
+            'factor_analysis': cfa_results
         })
