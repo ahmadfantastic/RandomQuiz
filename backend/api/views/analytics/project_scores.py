@@ -129,10 +129,69 @@ class QuizProjectScoreListCreateView(generics.ListCreateAPIView):
             'quiz_variance': None
         }
         
+        quadrants_config = {
+            'project_median': 0,
+            'project_max_95': 0,
+            'quiz_median': 0,
+            'quiz_max_50': 0,
+            'quiz_max_possible': 0
+        }
+
         if count > 0:
             stats_data['project_mean'] = round(statistics.mean(y_values), 2)
             stats_data['quiz_mean'] = round(statistics.mean(x_values), 2)
             
+            # Quadrants Project Stats
+            p_median = statistics.median(y_values)
+            p_max = max(y_values)
+            quadrants_config['project_median'] = round(p_median, 2)
+            quadrants_config['project_max_95'] = round(p_max * 0.95, 2)
+
+            # Quadrants Quiz Stats
+            q_median = statistics.median(x_values)
+            quadrants_config['quiz_median'] = round(q_median, 2)
+            
+            # Calculate Quiz Max Possible
+            quiz = self.get_queryset().first().quiz if queryset.exists() else None
+            if not quiz:
+                 try:
+                     quiz = Quiz.objects.get(id=self.kwargs['quiz_id'])
+                 except Quiz.DoesNotExist:
+                     pass
+
+            if quiz:
+                # Try GradingRubric first (granular points per item)
+                try:
+                    # We need to access the related grading_rubric. 
+                    # Note: accessing OneToOne that doesn't exist raises exception.
+                    grading_rubric = getattr(quiz, 'grading_rubric', None)
+                    if grading_rubric:
+                        from django.db.models import Max
+                        # Sum of max points per item
+                        total_possible = 0
+                        for item in grading_rubric.items.all():
+                            max_p = item.levels.aggregate(Max('points'))['points__max']
+                            if max_p:
+                                total_possible += max_p
+                        
+                        if total_possible > 0:
+                            quadrants_config['quiz_max_possible'] = total_possible
+                            quadrants_config['quiz_max_50'] = round(total_possible * 0.5, 2)
+                except Exception:
+                    pass
+
+                # Fallback to legacy get_rubric if score is still 0
+                if quadrants_config['quiz_max_possible'] == 0:
+                    rubric = quiz.get_rubric()
+                    scale = rubric.get('scale', [])
+                    criteria = rubric.get('criteria', [])
+                    
+                    if scale and criteria:
+                        max_scale_val = max([s['value'] for s in scale])
+                        total_possible = max_scale_val * len(criteria)
+                        quadrants_config['quiz_max_possible'] = total_possible
+                        quadrants_config['quiz_max_50'] = round(total_possible * 0.5, 2)
+
             if count > 1:
                 stats_data['project_variance'] = round(statistics.variance(y_values), 2)
                 stats_data['quiz_variance'] = round(statistics.variance(x_values), 2)
@@ -144,6 +203,7 @@ class QuizProjectScoreListCreateView(generics.ListCreateAPIView):
             'score_correlation': [analysis_item],
             'team_variance': team_variance,
             'global_stats': stats_data,
+            'quadrants_config': quadrants_config,
             'raw_scores': QuizProjectScoreSerializer(queryset, many=True).data
         })
 

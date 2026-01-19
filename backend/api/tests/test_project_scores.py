@@ -111,3 +111,47 @@ class ProjectScoreTests(APITestCase):
         # 80, 70, 60 -> Mean 70, Variance 100
         self.assertEqual(stats['quiz_mean'], 70.0)
         self.assertEqual(stats['quiz_variance'], 100.0)
+
+        # Check Quadrants Config
+        quadrants = response.data.get('quadrants_config')
+        self.assertIsNotNone(quadrants)
+        # Project scores: 90, 90, 80 -> Median 90. Max 90 -> 95% = 85.5
+        self.assertEqual(quadrants['project_median'], 90.0)
+        self.assertEqual(quadrants['project_max_95'], 85.5)
+        # Quiz scores: 80, 70, 60 -> Median 70.
+        self.assertEqual(quadrants['quiz_median'], 70.0)
+        # Max possible is 25 because default rubric is created (5 criteria * 5 max scale)
+        self.assertEqual(quadrants['quiz_max_possible'], 25)
+
+    def test_quadrant_rubric_calculation(self):
+        # Create explicit Grading Rubric
+        from quizzes.models import GradingRubric, GradingRubricItem, GradingRubricItemLevel
+        
+        # Override default rubric if present? 
+        # Actually default rubric creates scale options/criteria, not GradingRubric model.
+        # GradingRubric is separate OneToOne.
+        
+        rubric = GradingRubric.objects.create(quiz=self.quiz)
+        
+        # Item 1: Max 10 pts
+        item1 = GradingRubricItem.objects.create(rubric=rubric, order=1, label="I1")
+        GradingRubricItemLevel.objects.create(rubric_item=item1, order=1, points=5, label="L1")
+        GradingRubricItemLevel.objects.create(rubric_item=item1, order=2, points=10, label="L2")
+        
+        # Item 2: Max 5 pts
+        item2 = GradingRubricItem.objects.create(rubric=rubric, order=2, label="I2")
+        GradingRubricItemLevel.objects.create(rubric_item=item2, order=1, points=5, label="L1")
+        
+        # Total should be 10 + 5 = 15
+        
+        # Make a request
+        # Need some scores to trigger calculation?
+        QuizProjectScore.objects.create(quiz=self.quiz, project_score=50, quiz_score=10)
+        
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        quadrants = response.data.get('quadrants_config')
+        self.assertIsNotNone(quadrants)
+        self.assertEqual(quadrants['quiz_max_possible'], 15.0)
+        self.assertEqual(quadrants['quiz_max_50'], 7.5)

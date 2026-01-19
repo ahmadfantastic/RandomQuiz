@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Upload, FileUp, AlertCircle, CheckCircle2 } from 'lucide-react';
 import CorrelationAnalysis from '@/components/quiz-analytics/CorrelationAnalysis';
+import QuadrantAnalysis from '@/components/quiz-analytics/QuadrantAnalysis';
 import TeamVarianceAnalysis from '@/components/quiz-analytics/TeamVarianceAnalysis';
 import api from '@/lib/api';
 
@@ -59,6 +60,13 @@ const ProjectAnalysis = ({ quizId, data, onDataUpdate }) => {
                     description="Analysis of correlation between project score (independent) and quiz score."
                     xAxisLabel="Quiz Score"
                     yAxisLabel="Project Score"
+                />
+            )}
+
+            {data && data.quadrants_config && data.score_correlation && data.score_correlation[0] && (
+                <QuadrantAnalysis
+                    data={data.score_correlation[0].points}
+                    config={data.quadrants_config}
                 />
             )}
 
