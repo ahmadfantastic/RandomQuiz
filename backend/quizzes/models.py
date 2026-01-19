@@ -332,3 +332,15 @@ class QuizSlotGradeItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.grade} - {self.rubric_item}: {self.selected_level.points} pts"
+
+
+class QuizProjectScore(models.Model):
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='project_scores')
+    project_score = models.FloatField()
+    quiz_score = models.FloatField()
+    team = models.CharField(max_length=255, null=True, blank=True)
+    grade_level = models.CharField(max_length=50, null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.quiz.title}: Project {self.project_score} vs Quiz {self.quiz_score}"
+

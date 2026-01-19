@@ -17,6 +17,7 @@ from .models import (
     GradingRubricItemLevel,
     QuizSlotGrade,
     QuizSlotGradeItem,
+    QuizProjectScore,
 )
 
 
@@ -395,3 +396,10 @@ class QuizAttemptInteractionSerializer(serializers.ModelSerializer):
         if attempt_slot is None:
             raise serializers.ValidationError({'detail': 'Unable to associate interaction with a slot.'})
         return QuizAttemptInteraction.objects.create(attempt_slot=attempt_slot, **validated_data)
+
+
+class QuizProjectScoreSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuizProjectScore
+        fields = ['id', 'project_score', 'quiz_score', 'team', 'grade_level']
+

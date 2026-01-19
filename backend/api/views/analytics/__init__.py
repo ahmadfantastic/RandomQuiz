@@ -10,3 +10,5 @@ from .quiz import (
 from .global_pkg.interactions import GlobalInteractionAnalyticsView
 from .problem_bank import ProblemBankAnalysisView
 from .utils import calculate_weighted_kappa
+from .project_scores import QuizProjectScoreListCreateView
+

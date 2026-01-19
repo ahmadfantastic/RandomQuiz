@@ -59,6 +59,7 @@ from .analytics import (
     ProblemBankAnalysisView,
     calculate_weighted_kappa,
     QuizInterRaterAgreementView,
+    QuizProjectScoreListCreateView,
 )
 
 from .analytics.global_pkg import (

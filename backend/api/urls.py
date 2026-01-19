@@ -55,6 +55,7 @@ from .views import (
     QuizSlotAnalyticsView,
     QuizInterRaterAgreementView,
     GlobalInteractionAnalyticsView,
+    QuizProjectScoreListCreateView,
 )
 
 router = DefaultRouter()
@@ -137,6 +138,11 @@ urlpatterns = [
         'public/attempts/<int:attempt_id>/slots/<int:slot_id>/interactions/',
         PublicAttemptSlotInteraction.as_view(),
         name='attempt-slot-interactions',
+    ),
+    path(
+        'quizzes/<int:quiz_id>/project-scores/',
+        QuizProjectScoreListCreateView.as_view(),
+        name='quiz-project-scores',
     ),
     path('response-config/', ResponseConfigView.as_view(), name='response-config'),
 ]

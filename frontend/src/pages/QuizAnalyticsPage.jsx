@@ -12,6 +12,7 @@ import InterRaterAgreement from '@/components/quiz-analytics/InterRaterAgreement
 import StudentInstructorComparison from '@/components/quiz-analytics/StudentInstructorComparison';
 import CorrelationAnalysis from '@/components/quiz-analytics/CorrelationAnalysis';
 import CorrelationMatrix from '@/components/quiz-analytics/CorrelationMatrix';
+import ProjectAnalysis from '@/components/quiz-analytics/ProjectAnalysis';
 
 const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     const [loading, setLoading] = useState(true);
@@ -19,26 +20,26 @@ const AnalyticsTabContent = ({ endpoint, renderContent }) => {
     const [data, setData] = useState(null);
     const { quizId } = useParams();
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true);
-                const res = await api.get(endpoint);
-                setData(res.data);
-            } catch (err) {
-                if (err.response && err.response.data && err.response.data.detail) {
-                    setError(err.response.data.detail);
-                } else {
-                    setError('Failed to load data.');
-                }
-                console.error(err);
-            } finally {
-                setLoading(false);
+    const fetchData = React.useCallback(async () => {
+        try {
+            setLoading(true);
+            const res = await api.get(endpoint);
+            setData(res.data);
+        } catch (err) {
+            if (err.response && err.response.data && err.response.data.detail) {
+                setError(err.response.data.detail);
+            } else {
+                setError('Failed to load data.');
             }
-        };
-
-        fetchData();
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
     }, [endpoint]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     if (loading) {
         return (
@@ -61,7 +62,7 @@ const AnalyticsTabContent = ({ endpoint, renderContent }) => {
         );
     }
 
-    return renderContent(data);
+    return renderContent(data, fetchData);
 };
 
 const QuizAnalyticsPage = () => {
@@ -111,6 +112,7 @@ const QuizAnalyticsPage = () => {
         if (tab === 'comparison') return 'comparison';
         if (tab === 'correlation') return 'correlation';
         if (tab === 'time_correlation') return 'time_correlation';
+        if (tab === 'project_analysis') return 'project_analysis';
 
         if (tab === 'slot' && index !== null && slots.length > 0) {
             // Find slot by index (preserving order)
@@ -147,6 +149,9 @@ const QuizAnalyticsPage = () => {
             newParams.delete('index');
         } else if (value === 'time_correlation') {
             newParams.set('tab', 'time_correlation');
+            newParams.delete('index');
+        } else if (value === 'project_analysis') {
+            newParams.set('tab', 'project_analysis');
             newParams.delete('index');
         } else if (value.startsWith('slot-')) {
             const slotId = parseInt(value.replace('slot-', ''), 10);
@@ -234,17 +239,18 @@ const QuizAnalyticsPage = () => {
                 <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
                     <div className="overflow-x-auto pb-2 print:hidden">
                         <TabsList className="w-full justify-start">
-                            <TabsTrigger value="overview">Quiz Overview</TabsTrigger>
+                            <TabsTrigger value="overview">Overview</TabsTrigger>
                             {slots.map(slot => (
                                 <TabsTrigger key={slot.id} value={`slot-${slot.id}`}>
                                     {slot.label || `Slot ${slot.order}`}
                                 </TabsTrigger>
                             ))}
-                            <TabsTrigger value="interaction">Student Interactions</TabsTrigger>
+                            <TabsTrigger value="interaction">Interactions</TabsTrigger>
                             <TabsTrigger value="agreement">Stu. vs. Inst (Kappa)</TabsTrigger>
                             <TabsTrigger value="comparison">Stu. vs. Inst (T-test)</TabsTrigger>
                             <TabsTrigger value="correlation">Score Correlation</TabsTrigger>
                             <TabsTrigger value="time_correlation">Time Correlation</TabsTrigger>
+                            <TabsTrigger value="project_analysis">Project</TabsTrigger>
                         </TabsList>
                     </div>
 
@@ -335,6 +341,13 @@ const QuizAnalyticsPage = () => {
                                         )}
                                     </>
                                 )}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="project_analysis">
+                            <AnalyticsTabContent
+                                endpoint={`/api/quizzes/${quizId}/project-scores/`}
+                                renderContent={(data, refetch) => <ProjectAnalysis quizId={quizId} data={data} onDataUpdate={refetch} />}
                             />
                         </TabsContent>
 
