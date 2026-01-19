@@ -73,8 +73,77 @@ class QuizProjectScoreListCreateView(generics.ListCreateAPIView):
             'points': points
         }
         
+        # Team Variance Analysis
+        team_data_map = {}
+        for s in scores:
+            if not s.team:
+                continue
+            
+            if s.team not in team_data_map:
+                team_data_map[s.team] = {
+                    'team': s.team,
+                    'project_scores_list': [],
+                    'quiz_scores': [],
+                    'members': []
+                }
+            # Add score
+            team_data_map[s.team]['quiz_scores'].append(s.quiz_score)
+            team_data_map[s.team]['project_scores_list'].append(s.project_score)
+            if s.grade_level: # Using grade_level as member id proxy or just ignore
+                team_data_map[s.team]['members'].append(s.grade_level)
+        
+        # Calculate per-team stats and format for response
+        team_variance_list = []
+        import statistics
+
+        for team_name, data in team_data_map.items():
+             p_scores = data['project_scores_list']
+             q_scores = data['quiz_scores']
+             
+             p_mean = round(statistics.mean(p_scores), 2) if p_scores else 0
+             p_var = round(statistics.variance(p_scores), 2) if len(p_scores) > 1 else 0
+             
+             q_mean = round(statistics.mean(q_scores), 2) if q_scores else 0
+             q_var = round(statistics.variance(q_scores), 2) if len(q_scores) > 1 else 0
+             
+             team_variance_list.append({
+                 'team': team_name,
+                 'project_score': p_mean,
+                 'project_scores_list': p_scores,
+                 'project_mean': p_mean,
+                 'project_variance': p_var,
+                 'quiz_mean': q_mean,
+                 'quiz_variance': q_var,
+                 'quiz_scores': q_scores,
+                 'members': data['members']
+             })
+
+        # Sort teams by project score (mean)
+        team_variance = sorted(team_variance_list, key=lambda x: x['project_mean'])
+
+        # Calculate Global Stats
+        stats_data = {
+            'project_mean': None,
+            'project_variance': None,
+            'quiz_mean': None,
+            'quiz_variance': None
+        }
+        
+        if count > 0:
+            stats_data['project_mean'] = round(statistics.mean(y_values), 2)
+            stats_data['quiz_mean'] = round(statistics.mean(x_values), 2)
+            
+            if count > 1:
+                stats_data['project_variance'] = round(statistics.variance(y_values), 2)
+                stats_data['quiz_variance'] = round(statistics.variance(x_values), 2)
+            else:
+                stats_data['project_variance'] = 0
+                stats_data['quiz_variance'] = 0
+
         return Response({
             'score_correlation': [analysis_item],
+            'team_variance': team_variance,
+            'global_stats': stats_data,
             'raw_scores': QuizProjectScoreSerializer(queryset, many=True).data
         })
 

@@ -58,6 +58,8 @@ class ProjectScoreTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Check new structure
         self.assertIn('score_correlation', response.data)
+        self.assertIn('team_variance', response.data)
+        self.assertIn('global_stats', response.data)
         self.assertIn('raw_scores', response.data)
         
         self.assertEqual(len(response.data['raw_scores']), 1)
@@ -68,3 +70,44 @@ class ProjectScoreTests(APITestCase):
         self.assertEqual(analysis['count'], 1)
         self.assertEqual(analysis['points'][0]['x'], 20)
         self.assertEqual(analysis['points'][0]['y'], 10)
+
+    def test_team_variance_structure(self):
+        # Create scores for two teams
+        QuizProjectScore.objects.create(quiz=self.quiz, project_score=90, quiz_score=80, team="Team A")
+        QuizProjectScore.objects.create(quiz=self.quiz, project_score=90, quiz_score=70, team="Team A")
+        QuizProjectScore.objects.create(quiz=self.quiz, project_score=80, quiz_score=60, team="Team B")
+        
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        team_variance = response.data['team_variance']
+        self.assertEqual(len(team_variance), 2)
+        
+        # Sorted by project score (80 then 90)
+        self.assertEqual(team_variance[0]['team'], "Team B")
+        self.assertEqual(team_variance[1]['team'], "Team A")
+        
+        # Check Team A scores
+        team_a = team_variance[1]
+        self.assertEqual(len(team_a['quiz_scores']), 2)
+        self.assertIn(80.0, team_a['quiz_scores'])
+        self.assertIn(70.0, team_a['quiz_scores'])
+        self.assertIn('project_scores_list', team_a)
+        self.assertEqual(len(team_a['project_scores_list']), 2)
+        self.assertEqual(team_a['project_scores_list'][0], 90.0)
+        
+        # Check Per-Team Stats
+        self.assertEqual(team_a['project_mean'], 90.0)
+        self.assertEqual(team_a['project_variance'], 0.0)
+        self.assertEqual(team_a['quiz_mean'], 75.0) # (80+70)/2
+        self.assertEqual(team_a['quiz_variance'], 50.0) # Variance of [80, 70] is 50.0
+        
+        # Check Global Stats
+        stats = response.data['global_stats']
+        self.assertIsNotNone(stats['project_mean'])
+        self.assertIsNotNone(stats['project_variance'])
+        
+        # 2x 90, 1x 80 -> Mean ~ 86.67
+        # 80, 70, 60 -> Mean 70, Variance 100
+        self.assertEqual(stats['quiz_mean'], 70.0)
+        self.assertEqual(stats['quiz_variance'], 100.0)

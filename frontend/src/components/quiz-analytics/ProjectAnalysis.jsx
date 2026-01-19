@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Upload, FileUp, AlertCircle, CheckCircle2 } from 'lucide-react';
 import CorrelationAnalysis from '@/components/quiz-analytics/CorrelationAnalysis';
+import TeamVarianceAnalysis from '@/components/quiz-analytics/TeamVarianceAnalysis';
 import api from '@/lib/api';
 
 const ProjectAnalysis = ({ quizId, data, onDataUpdate }) => {
@@ -58,6 +59,12 @@ const ProjectAnalysis = ({ quizId, data, onDataUpdate }) => {
                     description="Analysis of correlation between project score (independent) and quiz score."
                     xAxisLabel="Quiz Score"
                     yAxisLabel="Project Score"
+                />
+            )}
+
+            {data && data.team_variance && data.team_variance.length > 0 && (
+                <TeamVarianceAnalysis
+                    data={data.team_variance}
                 />
             )}
 
