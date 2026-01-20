@@ -106,9 +106,9 @@ class GlobalProjectAnalysisView(APIView):
             q_half = q_max_possible * 0.5 if q_max_possible > 0 else None
 
             # Helper to classify
-            def classify(p_score, q_score, p_t, q_t):
+            def classify(p_score, q_score, p_t, q_t, strict_q=False):
                 is_high_p = p_score >= p_t
-                is_high_q = q_score >= q_t
+                is_high_q = q_score > q_t if strict_q else q_score >= q_t
                 if is_high_p and is_high_q: return 'masters'
                 if is_high_p and not is_high_q: return 'implementers'
                 if not is_high_p and is_high_q: return 'conceptualizers'
@@ -128,12 +128,12 @@ class GlobalProjectAnalysisView(APIView):
                 
                 # Update Med/Half
                 if q_half is not None:
-                    cat = classify(p, q, p_median, q_half)
+                    cat = classify(p, q, p_median, q_half, strict_q=True)
                     aggregated_quadrants['med_half'][cat] += 1
                 
                 # Update Thresh/Half
                 if q_half is not None:
-                    cat = classify(p, q, p_thresh, q_half)
+                    cat = classify(p, q, p_thresh, q_half, strict_q=True)
                     aggregated_quadrants['thresh_half'][cat] += 1
             
             if q_half is not None:

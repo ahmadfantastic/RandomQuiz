@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Printer } from 'lucide-react';
 import AppShell from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,16 @@ import ProjectAnalysisTab from '@/components/global-analysis/GlobalProjectAnalys
 import api from '@/lib/api';
 
 const GlobalAnalysisPage = () => {
-    const [activeTab, setActiveTab] = useState('instructors-ratings');
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Determine active tab from URL parameters
+    const getActiveTab = () => {
+        const tab = searchParams.get('tab');
+        if (tab) return tab;
+        return 'instructors-ratings';
+    };
+
+    const activeTab = getActiveTab();
 
     // Independent State for each section
     const [quizzes, setQuizzes] = useState([]);
@@ -153,7 +162,9 @@ const GlobalAnalysisPage = () => {
 
 
     const handleTabChange = (value) => {
-        setActiveTab(value);
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('tab', value);
+        setSearchParams(newParams);
     };
 
     if (loading.quizzes) {

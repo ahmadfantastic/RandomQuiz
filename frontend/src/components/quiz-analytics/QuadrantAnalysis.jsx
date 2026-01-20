@@ -5,7 +5,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-const QuadrantChart = ({ title, data, xThreshold, yThreshold, xDomain, yDomain }) => {
+const QuadrantChart = ({ title, data, xThreshold, yThreshold, xDomain, yDomain, strictY = false }) => {
     // Quadrant Labels logic:
     // Top-Right: Masters (High Proj / High Quiz)
     // Bottom-Left: Strugglers (Low Proj / Low Quiz)
@@ -19,9 +19,9 @@ const QuadrantChart = ({ title, data, xThreshold, yThreshold, xDomain, yDomain }
     data.forEach(p => {
         // data.y is Project Score (X-Axis), data.x is Quiz Score (Y-Axis)
         // Check thresholds for High/Low. 
-        // Using >= for High.
+        // Using >= for High by default, > if strictY is true.
         const isHighProject = p.y >= xThreshold;
-        const isHighQuiz = p.x >= yThreshold;
+        const isHighQuiz = strictY ? p.x > yThreshold : p.x >= yThreshold;
 
         if (isHighProject && isHighQuiz) stats.masters++;
         else if (isHighProject && !isHighQuiz) stats.implementers++;
@@ -190,6 +190,7 @@ const QuadrantAnalysis = ({ data, config }) => {
                             yThreshold={config.quiz_max_50}
                             xDomain={getCenteredDomain(projectScores, config.project_median, false)}
                             yDomain={getCenteredDomain(quizScores, config.quiz_max_50, true)}
+                            strictY={true}
                         />
                     )}
 
@@ -212,6 +213,7 @@ const QuadrantAnalysis = ({ data, config }) => {
                             yThreshold={config.quiz_max_50}
                             xDomain={getCenteredDomain(projectScores, config.project_thresh_val, false)}
                             yDomain={getCenteredDomain(quizScores, config.quiz_max_50, true)}
+                            strictY={true}
                         />
                     )}
                 </div>
