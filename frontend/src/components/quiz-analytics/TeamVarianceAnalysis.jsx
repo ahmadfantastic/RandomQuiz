@@ -43,7 +43,6 @@ const TeamVarianceAnalysis = ({ data }) => {
                                     <TableRow>
                                         <TableHead>Team</TableHead>
                                         <TableHead>Proj Mean</TableHead>
-                                        <TableHead>Proj Var</TableHead>
                                         <TableHead>Quiz Mean</TableHead>
                                         <TableHead>Quiz Var</TableHead>
                                     </TableRow>
@@ -57,7 +56,6 @@ const TeamVarianceAnalysis = ({ data }) => {
                                         >
                                             <TableCell className="font-medium">{team.team}</TableCell>
                                             <TableCell>{team.project_mean}</TableCell>
-                                            <TableCell>{team.project_variance}</TableCell>
                                             <TableCell>{team.quiz_mean}</TableCell>
                                             <TableCell>{team.quiz_variance}</TableCell>
                                         </TableRow>
