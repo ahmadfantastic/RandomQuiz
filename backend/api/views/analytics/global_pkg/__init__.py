@@ -3,3 +3,4 @@ from .student import GlobalStudentAnalysisView
 from .correlation import GlobalCorrelationAnalysisView
 from .agreement import GlobalAgreementAnalysisView
 from .interactions import GlobalInteractionAnalyticsView
+from .project import GlobalProjectAnalysisView

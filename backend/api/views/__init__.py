@@ -67,5 +67,6 @@ from .analytics.global_pkg import (
     GlobalStudentAnalysisView,
     GlobalCorrelationAnalysisView,
     GlobalAgreementAnalysisView,
-    GlobalInteractionAnalyticsView
+    GlobalInteractionAnalyticsView,
+    GlobalProjectAnalysisView,
 )

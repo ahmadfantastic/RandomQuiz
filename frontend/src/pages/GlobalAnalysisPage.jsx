@@ -11,6 +11,7 @@ import InstructorVsStudentTTestTab from '@/components/global-analysis/Instructor
 import StudentScoreTab from '@/components/global-analysis/StudentScoreTab';
 import TimeCorrelationTab from '@/components/global-analysis/TimeCorrelationTab';
 import GlobalInteractionsTab from '@/components/global-analysis/GlobalInteractionsTab';
+import ProjectAnalysisTab from '@/components/global-analysis/GlobalProjectAnalysisTab';
 import api from '@/lib/api';
 
 const GlobalAnalysisPage = () => {
@@ -23,13 +24,15 @@ const GlobalAnalysisPage = () => {
     const [studentData, setStudentData] = useState(null);
     const [agreementData, setAgreementData] = useState(null);
     const [correlationData, setCorrelationData] = useState(null);
+    const [projectData, setProjectData] = useState(null);
 
     const [loading, setLoading] = useState({
         quizzes: true,
         instructor: false,
         student: false,
         agreement: false,
-        correlation: false
+        correlation: false,
+        project: false
     });
 
     const [error, setError] = useState(null);
@@ -109,6 +112,20 @@ const GlobalAnalysisPage = () => {
         }
     };
 
+    const loadProjectData = async () => {
+        if (projectData) return;
+        setLoading(prev => ({ ...prev, project: true }));
+        try {
+            const res = await api.get('/api/problem-banks/analysis/global/project-scores/');
+            setProjectData(res.data);
+        } catch (err) {
+            console.error(err);
+            setError("Failed to load project analysis.");
+        } finally {
+            setLoading(prev => ({ ...prev, project: false }));
+        }
+    };
+
 
     // Effect to trigger loads based on active tab
     useEffect(() => {
@@ -127,6 +144,8 @@ const GlobalAnalysisPage = () => {
             loadCorrelationData();
         } else if (activeTab === 'time-correlation') {
             loadCorrelationData();
+        } else if (activeTab === 'project-analysis') {
+            loadProjectData();
         } else if (activeTab === 'global-interactions') {
             // Handled internally by the tab component, but we keep tab state
         }
@@ -219,14 +238,15 @@ const GlobalAnalysisPage = () => {
                 )}
 
                 <Tabs value={activeTab} className="w-full" onValueChange={handleTabChange}>
-                    <TabsList className="grid w-full grid-cols-7 mb-8 h-auto flex-wrap">
+                    <TabsList className="flex justify-start mb-8 h-auto flex-wrap">
                         <TabsTrigger value="instructors-ratings">Inst. Ratings</TabsTrigger>
                         <TabsTrigger value="student-rating">Stu. Rating</TabsTrigger>
                         <TabsTrigger value="instructor-vs-student-kappa">Inst. vs Stu. (Kappa)</TabsTrigger>
                         <TabsTrigger value="instructor-vs-student-t-test">Inst. vs Stu. (T-Test)</TabsTrigger>
                         <TabsTrigger value="student-score">Stu. Score</TabsTrigger>
                         <TabsTrigger value="time-correlation">Time Correl.</TabsTrigger>
-                        <TabsTrigger value="global-interactions">Stu. Interactions</TabsTrigger>
+                        <TabsTrigger value="global-interactions">Interactions</TabsTrigger>
+                        <TabsTrigger value="project-analysis">Project</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="instructors-ratings" className="space-y-8">
@@ -299,6 +319,17 @@ const GlobalAnalysisPage = () => {
                         ) : (
                             <TimeCorrelationTab
                                 data={correlationData || {}}
+                            />
+                        )}
+                    </TabsContent>
+
+                    <TabsContent value="project-analysis">
+                        {loading.project ? (
+                            <div className="p-12 text-center text-muted-foreground">Loading project analysis...</div>
+                        ) : (
+                            <ProjectAnalysisTab
+                                data={projectData || {}}
+                                roundToTwo={roundToTwo}
                             />
                         )}
                     </TabsContent>
