@@ -116,8 +116,10 @@ class ProjectScoreTests(APITestCase):
         quadrants = response.data.get('quadrants_config')
         self.assertIsNotNone(quadrants)
         # Project scores: 90, 90, 80 -> Median 90. Max 90 -> 95% = 85.5
+        # Project scores: 90, 90, 80 -> Median 90. Max 90 -> 95% = 85.5
         self.assertEqual(quadrants['project_median'], 90.0)
-        self.assertEqual(quadrants['project_max_95'], 85.5)
+        self.assertEqual(quadrants['project_thresh_val'], 85.5)
+        self.assertEqual(quadrants['project_threshold_ratio'], 0.95)
         # Quiz scores: 80, 70, 60 -> Median 70.
         self.assertEqual(quadrants['quiz_median'], 70.0)
         # Max possible is 25 because default rubric is created (5 criteria * 5 max scale)

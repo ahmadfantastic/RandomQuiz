@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 const ProjectAnalysisTab = ({ data, roundToTwo }) => {
     if (!data) return null;
 
-    const { quiz_correlations, aggregated_quadrants } = data;
+    const { quiz_correlations, aggregated_quadrants, project_threshold_ratio } = data;
 
     // Sort correlations by quiz title
     const sortedCorrelations = [...(quiz_correlations || [])].sort((a, b) => a.quiz_title.localeCompare(b.quiz_title));
@@ -14,6 +14,8 @@ const ProjectAnalysisTab = ({ data, roundToTwo }) => {
     const totalStudents = aggregated_quadrants?.med_med ?
         (aggregated_quadrants.med_med.masters + aggregated_quadrants.med_med.implementers + aggregated_quadrants.med_med.conceptualizers + aggregated_quadrants.med_med.strugglers)
         : 0;
+
+    const ratioPct = project_threshold_ratio ? (project_threshold_ratio * 100).toFixed(0) : '95';
 
     const renderQuadrantTable = (counts, title, total) => {
         if (!counts) return null;
@@ -129,10 +131,10 @@ const ProjectAnalysisTab = ({ data, roundToTwo }) => {
                         renderQuadrantTable(aggregated_quadrants.med_half, "Med / 50% Max", aggregated_quadrants.med_half.valid_count)
                     }
 
-                    {renderQuadrantTable(aggregated_quadrants?.max95_med, "95% Max / Median", totalStudents)}
+                    {renderQuadrantTable(aggregated_quadrants?.thresh_med, `${ratioPct}% Max / Median`, totalStudents)}
 
-                    {aggregated_quadrants?.max95_half?.valid_count > 0 &&
-                        renderQuadrantTable(aggregated_quadrants.max95_half, "95% Max / 50% Max", aggregated_quadrants.max95_half.valid_count)
+                    {aggregated_quadrants?.thresh_half?.valid_count > 0 &&
+                        renderQuadrantTable(aggregated_quadrants.thresh_half, `${ratioPct}% Max / 50% Max`, aggregated_quadrants.thresh_half.valid_count)
                     }
                 </div>
             </div>

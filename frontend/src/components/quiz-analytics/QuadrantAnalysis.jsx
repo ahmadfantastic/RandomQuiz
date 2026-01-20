@@ -123,12 +123,15 @@ const QuadrantChart = ({ title, data, xThreshold, yThreshold, xDomain, yDomain }
 const QuadrantAnalysis = ({ data, config }) => {
     if (!data || !config) return null;
 
-    // config contains: project_median, project_max_95, quiz_median, quiz_max_50, quiz_max_possible
+    // config contains: project_median, project_thresh_val, project_threshold_ratio, quiz_median, quiz_max_50, quiz_max_possible
     const points = data; // Array of {x: quiz, y: project} -> Chart expects X=Project(y), Y=Quiz(x)
 
     // Extract scores
     const projectScores = points.map(p => p.y);
     const quizScores = points.map(p => p.x);
+
+    const ratioVal = config.project_threshold_ratio || 0.95;
+    const ratioPct = (ratioVal * 100).toFixed(0);
 
     // Helper to calculate symmetric domain centered on threshold
     const getCenteredDomain = (scores, threshold, forceZero = false) => {
@@ -190,24 +193,24 @@ const QuadrantAnalysis = ({ data, config }) => {
                         />
                     )}
 
-                    {/* Plot 3: 95% Max / Med */}
+                    {/* Plot 3: Thresh / Med */}
                     <QuadrantChart
-                        title="95% Max Project / Median Quiz"
+                        title={`${ratioPct}% Max Project / Median Quiz`}
                         data={points}
-                        xThreshold={config.project_max_95}
+                        xThreshold={config.project_thresh_val}
                         yThreshold={config.quiz_median}
-                        xDomain={getCenteredDomain(projectScores, config.project_max_95, false)}
+                        xDomain={getCenteredDomain(projectScores, config.project_thresh_val, false)}
                         yDomain={getCenteredDomain(quizScores, config.quiz_median, true)}
                     />
 
-                    {/* Plot 4: 95% Max / 50% Max */}
+                    {/* Plot 4: Thresh / 50% Max */}
                     {config.quiz_max_possible > 0 && (
                         <QuadrantChart
-                            title="95% Max Project / 50% Quiz Max"
+                            title={`${ratioPct}% Max Project / 50% Quiz Max`}
                             data={points}
-                            xThreshold={config.project_max_95}
+                            xThreshold={config.project_thresh_val}
                             yThreshold={config.quiz_max_50}
-                            xDomain={getCenteredDomain(projectScores, config.project_max_95, false)}
+                            xDomain={getCenteredDomain(projectScores, config.project_thresh_val, false)}
                             yDomain={getCenteredDomain(quizScores, config.quiz_max_50, true)}
                         />
                     )}

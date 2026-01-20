@@ -10,6 +10,8 @@ from rest_framework.parsers import MultiPartParser
 from quizzes.models import Quiz, QuizProjectScore
 from quizzes.serializers import QuizProjectScoreSerializer
 
+from api.analytics_constants import PROJECT_SCORE_THRESHOLD
+
 class QuizProjectScoreListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = QuizProjectScoreSerializer
@@ -131,7 +133,8 @@ class QuizProjectScoreListCreateView(generics.ListCreateAPIView):
         
         quadrants_config = {
             'project_median': 0,
-            'project_max_95': 0,
+            'project_thresh_val': 0,
+            'project_threshold_ratio': PROJECT_SCORE_THRESHOLD,
             'quiz_median': 0,
             'quiz_max_50': 0,
             'quiz_max_possible': 0
@@ -145,7 +148,7 @@ class QuizProjectScoreListCreateView(generics.ListCreateAPIView):
             p_median = statistics.median(y_values)
             p_max = max(y_values)
             quadrants_config['project_median'] = round(p_median, 2)
-            quadrants_config['project_max_95'] = round(p_max * 0.95, 2)
+            quadrants_config['project_thresh_val'] = round(p_max * PROJECT_SCORE_THRESHOLD, 2)
 
             # Quadrants Quiz Stats
             q_median = statistics.median(x_values)

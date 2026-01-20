@@ -8,8 +8,11 @@ from rest_framework.permissions import IsAuthenticated
 from accounts.models import ensure_instructor, Instructor
 from quizzes.models import Quiz, QuizProjectScore
 
+from api.analytics_constants import PROJECT_SCORE_THRESHOLD
+
 class GlobalProjectAnalysisView(APIView):
     permission_classes = [IsAuthenticated]
+    
 
     def get(self, request):
         instructor = ensure_instructor(request.user)
@@ -22,14 +25,14 @@ class GlobalProjectAnalysisView(APIView):
         # We track 4 configurations:
         # 1. Med / Med
         # 2. Med / 50% Max (if available)
-        # 3. 95% Max / Med
-        # 4. 95% Max / 50% Max (if available)
+        # 3. Thresh Max / Med
+        # 4. Thresh Max / 50% Max (if available)
         
         aggregated_quadrants = {
             'med_med': {'masters': 0, 'implementers': 0, 'conceptualizers': 0, 'strugglers': 0},
             'med_half': {'masters': 0, 'implementers': 0, 'conceptualizers': 0, 'strugglers': 0, 'valid_count': 0}, # valid_count tracks quizzes where max possible was known
-            'max95_med': {'masters': 0, 'implementers': 0, 'conceptualizers': 0, 'strugglers': 0},
-            'max95_half': {'masters': 0, 'implementers': 0, 'conceptualizers': 0, 'strugglers': 0, 'valid_count': 0},
+            'thresh_med': {'masters': 0, 'implementers': 0, 'conceptualizers': 0, 'strugglers': 0},
+            'thresh_half': {'masters': 0, 'implementers': 0, 'conceptualizers': 0, 'strugglers': 0, 'valid_count': 0},
         }
 
         for quiz in quizzes:
@@ -75,7 +78,7 @@ class GlobalProjectAnalysisView(APIView):
             # Calc Thresholds
             p_median = statistics.median(y_values)
             p_max = max(y_values)
-            p_95 = p_max * 0.95
+            p_thresh = p_max * PROJECT_SCORE_THRESHOLD
             
             q_median = statistics.median(x_values)
             
@@ -103,9 +106,9 @@ class GlobalProjectAnalysisView(APIView):
             q_half = q_max_possible * 0.5 if q_max_possible > 0 else None
 
             # Helper to classify
-            def classify(p_score, q_score, p_thresh, q_thresh):
-                is_high_p = p_score >= p_thresh
-                is_high_q = q_score >= q_thresh
+            def classify(p_score, q_score, p_t, q_t):
+                is_high_p = p_score >= p_t
+                is_high_q = q_score >= q_t
                 if is_high_p and is_high_q: return 'masters'
                 if is_high_p and not is_high_q: return 'implementers'
                 if not is_high_p and is_high_q: return 'conceptualizers'
@@ -119,25 +122,26 @@ class GlobalProjectAnalysisView(APIView):
                 cat = classify(p, q, p_median, q_median)
                 aggregated_quadrants['med_med'][cat] += 1
                 
-                # Update Max95/Med
-                cat = classify(p, q, p_95, q_median)
-                aggregated_quadrants['max95_med'][cat] += 1
+                # Update Thresh/Med
+                cat = classify(p, q, p_thresh, q_median)
+                aggregated_quadrants['thresh_med'][cat] += 1
                 
                 # Update Med/Half
                 if q_half is not None:
                     cat = classify(p, q, p_median, q_half)
                     aggregated_quadrants['med_half'][cat] += 1
                 
-                # Update Max95/Half
+                # Update Thresh/Half
                 if q_half is not None:
-                    cat = classify(p, q, p_95, q_half)
-                    aggregated_quadrants['max95_half'][cat] += 1
+                    cat = classify(p, q, p_thresh, q_half)
+                    aggregated_quadrants['thresh_half'][cat] += 1
             
             if q_half is not None:
                 aggregated_quadrants['med_half']['valid_count'] += count
-                aggregated_quadrants['max95_half']['valid_count'] += count
+                aggregated_quadrants['thresh_half']['valid_count'] += count
 
         return Response({
             'quiz_correlations': quiz_correlations,
-            'aggregated_quadrants': aggregated_quadrants
+            'aggregated_quadrants': aggregated_quadrants,
+            'project_threshold_ratio': PROJECT_SCORE_THRESHOLD
         })

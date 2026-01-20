@@ -42,9 +42,13 @@ class GlobalProjectAnalysisTest(TestCase):
         self.assertEqual(q1_corr['count'], 2)
         # Check R values exist (even if imperfect with n=2)
         
+        # Check Config
+        self.assertEqual(data['project_threshold_ratio'], 0.95)
+
         # Check Aggregated Quadrants
         quads = data['aggregated_quadrants']
         self.assertIn('med_med', quads)
+        self.assertIn('thresh_med', quads)
         self.assertIn('masters', quads['med_med'])
         
         # Total count check: 2 students in Quiz 1, 2 in Quiz 2 = 4 total
