@@ -181,7 +181,6 @@ class GlobalCorrelationAnalysisView(APIView):
 
 
             # --- Time Correlation Logic ---
-            print(f"DEBUG: Criteria Map: {criterion_names}")
 
             quiz_attempts = QuizAttempt.objects.filter(
                 quiz=quiz,
