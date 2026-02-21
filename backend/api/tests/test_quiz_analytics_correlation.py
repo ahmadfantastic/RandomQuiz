@@ -103,7 +103,7 @@ class QuizAnalyticsCorrelationTest(APITestCase):
         # Verify Score Correlation presence and count
         self.assertIn('score_correlation', response.data)
         score_c = response.data['score_correlation']
-        # We expect entries for C1 and Weighted Rating
+        # We expect entries for C1
         c1_corr = next((item for item in score_c if item['name'] == 'C1'), None)
         self.assertIsNotNone(c1_corr)
         self.assertEqual(c1_corr['count'], 3, "Should have 3 data points for Score vs Rating")

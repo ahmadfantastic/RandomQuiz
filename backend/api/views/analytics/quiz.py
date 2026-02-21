@@ -1608,7 +1608,7 @@ class QuizInterRaterAgreementView(APIView):
         # (RubricCriterion ID vs Code). The Entry links to RubricCriterion(db model).
         # RubricCriterion has .criterion_id field which matches instructor_criterion_code.
         
-        weight_map = {} # instructor_code -> weight
+
 
         for rating in instructor_ratings:
             pid = rating.problem_id
@@ -1619,8 +1619,7 @@ class QuizInterRaterAgreementView(APIView):
                 code = entry.criterion.criterion_id
                 val = entry.scale_option.value
                 
-                if code not in weight_map:
-                     weight_map[code] = entry.criterion.weight
+
 
                 if code not in instructor_ratings_data[pid]:
                     instructor_ratings_data[pid][code] = []
@@ -1830,105 +1829,7 @@ class QuizInterRaterAgreementView(APIView):
                     'df': common_count - 1 if common_count > 0 else 0
                 })
 
-            # --- Weighted Scores Comparison for Group ---
-            weighted_student_scores = []
-            weighted_instructor_scores = []
-            weighted_common_count = 0
-            
-            for pid in group_pids:
-                # Calculate weighted score for problem
-                # Need s_mapped for each criterion.
-                # Since we already computed s_mapped in loop above but didn't store per-pid easily accessible (unless we access detailed_comparisons).
-                # But detailed_comparisons might not have it if q_cid not in detailed_comparisons[pid]['ratings']?
-                # Actually detailed_comparisons is reliably populated.
-                
-                # Let's recompute or use detailed_comparisons
-                # Recomputing is safer/cleaner than digging into detailed_comparisons structure which has presentation strings?
-                # Detailed comparisons has numeric values stored.
-                
-                # Let's recompute to be safe and independent.
-                
-                s_sum = 0
-                i_sum = 0
-                w_sum = 0
-                has_valid_data = False
-                
-                # We need to iterate all criteria again or look up what ratings this problem has.
-                # Using student_ratings_data keys?
-                # Better: Iterate all instructor criteria available for this pid.
-                
-                # We can iterate quiz_criteria again
-                for qc in quiz_criteria:
-                    i_code = qc.instructor_criterion_code
-                    if not i_code or i_code not in weight_map:
-                        continue
-                        
-                    weight = weight_map[i_code]
-                    
-                    s_vals_objs = student_ratings_data.get(pid, {}).get(i_code, [])
-                    i_vals_objs = instructor_ratings_data.get(pid, {}).get(i_code, [])
 
-                    if s_vals_objs and i_vals_objs:
-                        # Student
-                        s_raw_vals = [x['raw'] for x in s_vals_objs]
-                        s_mapped_list = [scale_lookup.get(v, v) for v in s_raw_vals]
-                        s_mapped = mean(s_mapped_list) if s_mapped_list else 0
-                        
-                        # Instructor
-                        i_vals = [x['value'] for x in i_vals_objs]
-                        i_mean = mean(i_vals) if i_vals else 0
-                        
-                        s_sum += s_mapped * weight
-                        i_sum += i_mean * weight
-                        w_sum += weight
-                        has_valid_data = True
-                
-                if has_valid_data and w_sum > 0:
-                    w_s_avg = s_sum / w_sum
-                    w_i_avg = i_sum / w_sum
-                    
-                    weighted_student_scores.append(w_s_avg)
-                    weighted_instructor_scores.append(w_i_avg)
-                    weighted_common_count += 1
-                    
-                    if pid in detailed_comparisons:
-                         detailed_comparisons[pid]['weighted_instructor'] = w_i_avg
-                         detailed_comparisons[pid]['weighted_student'] = w_s_avg
-                         detailed_comparisons[pid]['weighted_diff'] = w_s_avg - w_i_avg
-
-            # T-Test Weighted
-            wt_stat = None
-            wp_val = None
-            w_mean_diff = None
-            
-            if weighted_common_count > 1:
-                if all(s == i for s, i in zip(weighted_student_scores, weighted_instructor_scores)):
-                     wt_stat = 0.0
-                     wp_val = 1.0
-                else:
-                    try:
-                        wresult = stats.ttest_rel(weighted_student_scores, weighted_instructor_scores)
-                        wt_stat = wresult.statistic
-                        wp_val = wresult.pvalue
-                    except Exception as e:
-                        print(f"Error calculating weighted t-test: {e}")
-            
-            w_avg_s = mean(weighted_student_scores) if weighted_student_scores else 0
-            w_avg_i = mean(weighted_instructor_scores) if weighted_instructor_scores else 0
-            w_mean_diff = w_avg_s - w_avg_i
-            
-            comparison_data.append({
-                'criterion_id': 'weighted',
-                'criterion_name': 'Weighted Score',
-                'group': group_name,
-                'common_problems': weighted_common_count,
-                't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
-                'p_value': round(wp_val, 5) if wp_val is not None else None,
-                'instructor_mean': round(w_avg_i, 4),
-                'student_mean_norm': round(w_avg_s, 4),
-                'mean_difference': round(w_mean_diff, 4),
-                'df': weighted_common_count - 1 if weighted_common_count > 0 else 0
-            })
             
         details_list = sorted(list(detailed_comparisons.values()), key=lambda x: x['problem_id'])
         
@@ -1946,17 +1847,14 @@ class QuizInterRaterAgreementView(APIView):
         score_correlation = []
         
         # We need to collect pairs of (Rating, Score) for each criterion
-        # And (WeightedRating, Score)
         
         # Prepare storage
         criterion_points = {} # name -> list of {x: score, y: rating}
-        weighted_points = [] # list of {x: score, y: rating}
         time_points = [] # list of {x: score, y: duration_minutes}
         word_count_points = [] # list of {x: score, y: word_count}
         
         # Time vs Rating Storage
         time_vs_rating_points = {} # name -> list of {x: duration, y: rating}
-        weighted_time_vs_rating_points = [] # list of {x: duration, y: weighted_rating}
         
         for qc in quiz_criteria:
             if qc.instructor_criterion_code:
@@ -1981,10 +1879,6 @@ class QuizInterRaterAgreementView(APIView):
             aid = record.get('attempt_id')
             duration = attempt_durations.get(aid)
             
-            # Weighted calc for this record
-            w_sum_r = 0
-            w_sum_w = 0
-            
             for q_cid, val in ratings.items():
                 # Use raw value 'val' directly as requested
                 
@@ -1995,23 +1889,6 @@ class QuizInterRaterAgreementView(APIView):
                         criterion_points[c_name].append({'x': score, 'y': val})
                     if duration is not None and c_name in time_vs_rating_points:
                         time_vs_rating_points[c_name].append({'x': duration, 'y': val})
-                
-                # Weighted Calculation
-                # We need to link this rating to a weight.
-                # Use criterion_map to find the instructor code, then lookup weight.
-                if q_cid in criterion_map:
-                        i_code = criterion_map[q_cid]
-                        if i_code in weight_map:
-                            weight = weight_map[i_code]
-                            w_sum_r += val * weight
-                            w_sum_w += weight
-            
-            if w_sum_w > 0:
-                weighted_avg = w_sum_r / w_sum_w
-                if score is not None:
-                    weighted_points.append({'x': score, 'y': weighted_avg})
-                if duration is not None:
-                    weighted_time_vs_rating_points.append({'x': duration, 'y': weighted_avg})
 
         # --- Time & Word Count Collection --- (Simplified now that attempts_data is fetched)
         # Pre-fetch text data if needed
@@ -2088,8 +1965,6 @@ class QuizInterRaterAgreementView(APIView):
 
         for c_name, points in criterion_points.items():
             score_correlation.append(calculate_correlations(points, c_name))
-            
-        score_correlation.append(calculate_correlations(weighted_points, "Weighted Rating"))
 
         # Calculate Time & Word Count Correlations
         time_correlation = []
@@ -2130,8 +2005,7 @@ class QuizInterRaterAgreementView(APIView):
         for c_name, points in time_vs_rating_points.items():
             time_vs_rating_correlation.append(calculate_correlations(points, c_name))
         
-        # Weighted
-        time_vs_rating_correlation.append(calculate_correlations(weighted_time_vs_rating_points, "Weighted Rating"))
+
 
         # Sort
         time_vs_rating_correlation.sort(key=lambda x: (

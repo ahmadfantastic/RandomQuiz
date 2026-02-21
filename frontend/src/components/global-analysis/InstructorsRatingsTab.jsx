@@ -90,7 +90,7 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
 
                                 {data.overall_criteria_stats && (
                                     <TableRow className="border-t-2 border-border font-bold bg-muted/50">
-                                        <TableCell>Weighted</TableCell>
+                                        <TableCell>Overall</TableCell>
                                         {/* Group Columns for Weighted Row */}
                                         {problem_groups && problem_groups.map(group => (
                                             <TableCell key={group.name}>
@@ -137,7 +137,7 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
             <Card>
                 <CardHeader>
                     <CardTitle>Problem Bank Rating Summary</CardTitle>
-                    <CardDescription>Average instructor ratings and weighted scores for each problem bank</CardDescription>
+                    <CardDescription>Average instructor ratings for each problem bank</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
@@ -148,7 +148,7 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
                                     {criteriaList.map(cid => (
                                         <TableHead key={cid}>{cid}</TableHead>
                                     ))}
-                                    <TableHead className="font-bold">Weighted Score</TableHead>
+
                                     <TableHead>Inter-Rater Reliability</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -167,15 +167,7 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
                                                     : '-'}
                                             </TableCell>
                                         ))}
-                                        <TableCell className="font-bold">
-                                            {(() => {
-                                                const score = bank.means?.weighted_score;
-                                                if (score !== undefined && score !== null) {
-                                                    return roundToTwo(score);
-                                                }
-                                                return '-';
-                                            })()}
-                                        </TableCell>
+
 
 
                                         <TableCell>
@@ -204,15 +196,7 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
                                                     : '-'}
                                             </TableCell>
                                         ))}
-                                        <TableCell>
-                                            {(() => {
-                                                const score = data.overall_bank_stats.weighted_score;
-                                                if (score !== undefined && score !== null) {
-                                                    return roundToTwo(score);
-                                                }
-                                                return '-';
-                                            })()}
-                                        </TableCell>
+
 
 
                                         <TableCell>

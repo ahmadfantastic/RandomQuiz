@@ -20,7 +20,7 @@ class GlobalSplitViewsTest(TestCase):
 
         # Rubric & Bank
         self.rubric = Rubric.objects.create(name="Test Rubric")
-        self.criterion = RubricCriterion.objects.create(rubric=self.rubric, name="Quality", criterion_id="Quality", description="desc", order=1, weight=1)
+        self.criterion = RubricCriterion.objects.create(rubric=self.rubric, name="Quality", criterion_id="Quality", description="desc", order=1)
         self.scale_options = []
         for i in range(1, 6):
             self.scale_options.append(RubricScaleOption.objects.create(rubric=self.rubric, value=float(i), label=str(i), order=i))

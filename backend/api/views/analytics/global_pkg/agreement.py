@@ -275,16 +275,10 @@ class GlobalAgreementAnalysisView(APIView):
         # Note: We will use 'Overall' as a special group that accumulates everything.
         global_comparison_acc = {} 
         
-        # Weighted Score Accumulators
-        # group -> { 's': [], 'i': [] }
-        global_weighted_acc = {}
-        
         # Helper to init group acc
         def init_group_acc(grp):
             if grp not in global_comparison_acc:
                 global_comparison_acc[grp] = {}
-            if grp not in global_weighted_acc:
-                global_weighted_acc[grp] = {'s': [], 'i': []}
 
         # We need a map of criterion code to display name (taking first available)
         global_code_to_name = {}
@@ -355,10 +349,8 @@ class GlobalAgreementAnalysisView(APIView):
                 instructor=instructor
             ).select_related('problem', 'problem__problem_bank', 'problem__problem_bank__rubric').prefetch_related('entries', 'entries__criterion')
             
-            # Map: pid -> { code -> val, weight }
+            # Map: pid -> { code -> val }
             i_data_map = {}
-            # Also need weights for weighted score
-            i_weights_map = {} # pid -> { code -> weight }
             # Map: pid -> order
             i_order_map = {}
             # Map: pid -> group
@@ -367,17 +359,14 @@ class GlobalAgreementAnalysisView(APIView):
             for r in q_i_ratings:
                 pid = r.problem_id
                 if pid not in i_data_map: i_data_map[pid] = {}
-                if pid not in i_weights_map: i_weights_map[pid] = {}
                 i_order_map[pid] = r.problem.order_in_bank
                 i_group_map[pid] = r.problem.group
 
                 for entry in r.entries.all():
                      code = entry.criterion.criterion_id 
                      val = entry.scale_option.value
-                     weight = entry.criterion.weight
                      
                      i_data_map[pid][code] = val
-                     i_weights_map[pid][code] = weight
 
             # 4. Compare Per Problem
             for pid in relevant_pids:
@@ -387,7 +376,6 @@ class GlobalAgreementAnalysisView(APIView):
                 # We have student ratings and instructor ratings for this problem
                 p_s_data = s_data_map[pid]
                 p_i_data = i_data_map[pid]
-                p_weights = i_weights_map.get(pid, {})
                 problem_order = i_order_map.get(pid, pid)
                 problem_group = i_group_map.get(pid, '') or '-'
                 
@@ -395,19 +383,12 @@ class GlobalAgreementAnalysisView(APIView):
                 for g in target_groups:
                     init_group_acc(g)
                 
-                # For weighted calculation
-                p_s_w_sum = 0
-                p_i_w_sum = 0
-                p_w_tot = 0
-                has_w_data = False
-                
                 # Detail Object
                 detail_obj = {
                     'problem_id': pid,
                     'problem_label': f"{quiz.title}: Problem {problem_order}",
                     'problem_group': problem_group,
-                    'ratings': {},
-                    'weighted_instructor': 0, 'weighted_student': 0, 'weighted_diff': 0
+                    'ratings': {}
                 }
                 
                 for icode, s_raw_list in p_s_data.items():
@@ -451,26 +432,7 @@ class GlobalAgreementAnalysisView(APIView):
                             'instructor_details': [{'value': i_val}]
                         }
                         
-                        # Weighted Calc
-                        w = p_weights.get(icode, 1)
-                        p_s_w_sum += s_mapped * w
-                        p_i_w_sum += i_val * w
-                        p_w_tot += w
-                        has_w_data = True
-                
-                if has_w_data and p_w_tot > 0:
-                    w_s = p_s_w_sum / p_w_tot
-                    w_i = p_i_w_sum / p_w_tot
-                    
-                    for g in target_groups:
-                        global_weighted_acc[g]['s'].append(w_s)
-                        global_weighted_acc[g]['i'].append(w_i)
-                    
-                    detail_obj['weighted_instructor'] = w_i
-                    detail_obj['weighted_student'] = w_s
-                    detail_obj['weighted_diff'] = w_s - w_i
-                    
-                    global_detailed_comparisons.append(detail_obj)
+                global_detailed_comparisons.append(detail_obj)
 
         # 5. Compute Statistics for Global Rows
         # Iterate over all groups found
@@ -527,49 +489,7 @@ class GlobalAgreementAnalysisView(APIView):
                     'df': n - 1 if n > 0 else 0
                 })
                 
-            # Weighted Score Row for this group
-            if g_name in global_weighted_acc:
-                ws_list = global_weighted_acc[g_name]['s']
-                wi_list = global_weighted_acc[g_name]['i']
-                wn = len(ws_list)
-                wt_stat, wp_val = None, None
-                
-                if wn > 1:
-                     if all(a==b for a,b in zip(ws_list, wi_list)):
-                         wt_stat, wp_val = 0.0, 1.0
-                     else:
-                         try:
-                             with warnings.catch_warnings():
-                                 warnings.simplefilter("ignore", RuntimeWarning)
-                                 res = stats.ttest_rel(ws_list, wi_list)
-                                 wt_stat, wp_val = res.statistic, res.pvalue
-                         except: pass
-                         
-                     w_cohens_d = calculate_cohens_d_paired(ws_list, wi_list)
-                     
-                     if wt_stat is not None and np.isnan(wt_stat): wt_stat = None
-                     if wp_val is not None and np.isnan(wp_val): wp_val = None
-                     if w_cohens_d is not None and np.isnan(w_cohens_d): w_cohens_d = None
-                else:
-                     w_cohens_d = None
-                
-                w_avg_s = mean(ws_list) if ws_list else 0
-                w_avg_i = mean(wi_list) if wi_list else 0
-                
-                global_comparison_rows.append({
-                    'group': g_name,
-                    'criterion_id': 'weighted',
-                    'criterion_name': 'Weighted Score',
-                    'order': 9999,
-                    'common_problems': wn,
-                    't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
-                    'p_value': round(wp_val, 5) if wp_val is not None else None,
-                    'cohens_d': round(w_cohens_d, 4) if w_cohens_d is not None else None,
-                    'instructor_mean': round(w_avg_i, 4),
-                    'student_mean_norm': round(w_avg_s, 4),
-                    'mean_difference': round(w_avg_s - w_avg_i, 4),
-                    'df': wn - 1 if wn > 0 else 0
-                })
+
 
         # Columns for Frontend
         t_criteria_columns = []

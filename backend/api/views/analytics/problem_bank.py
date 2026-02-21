@@ -31,9 +31,7 @@ class ProblemBankAnalysisView(APIView):
         rubric_criteria = {c['id']: c['name'] for c in rubric.get('criteria', [])}
         scale = rubric.get('scale', [])
         
-        criteria_list = rubric.get('criteria', [])
-        criteria_weights_by_id = {c['id']: c.get('weight', 1) for c in criteria_list}
-        
+        criteria_list = rubric.get('criteria', [])        
         for r in ratings:
             pid = r.problem_id
             iid = r.instructor.user.username # Use username as identifier
@@ -83,27 +81,12 @@ class ProblemBankAnalysisView(APIView):
             for pid, p_data in data.items():
                 if iid in p_data['ratings']:
                     ratings_dict = p_data['ratings'][iid]
-                    # Calculate weighted score with dynamic total weight
-                    w_sum = 0
-                    dynamic_total_weight = 0
-                    
-                    for c_id, val in ratings_dict.items():
-                        weight = criteria_weights_by_id.get(c_id, 1)
-                        w_sum += (val * weight)
-                        dynamic_total_weight += weight
-                    
-                    if dynamic_total_weight > 0:
-                        weighted_score = w_sum / dynamic_total_weight
-                    else:
-                        weighted_score = 0.0
-                    
                     inst_data['ratings'].append({
                         'problem_id': pid,
                         'order': p_data['order'],
                         'label': p_data['problem_label'],
                         'group': p_data['group'],
-                        'values': ratings_dict,
-                        'weighted_score': weighted_score
+                        'values': ratings_dict
                     })
                     
                     # Collect for group stats

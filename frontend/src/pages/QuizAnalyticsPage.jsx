@@ -323,7 +323,7 @@ const QuizAnalyticsPage = () => {
                                         <CorrelationAnalysis
                                             data={{ score_correlation: data.time_vs_rating_correlation }}
                                             title="Time vs Rating Correlation Analysis"
-                                            description="Analysis of how quiz completion time correlates with ratings (per criterion and weighted)."
+                                            description="Analysis of how quiz completion time correlates with ratings per criterion."
                                             xAxisLabel="Time (minutes)"
                                             yAxisLabel="Rating"
                                         />

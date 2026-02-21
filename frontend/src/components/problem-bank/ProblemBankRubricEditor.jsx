@@ -57,8 +57,7 @@ const ProblemBankRubricEditor = ({ open, onOpenChange, bankId, onSaveSuccess }) 
                 criteria: selected.criteria.map(c => ({
                     id: c.id,
                     name: c.name,
-                    description: c.description,
-                    weight: c.weight
+                    description: c.description
                 })),
                 rubric_id: selected.id
             });
@@ -166,10 +165,7 @@ const ProblemBankRubricEditor = ({ open, onOpenChange, bankId, onSaveSuccess }) 
                                                                     <Label>Name</Label>
                                                                     <div className="text-sm font-medium">{criterion.name}</div>
                                                                 </div>
-                                                                <div className="w-20">
-                                                                    <Label>Weight</Label>
-                                                                    <div className="text-sm">{criterion.weight || 1}</div>
-                                                                </div>
+
                                                             </div>
                                                             <div>
                                                                 <Label>Description</Label>

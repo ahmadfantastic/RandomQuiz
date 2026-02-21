@@ -28,7 +28,6 @@ class RubricCriterion(models.Model):
     criterion_id = models.CharField(max_length=32)
     name = models.CharField(max_length=255)
     description = models.TextField()
-    weight = models.IntegerField(default=1)
 
     class Meta:
         ordering = ['order']
@@ -60,7 +59,6 @@ class ProblemBank(models.Model):
                     'id': criterion.criterion_id,
                     'name': criterion.name,
                     'description': criterion.description,
-                    'weight': getattr(criterion, 'weight', 1),
                 }
                 for criterion in criteria_entries
             ],

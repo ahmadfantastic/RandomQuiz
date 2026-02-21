@@ -148,7 +148,7 @@ const ProblemBankAnalysisPage = () => {
                                                         (data.rubric?.criteria || (inst.ratings.length > 0 ? Object.keys(inst.ratings[0].values).map(cid => ({ id: cid })) : [])).map(c => (
                                                             <TableHead key={c.id}>{c.id}</TableHead>
                                                         ))}
-                                                    <TableHead className="font-bold">Weighted Score</TableHead>
+
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -161,11 +161,7 @@ const ProblemBankAnalysisPage = () => {
                                                             (data.rubric?.criteria || Object.keys(rating.values).map(cid => ({ id: cid }))).map(c => (
                                                                 <TableCell key={c.id}>{rating.values[c.id] !== undefined ? rating.values[c.id] : '-'}</TableCell>
                                                             ))}
-                                                        <TableCell className="font-bold">
-                                                            {rating.weighted_score !== undefined && rating.weighted_score !== null
-                                                                ? roundToTwo(rating.weighted_score)
-                                                                : '-'}
-                                                        </TableCell>
+
 
 
                                                     </TableRow>

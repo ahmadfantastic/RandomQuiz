@@ -14,7 +14,7 @@ const TimeCorrelationTab = ({ data }) => {
             <CorrelationAnalysis
                 data={{ score_correlation: data.time_vs_rating_correlation }}
                 title="Global Time vs Rating Correlation Analysis"
-                description="Global analysis of how quiz completion time correlates with ratings (per criterion and weighted)."
+                description="Global analysis of how quiz completion time correlates with ratings per criterion."
                 xAxisLabel="Time (minutes)"
                 yAxisLabel="Rating"
             />

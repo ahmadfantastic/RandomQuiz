@@ -123,21 +123,6 @@ class StudentInstructorComparisonTests(APITestCase):
         self.assertEqual(item['p_value'], 0.0)
         self.assertEqual(item['mean_difference'], 4.0)
         
-        
-        # Verify Weighted Score in comparison list (last item)
-        # Weight for C1 is 1 (default in create_rating_entry)
-        # So "Weighted Score" should equal "C1" logic if only C1 exists.
-        weighted_item = comparison[-1]
-        self.assertEqual(weighted_item['criterion_id'], 'weighted')
-        self.assertEqual(weighted_item['common_problems'], 2)
-        self.assertIsNone(weighted_item['t_statistic'])
-        
-        # Verify Weighted Data in Details
-        details = data['details']
-        p1_detail = next(d for d in details if d['problem_label'] == 'Problem 1')
-        self.assertIn('weighted_instructor', p1_detail)
-        self.assertEqual(p1_detail['weighted_instructor'], 1.0)
-    
     def test_global_comparison_logic(self):
         # Create a second quiz with different scale (1-10)
         quiz2 = Quiz.objects.create(title="Quiz 2", owner=self.user.instructor)
@@ -175,7 +160,7 @@ class StudentInstructorComparisonTests(APITestCase):
         # setUp only has P1.
         
         # Use direct path
-        url = '/api/problem-banks/analysis/global/'
+        url = '/api/problem-banks/analysis/global/agreement/'
         
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -195,12 +180,7 @@ class StudentInstructorComparisonTests(APITestCase):
         # Stud: (1.0 + 3.0) / 2 = 2.0 (Mapped: 1+((5.5-1)/9)*4 = 1+2=3)
         self.assertEqual(c1_row['instructor_mean'], 1.0)
         self.assertEqual(c1_row['student_mean_norm'], 5.25)
-        
-        # Weighted Score (Only C1 involved, weight 1)
-        # Should match C1 stats
-        w_row = next(r for r in gc['comparison'] if r['criterion_id'] == 'weighted')
-        self.assertEqual(w_row['instructor_mean'], 1.0)
-        self.assertEqual(w_row['student_mean_norm'], 5.25)
+
 
     def test_global_analysis_anova(self):
         # Create 2 banks
@@ -241,7 +221,7 @@ class StudentInstructorComparisonTests(APITestCase):
         # We need to setup QuizSlot/Attempt for Global Comparison? 
         # No, ANOVA is Bank-based. But verify GlobalAnalysisView runs without error.
         
-        url = '/api/problem-banks/analysis/global/'
+        url = '/api/problem-banks/analysis/global/instructor/'
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
@@ -258,47 +238,6 @@ class StudentInstructorComparisonTests(APITestCase):
         self.assertIsNotNone(c1_anova['f_stat'])
         self.assertIsNotNone(c1_anova['p_value'])
         self.assertEqual(len(c1_anova['banks_included']), 2)
-    def test_weighted_calculation_with_varied_weights(self):
-        # Create C2 with weight 2
-        
-        # Ensure Rubric exists
-        if not hasattr(self, 'rubric'):
-             self.rubric = Rubric.objects.create(name="Test Rubric", owner=self.user.instructor)
-             
-        c2_crit = QuizRatingCriterion.objects.create(quiz=self.quiz, name="C2", order=2, criterion_id="c2", instructor_criterion_code="IC2")
-        rc2, _ = RubricCriterion.objects.get_or_create(rubric=self.rubric, criterion_id="IC2", defaults={'name': 'Inst Crit 2', 'order': 2, 'weight': 2})
-        # Note: 'weight' is in RubricCriterion model (verified in view_file).
-
-        # For Problem 1:
-        # C1 (Weight 1) -> Inst: 1.0, Stud: 5.0 (Mapped)
-        # C2 (Weight 2) -> Let's add ratings
-        
-        # Instructor Rating P1, C2 = 0.5 (Scale val 2, mapped 0.25? No, direct value logic)
-        # create_rating_entry takes value and creates scale option.
-        # Let's say val = 2. 
-        rating1 = InstructorProblemRating.objects.get(problem=self.problem)
-        so2, _ = RubricScaleOption.objects.get_or_create(rubric=self.rubric, value=0.5, defaults={'label': '0.5', 'order': 1})
-        InstructorProblemRatingEntry.objects.create(rating=rating1, criterion=rc2, scale_option=so2)
-        
-        # Student Rating P1, C2 = 3 (Scale 1-5) -> Mapped: 3.0
-        attempt1 = QuizAttempt.objects.get(student_identifier="s1")
-        # Update existing attempt slot or create new? Existing attempt slot has answer_data JSON.
-        # We need to update the JSON.
-        qas = QuizAttemptSlot.objects.get(attempt=attempt1, slot=self.slot)
-        qas.answer_data['ratings']['c2'] = 3
-        qas.save()
-        
-        # Expected Weighted Avg for P1:
-        # Inst: (1.0 * 1 + 0.5 * 2) / (1 + 2) = 2.0 / 3 = 0.6667
-        # Stud: (5.0 * 1 + 3.0 * 2) / 3 = 11.0 / 3 = 3.6667
-        
-        url = reverse('quiz-analytics-agreement', args=[self.quiz.id])
-        response = self.client.get(url)
-        details = response.data['details']
-        p1_detail = next(d for d in details if d['problem_label'] == 'Problem 1')
-        
-        self.assertAlmostEqual(p1_detail['weighted_instructor'], 0.6667, places=3)
-        self.assertAlmostEqual(p1_detail['weighted_student'], 3.6667, places=3)
 
     def test_comparison_normalization(self):
         # Add another student with rating 1 (Norm = 0.0)

@@ -24,7 +24,7 @@ const RubricManagerModal = ({ open, onOpenChange, onRubricCreated }) => {
             { order: 3, value: 4, label: 'Excellent' }
         ],
         criteria: [
-            { order: 0, id: 'c1', name: 'Quality', description: 'Overall quality', weight: 1 }
+            { order: 0, id: 'c1', name: 'Quality', description: 'Overall quality' }
         ]
     });
 
@@ -61,7 +61,7 @@ const RubricManagerModal = ({ open, onOpenChange, onRubricCreated }) => {
                 { order: 3, value: 4, label: 'Excellent' }
             ],
             criteria: [
-                { order: 0, id: 'c1', name: 'Quality', description: 'Overall quality', weight: 1 }
+                { order: 0, id: 'c1', name: 'Quality', description: 'Overall quality' }
             ]
         });
     };
@@ -146,7 +146,7 @@ const RubricManagerModal = ({ open, onOpenChange, onRubricCreated }) => {
     const addCriterion = () => {
         setNewRubric(prev => ({
             ...prev,
-            criteria: [...prev.criteria, { order: prev.criteria.length, id: `c${Date.now()}`, name: '', description: '', weight: 1 }]
+            criteria: [...prev.criteria, { order: prev.criteria.length, id: `c${Date.now()}`, name: '', description: '' }]
         }));
     };
 
@@ -222,7 +222,6 @@ const RubricManagerModal = ({ open, onOpenChange, onRubricCreated }) => {
                                         <div className="flex gap-2">
                                             <Input className="w-1/4" value={crit.id} onChange={e => updateCriterion(idx, 'id', e.target.value)} placeholder="ID" />
                                             <Input className="flex-1" value={crit.name} onChange={e => updateCriterion(idx, 'name', e.target.value)} placeholder="Name" />
-                                            <Input type="number" className="w-20" value={crit.weight} onChange={e => updateCriterion(idx, 'weight', parseInt(e.target.value))} placeholder="Wgt" />
                                             <Button variant="ghost" size="icon" onClick={() => removeCriterion(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                         </div>
                                         <Input value={crit.description} onChange={e => updateCriterion(idx, 'description', e.target.value)} placeholder="Description" />

@@ -224,7 +224,7 @@ class RubricCriterionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = RubricCriterion
-        fields = ['order', 'id', 'name', 'description', 'weight']
+        fields = ['order', 'id', 'name', 'description']
 
 class RubricSerializer(serializers.ModelSerializer):
     scale_options = RubricScaleOptionSerializer(many=True)

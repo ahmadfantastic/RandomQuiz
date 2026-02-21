@@ -38,7 +38,7 @@ class GlobalInstructorAnalysisView(APIView):
         global_criteria_data = {}
         
         # Accumulate data by Problem Group
-        # Structure: group_name -> { criterion: [values], 'weighted_score': [values], 'total_max_score': [values] }
+        # Structure: group_name -> { criterion: [values], 'total_max_score': [values] }
         group_stats = {}
         
         # Temporary storage for aggregating scores per problem
@@ -63,16 +63,10 @@ class GlobalInstructorAnalysisView(APIView):
             scale = rubric.get('scale', [])
             criteria_list = rubric.get('criteria', [])
             
-            # Map criterion name to weight
-            criteria_weights = {c['name']: c.get('weight', 1) for c in criteria_list}
-            
             total_max_score = 0
-            total_weight = 0
             if scale and criteria_list:
                 max_val = max(s['value'] for s in scale)
-                # Max score = max_scale_val * sum(weights)
-                total_weight = sum(criteria_weights.values())
-                total_max_score = max_val * total_weight
+                total_max_score = max_val * len(criteria_list)
 
             c_totals = {}
             c_counts = {}
@@ -100,8 +94,6 @@ class GlobalInstructorAnalysisView(APIView):
                         problem_scores[pid] = {
                             'group': p_group if p_group else "Ungrouped",
                             'max_score': total_max_score,
-                            'total_weight': total_weight,
-                            'weights': criteria_weights,
                             'criteria': {}
                         }
 
@@ -267,22 +259,7 @@ class GlobalInstructorAnalysisView(APIView):
                                 criteria_values[c_name] = []
                            criteria_values[c_name].append(avg)
 
-                 # Add weighted score for ANOVA
-                 p_w_sum = 0
-                 d_tot_w = 0
-                 current_p_weights = p_data.get('weights', {})
-                 for c_name, scores in p_data['criteria'].items():
-                      if scores:
-                           avg = sum(scores)/len(scores)
-                           w = current_p_weights.get(c_name, 1)
-                           p_w_sum += avg * w
-                           d_tot_w += w
-                 
-                 if d_tot_w > 0:
-                      w_score = p_w_sum / d_tot_w
-                      if 'weighted_score' not in criteria_values:
-                           criteria_values['weighted_score'] = []
-                      criteria_values['weighted_score'].append(w_score)
+
 
             results.append({
                 'id': bank.id,
@@ -309,23 +286,7 @@ class GlobalInstructorAnalysisView(APIView):
                             group_stats[group][c_name] = []
                         group_stats[group][c_name].append(avg_score)
                 
-                # Add weighted score to group stats
-                # Recalculate per-problem weighted score locally
-                p_w_sum = 0.0
-                d_tot_w = 0.0
-                current_p_weights = p_data.get('weights', {})
-                for c_name, scores in p_data['criteria'].items():
-                    if scores:
-                        avg = float(sum(scores)) / len(scores)
-                        w = float(current_p_weights.get(c_name, 1))
-                        p_w_sum += avg * w
-                        d_tot_w += w
-                
-                if d_tot_w > 0:
-                    w_score = p_w_sum / d_tot_w
-                    if 'weighted_score' not in group_stats[group]:
-                        group_stats[group]['weighted_score'] = []
-                    group_stats[group]['weighted_score'].append(w_score)
+
                 
             # Accumulate to global problem scores
             all_problem_scores.update(problem_scores)
@@ -387,7 +348,7 @@ class GlobalInstructorAnalysisView(APIView):
                         pass # Fallback if tukey fails
 
                 anova_results.append({
-                    'criterion_id': 'Weighted Score' if cid == 'weighted_score' else cid,
+                    'criterion_id': cid,
                     'f_stat': float(f_stat) if f_stat is not None else None,
                     'p_value': float(p_val) if p_val is not None else None,
                     'significant': significant,
@@ -461,55 +422,43 @@ class GlobalInstructorAnalysisView(APIView):
         # Calculate Overall Stats
         overall_criteria_stats = None
         if all_problem_scores:
-            # Weighted Score Calculation (Sum of criteria averages per problem)
-            # all_problem_scores [pid] -> criteria -> avg_score
+            # Overall Score Calculation (Average of criteria averages per problem)
             
-            group_weighted_vals = {}
-            all_weighted_vals = []
+            group_overall_vals = {}
+            all_overall_vals = []
             
             for pid, p_data in all_problem_scores.items():
-                # Let's recalculate per-problem weighted score correctly:
-                current_p_weights = p_data.get('weights', {})
-                current_p_weighted_sum = 0
+                current_p_sum = 0
+                count = 0
                 
-                # Iterate items to get c_name
-                dynamic_total_weight = 0
                 for c_name, c_vals in p_data.get('criteria', {}).items():
                     if c_vals:
                          avg_val = sum(c_vals)/len(c_vals)
-                         weight = current_p_weights.get(c_name, 1)
-                         current_p_weighted_sum += (avg_val * weight)
-                         dynamic_total_weight += weight
+                         current_p_sum += avg_val
+                         count += 1
                 
-                if p_data.get('criteria'): # if any criteria existed
-                    p_w_score = current_p_weighted_sum
-
-                    # Normalize by dynamic total weight if available (Weighted Average Rating)
-                    if dynamic_total_weight > 0:
-                        p_w_score = p_w_score / dynamic_total_weight
-                    else:
-                        p_w_score = 0.0 # fallback
+                if count > 0:
+                    p_score = current_p_sum / count
 
                     group = p_data['group']
 
-                    if group not in group_weighted_vals:
-                         group_weighted_vals[group] = []
-                    group_weighted_vals[group].append(p_w_score)
-                    all_weighted_vals.append(p_w_score)
+                    if group not in group_overall_vals:
+                         group_overall_vals[group] = []
+                    group_overall_vals[group].append(p_score)
+                    all_overall_vals.append(p_score)
 
-
-            overall_n = len(all_weighted_vals)
-            overall_mean = np.mean(all_weighted_vals) if all_weighted_vals else 0.0
+            overall_n = len(all_overall_vals)
+            overall_mean = np.mean(all_overall_vals) if all_overall_vals else 0.0
             
-            # Group Means for Weighted Score
-            group_means = {g: np.mean(vals) for g, vals in group_weighted_vals.items()}
+            # Group Means for Overall Score
+            group_means = {g: np.mean(vals) for g, vals in group_overall_vals.items()}
 
             # Overall T-Test: Pool all rating values for G1 vs G2
             overall_t_test = None
-            if len(group_weighted_vals) == 2:
-                groups = list(group_weighted_vals.keys())
-                g1_vals = group_weighted_vals[groups[0]]
-                g2_vals = group_weighted_vals[groups[1]]
+            if len(group_overall_vals) == 2:
+                groups = list(group_overall_vals.keys())
+                g1_vals = group_overall_vals[groups[0]]
+                g2_vals = group_overall_vals[groups[1]]
                 
                 if len(g1_vals) > 1 and len(g2_vals) > 1:
                      try:
@@ -547,11 +496,6 @@ class GlobalInstructorAnalysisView(APIView):
                 if vals:
                     overall_bank_stats[cid] = np.mean(vals)
             
-            # Average Weighted Score
-            w_scores = [r['means'].get('weighted_score', 0) for r in results]
-            if w_scores:
-                overall_bank_stats['weighted_score'] = np.mean(w_scores)
-                
             # Average Total Max Score
             t_scores = [r['total_max_score'] for r in results if r['total_max_score']]
             if t_scores:

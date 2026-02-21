@@ -141,7 +141,6 @@ class GlobalCorrelationAnalysisView(APIView):
 
         # Global Score vs Rating Correlation Data
         global_score_points = {} 
-        global_weighted_score_points = []
         
         # Global Score vs Time Correlation Data
         global_time_score_points = []
@@ -154,10 +153,6 @@ class GlobalCorrelationAnalysisView(APIView):
         
         # Global Time vs Rating Correlation Data
         global_time_vs_rating_points = {} 
-        global_weighted_time_vs_rating_points = []
-        
-        # Helper map for Bank Weights: BankID -> { InstructorCode -> Weight }
-        bank_weights_cache = {}
         
         # Global Rating Rows for Inter-Criterion Correlation
         global_rating_rows = []
@@ -249,20 +244,7 @@ class GlobalCorrelationAnalysisView(APIView):
                 if True:
                     ratings = entry['answer_data'].get('ratings', {})
                     bank_id = entry['assigned_problem__problem_bank__id']
-                    
-                    if bank_id not in bank_weights_cache:
-                        try:
-                            bank = ProblemBank.objects.get(id=bank_id)
-                            rubric = bank.get_rubric()
-                            w_map = {c['id']: c.get('weight', 1) for c in rubric.get('criteria', [])}
-                            bank_weights_cache[bank_id] = w_map
-                        except Exception:
-                            bank_weights_cache[bank_id] = {}
-                            
-                    current_bank_weights = bank_weights_cache.get(bank_id, {})
-                    
-                    w_sum = 0
-                    w_total = 0
+
                     
                     # Also capture rows for Inter-Criterion Correlation
                     # Note: We need a mapping from ID -> Name to properly group rows globally
@@ -287,21 +269,8 @@ class GlobalCorrelationAnalysisView(APIView):
                              
                              current_row[c_name] = val_float
                              
-                        # Weighted Calc
-                        if i_code and val_float is not None:
-                            weight = current_bank_weights.get(i_code, 1) # Default to 1 if not found
-                            w_sum += val_float * weight
-                            w_total += weight
-                    
                     if len(current_row) > 1:
                         global_rating_rows.append(current_row)
-
-                    if w_total > 0:
-                        weighted_avg = w_sum / w_total
-                        if score is not None:
-                            global_weighted_score_points.append({'x': score, 'y': weighted_avg})
-                        if duration is not None:
-                            global_weighted_time_vs_rating_points.append({'x': duration, 'y': weighted_avg})
 
             # --- Word Count Correlation Logic ---
             text_slots = quiz.slots.filter(response_type='open_text')
@@ -334,7 +303,7 @@ class GlobalCorrelationAnalysisView(APIView):
 
 
         # Helper to compute correlations
-        def compute_global_correlations(points_map, global_weight_points, type_label):
+        def compute_global_correlations(points_map, type_label):
              results = []
              # Individual Criteria
              # Sort keys
@@ -372,37 +341,12 @@ class GlobalCorrelationAnalysisView(APIView):
                          'points': pts
                      })
             
-             # Weighted Score
-             if len(global_weight_points) > 1:
-                 xs = [p['x'] for p in global_weight_points]
-                 ys = [p['y'] for p in global_weight_points]
-                 
-                 res_w = stats.spearmanr(xs, ys)
-                 r_val_w = res_w.statistic if hasattr(res_w, 'statistic') else res_w.correlation
-                 
-                 try:
-                     pres = stats.pearsonr(xs, ys)
-                     p_r_val = pres.statistic
-                     p_p_val = pres.pvalue
-                 except:
-                     p_r_val = None
-                     p_p_val = None
-                 
-                 results.append({
-                     'name': 'Weighted Score',
-                     'criterion': 'Weighted Score',
-                     'spearman_rho': round(r_val_w, 4),
-                     'spearman_p': round(res_w.pvalue, 5),
-                     'pearson_r': round(p_r_val, 4) if p_r_val is not None else None,
-                     'pearson_p': round(p_p_val, 5) if p_p_val is not None else None,
-                     'count': len(global_weight_points),
-                     'points': global_weight_points
-                 })
+
              
              return results
 
         # 1. Score vs Rating
-        score_correlation = compute_global_correlations(global_score_points, global_weighted_score_points, "Score vs Rating")
+        score_correlation = compute_global_correlations(global_score_points, "Score vs Rating")
 
         # 2. Score vs Time (Just a single correlation, not per criterion really, but we can structure similar if needed)
         # But this is just [Score, Time].
@@ -433,7 +377,7 @@ class GlobalCorrelationAnalysisView(APIView):
             })
             
         # 3. Time vs Rating
-        time_vs_rating_correlation = compute_global_correlations(global_time_vs_rating_points, global_weighted_time_vs_rating_points, "Time vs Rating")
+        time_vs_rating_correlation = compute_global_correlations(global_time_vs_rating_points, "Time vs Rating")
         
         # 4. Score vs Word Count
         word_count_correlation = []

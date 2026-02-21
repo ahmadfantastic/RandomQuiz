@@ -144,7 +144,7 @@ const DetailedComparisonTable = ({ details, criteria }) => {
                 <CardHeader>
                     <CardTitle>Problem-Level Rating Comparison</CardTitle>
                     <CardDescription>
-                        Detailed breakdown of average ratings and weighted scores per problem. Click on a cell to view individual ratings.
+                        Detailed breakdown of average ratings per problem. Click on a cell to view individual ratings.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -158,9 +158,7 @@ const DetailedComparisonTable = ({ details, criteria }) => {
                                             {col.id}
                                         </TableHead>
                                     ))}
-                                    <TableHead className="text-center min-w-[150px] font-bold border-l bg-muted/50">
-                                        Weighted
-                                    </TableHead>
+
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -211,27 +209,7 @@ const DetailedComparisonTable = ({ details, criteria }) => {
                                             );
                                         })}
 
-                                        {/* Weighted Column */}
-                                        <TableCell className="text-center border-l bg-muted/50">
-                                            {(row.weighted_instructor !== undefined && row.weighted_student !== undefined) ? (
-                                                <div className="flex flex-col items-center gap-1 text-xs font-semibold">
-                                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 w-full max-w-[120px]">
-                                                        <span className="text-right text-muted-foreground">Inst:</span>
-                                                        <span className="font-mono">{row.weighted_instructor.toFixed(2)}</span>
 
-                                                        <span className="text-right text-muted-foreground">Stud:</span>
-                                                        <span className="font-mono">{row.weighted_student.toFixed(2)}</span>
-
-                                                        <span className="text-right text-muted-foreground">Diff:</span>
-                                                        <span className={`font-mono font-medium ${row.weighted_diff > 0 ? "text-green-600" : row.weighted_diff < 0 ? "text-red-600" : ""}`}>
-                                                            {row.weighted_diff > 0 ? "+" : ""}{row.weighted_diff.toFixed(2)}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <span className="text-muted-foreground">-</span>
-                                            )}
-                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>

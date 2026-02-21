@@ -70,7 +70,7 @@ class QuizScoreANOVATest(APITestCase):
         attempt_slot.refresh_from_db()
 
     def test_quiz_score_anova_significant(self):
-        url = reverse('global-analysis')
+        url = reverse('global-analysis-student')
         response = self.client.get(url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
