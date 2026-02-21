@@ -1,6 +1,7 @@
 import numpy as np
 from statistics import mean
 from scipy import stats as sp_stats, stats
+import warnings
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -12,7 +13,7 @@ from quizzes.models import (
     Quiz, QuizAttempt, QuizSlot, QuizAttemptSlot, 
     QuizRatingCriterion, QuizRatingScaleOption
 )
-from ..utils import calculate_average_nearest
+from ..utils import calculate_average_nearest, calculate_cohens_d_paired
 from ..kappa import quadratic_weighted_kappa
 
 class GlobalAgreementAnalysisView(APIView):
@@ -498,6 +499,15 @@ class GlobalAgreementAnalysisView(APIView):
                                  res = stats.ttest_rel(s_list, i_list)
                                  t_stat, p_val = res.statistic, res.pvalue
                         except: pass
+                        
+                    cohens_d = calculate_cohens_d_paired(s_list, i_list)
+                    
+                    if t_stat is not None and np.isnan(t_stat): t_stat = None
+                    if p_val is not None and np.isnan(p_val): p_val = None
+                    if cohens_d is not None and np.isnan(cohens_d): cohens_d = None
+                else:
+                    cohens_d = None
+                    
                 
                 avg_s = mean(s_list) if s_list else 0
                 avg_i = mean(i_list) if i_list else 0
@@ -510,6 +520,7 @@ class GlobalAgreementAnalysisView(APIView):
                     'common_problems': n,
                     't_statistic': round(t_stat, 4) if t_stat is not None else None,
                     'p_value': round(p_val, 5) if p_val is not None else None,
+                    'cohens_d': round(cohens_d, 4) if cohens_d is not None else None,
                     'instructor_mean': round(avg_i, 4),
                     'student_mean_norm': round(avg_s, 4),
                     'mean_difference': round(avg_s - avg_i, 4),
@@ -533,6 +544,14 @@ class GlobalAgreementAnalysisView(APIView):
                                  res = stats.ttest_rel(ws_list, wi_list)
                                  wt_stat, wp_val = res.statistic, res.pvalue
                          except: pass
+                         
+                     w_cohens_d = calculate_cohens_d_paired(ws_list, wi_list)
+                     
+                     if wt_stat is not None and np.isnan(wt_stat): wt_stat = None
+                     if wp_val is not None and np.isnan(wp_val): wp_val = None
+                     if w_cohens_d is not None and np.isnan(w_cohens_d): w_cohens_d = None
+                else:
+                     w_cohens_d = None
                 
                 w_avg_s = mean(ws_list) if ws_list else 0
                 w_avg_i = mean(wi_list) if wi_list else 0
@@ -545,6 +564,7 @@ class GlobalAgreementAnalysisView(APIView):
                     'common_problems': wn,
                     't_statistic': round(wt_stat, 4) if wt_stat is not None else None,
                     'p_value': round(wp_val, 5) if wp_val is not None else None,
+                    'cohens_d': round(w_cohens_d, 4) if w_cohens_d is not None else None,
                     'instructor_mean': round(w_avg_i, 4),
                     'student_mean_norm': round(w_avg_s, 4),
                     'mean_difference': round(w_avg_s - w_avg_i, 4),

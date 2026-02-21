@@ -28,6 +28,7 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
                                         <>
                                             <TableHead>Sig. (2-tailed)</TableHead>
                                             <TableHead>Sig. (1-tailed)</TableHead>
+                                            <TableHead>Cohen's d</TableHead>
                                         </>
                                     )}
 
@@ -63,6 +64,9 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
                                                     <TableCell className={item.t_test?.p_1_tailed < 0.05 ? "font-bold text-green-600" : ""}>
                                                         {item.t_test && item.t_test.p_1_tailed != null ? item.t_test.p_1_tailed.toFixed(4) : '-'}
                                                     </TableCell>
+                                                    <TableCell>
+                                                        {item.t_test && item.t_test.cohens_d != null ? item.t_test.cohens_d.toFixed(3) : '-'}
+                                                    </TableCell>
                                                 </>
                                             )}
 
@@ -78,7 +82,7 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={4 + (problem_groups ? problem_groups.length : 0)} className="text-center text-muted-foreground h-24">
+                                        <TableCell colSpan={4 + (problem_groups ? problem_groups.length : 0) + (problem_groups && problem_groups.length === 2 ? 3 : 0)} className="text-center text-muted-foreground h-24">
                                             No inter-rater data available.
                                         </TableCell>
                                     </TableRow>
@@ -106,6 +110,9 @@ const InstructorsRatingsTab = ({ data, roundToTwo, problem_groups, criteriaList,
                                                 </TableCell>
                                                 <TableCell className={data.overall_criteria_stats.t_test?.p_1_tailed < 0.05 ? "font-bold text-green-600" : ""}>
                                                     {data.overall_criteria_stats.t_test && data.overall_criteria_stats.t_test.p_1_tailed != null ? data.overall_criteria_stats.t_test.p_1_tailed.toFixed(4) : '-'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {data.overall_criteria_stats.t_test && data.overall_criteria_stats.t_test.cohens_d != null ? data.overall_criteria_stats.t_test.cohens_d.toFixed(3) : '-'}
                                                 </TableCell>
                                             </>
                                         )}

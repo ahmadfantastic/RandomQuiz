@@ -10,6 +10,7 @@ from accounts.permissions import IsInstructor
 from problems.models import ProblemBank, InstructorProblemRating
 from ..utils import (
     calculate_weighted_kappa,
+    calculate_cohens_d,
 )
 
 class GlobalInstructorAnalysisView(APIView):
@@ -423,11 +424,14 @@ class GlobalInstructorAnalysisView(APIView):
                         except Exception:
                             t_stat, p_val_2 = None, None
                             
+                        cohens_d = calculate_cohens_d(vals1, vals2)
+                            
                         # 1-tailed: p/2 if t-stat assumption matches, but user usually just wants p/2
                         t_test_result = {
                             'p_2_tailed': p_val_2,
                             'p_1_tailed': p_val_2 / 2 if p_val_2 is not None else None,
-                            't_stat': t_stat
+                            't_stat': t_stat,
+                            'cohens_d': float(cohens_d) if cohens_d is not None else None
                         }
 
                 global_criteria_results.append({
@@ -515,10 +519,13 @@ class GlobalInstructorAnalysisView(APIView):
                      except Exception:
                          t_stat, p_val_2 = None, None
 
+                     cohens_d = calculate_cohens_d(g1_vals, g2_vals)
+
                      overall_t_test = {
                         'p_2_tailed': p_val_2,
                         'p_1_tailed': p_val_2 / 2 if p_val_2 is not None else None,
-                        't_stat': t_stat
+                        't_stat': t_stat,
+                        'cohens_d': float(cohens_d) if cohens_d is not None else None
                      }
 
             overall_criteria_stats = {

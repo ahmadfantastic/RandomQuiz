@@ -56,7 +56,8 @@ const StudentInstructorComparison = ({ data }) => {
                         <TableHead>Student Mean (Mapped)</TableHead>
                         <TableHead>Mean Diff</TableHead>
                         <TableHead>T-Statistic</TableHead>
-                        <TableHead>P-Value</TableHead>
+                        <TableHead>P-Value (2-tailed)</TableHead>
+                        <TableHead>Cohen's d</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -69,7 +70,9 @@ const StudentInstructorComparison = ({ data }) => {
                             <TableCell className={item.mean_difference > 0 ? "text-green-600" : "text-red-600"}>
                                 {item.mean_difference > 0 ? "+" : ""}{item.mean_difference}
                             </TableCell>
-                            <TableCell>{item.t_statistic !== null ? item.t_statistic : '-'}</TableCell>
+                            <TableCell>
+                                {item.t_statistic !== null ? item.t_statistic : '-'}
+                            </TableCell>
                             <TableCell>
                                 {item.p_value !== null ? (
                                     <span className={item.p_value < 0.05 ? "font-bold text-primary" : ""}>
@@ -77,6 +80,9 @@ const StudentInstructorComparison = ({ data }) => {
                                         {item.p_value < 0.05 && "*"}
                                     </span>
                                 ) : '-'}
+                            </TableCell>
+                            <TableCell>
+                                {item.cohens_d !== null && item.cohens_d !== undefined ? item.cohens_d : '-'}
                             </TableCell>
                         </TableRow>
                     ))}

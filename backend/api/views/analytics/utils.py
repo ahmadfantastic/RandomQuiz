@@ -70,6 +70,38 @@ def calculate_average_nearest(values, scale_values):
     nearest = min(scale_values, key=lambda x: abs(x - avg))
     return nearest
 
+def calculate_cohens_d(group1, group2):
+    """
+    Calculate Cohen's d for independent samples.
+    """
+    n1, n2 = len(group1), len(group2)
+    if n1 < 2 or n2 < 2:
+        return None
+    var1, var2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+    pooled_var = ((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2)
+    if pooled_var == 0:
+        return 0.0
+    mean1, mean2 = np.mean(group1), np.mean(group2)
+    return abs(mean1 - mean2) / np.sqrt(pooled_var)
+
+def calculate_cohens_d_paired(group1, group2):
+    """
+    Calculate Cohen's d for paired samples (dependent t-test).
+    This is often d_z, calculated as the mean difference divided by the standard deviation of the differences.
+    """
+    n = len(group1)
+    if n < 2 or len(group2) != n:
+        return None
+    
+    diffs = np.array(group1) - np.array(group2)
+    sd_diff = np.std(diffs, ddof=1)
+    
+    if sd_diff == 0:
+        return 0.0
+        
+    return abs(np.mean(diffs)) / sd_diff
+
+
 def calculate_typing_metrics(typing_events, attempt_started_at):
     """
     Calculate interaction metrics from a list of typing events.

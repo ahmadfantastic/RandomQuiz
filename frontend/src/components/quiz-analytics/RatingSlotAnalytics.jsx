@@ -59,6 +59,13 @@ function normalCDF(x) {
     return prob;
 }
 
+const calculateCohensD = (stats1, stats2) => {
+    if (stats1.n < 2 || stats2.n < 2) return null;
+    const pooledVariance = ((stats1.n - 1) * stats1.variance + (stats2.n - 1) * stats2.variance) / (stats1.n + stats2.n - 2);
+    if (pooledVariance === 0) return 0.0;
+    return Math.abs(stats1.mean - stats2.mean) / Math.sqrt(pooledVariance);
+};
+
 function getPValue(t, df) {
     return 2 * (1 - normalCDF(Math.abs(t)));
 }
@@ -81,6 +88,7 @@ export const RatingAnalysis = ({ title, data, groupedData }) => {
             if (isTwoGroups) {
                 headers.push('Sig. (2-tailed)');
                 headers.push('Sig. (1-tailed)');
+                headers.push("Cohen's d");
             }
 
             const criteriaNames = groupedData[0]?.data?.criteria?.map(c => c.name) || [];
@@ -105,6 +113,7 @@ export const RatingAnalysis = ({ title, data, groupedData }) => {
 
                 if (isTwoGroups) {
                     const tResult = calculateTTest(groupStats[0], groupStats[1]);
+                    const dResult = calculateCohensD(groupStats[0], groupStats[1]);
                     if (tResult) {
                         const pVal2Tailed = getPValue(tResult.t, tResult.df);
                         const pVal1Tailed = pVal2Tailed / 2;
@@ -127,7 +136,13 @@ export const RatingAnalysis = ({ title, data, groupedData }) => {
                                 {isSig1 && "*"}
                             </span>
                         );
+                        row.values.push(
+                            <span className="text-muted-foreground">
+                                {dResult !== null ? dResult.toFixed(3) : '—'}
+                            </span>
+                        );
                     } else {
+                        row.values.push('—');
                         row.values.push('—');
                         row.values.push('—');
                     }
