@@ -1171,7 +1171,7 @@ class QuizSlotAnalyticsView(APIView):
             criteria_stats = {} 
             
             # Create a mapping from ID/Name to canonical Name
-            # We want to merge "SC" (id) and "Scenario Quality (SC)" (name) into one entry
+            # We want to merge "SQ" (id) and "Scenario Quality (SQ)" (name) into one entry
             canonical_names = {} # key -> canonical_name
             name_to_id = {} # canonical_name -> id
             

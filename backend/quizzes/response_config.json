@@ -1,15 +1,30 @@
 {
   "scale": [
-    { "value": 1, "label": "Strongly disagree" },
-    { "value": 2, "label": "Disagree" },
-    { "value": 3, "label": "Neutral" },
-    { "value": 4, "label": "Agree" },
-    { "value": 5, "label": "Strongly agree" }
+    {
+      "value": 1,
+      "label": "Strongly disagree"
+    },
+    {
+      "value": 2,
+      "label": "Disagree"
+    },
+    {
+      "value": 3,
+      "label": "Neutral"
+    },
+    {
+      "value": 4,
+      "label": "Agree"
+    },
+    {
+      "value": 5,
+      "label": "Strongly agree"
+    }
   ],
   "criteria": [
     {
-      "id": "SC",
-      "name": "Scenario Quality (SC)",
+      "id": "SQ",
+      "name": "Scenario Quality (SQ)",
       "description": "Is the problem scenario realistic, contextually rich, and helpful for you to transfer project knowledge to a relevant design decision?"
     },
     {
