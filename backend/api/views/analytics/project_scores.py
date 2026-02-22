@@ -103,19 +103,19 @@ class QuizProjectScoreListCreateView(generics.ListCreateAPIView):
              q_scores = data['quiz_scores']
              
              p_mean = round(statistics.mean(p_scores), 2) if p_scores else 0
-             p_var = round(statistics.variance(p_scores), 2) if len(p_scores) > 1 else 0
+             p_std_dev = round(statistics.stdev(p_scores), 2) if len(p_scores) > 1 else 0
              
              q_mean = round(statistics.mean(q_scores), 2) if q_scores else 0
-             q_var = round(statistics.variance(q_scores), 2) if len(q_scores) > 1 else 0
+             q_std_dev = round(statistics.stdev(q_scores), 2) if len(q_scores) > 1 else 0
              
              team_variance_list.append({
                  'team': team_name,
                  'project_score': p_mean,
                  'project_scores_list': p_scores,
                  'project_mean': p_mean,
-                 'project_variance': p_var,
+                 'project_std_dev': p_std_dev,
                  'quiz_mean': q_mean,
-                 'quiz_variance': q_var,
+                 'quiz_std_dev': q_std_dev,
                  'quiz_scores': q_scores,
                  'members': data['members']
              })

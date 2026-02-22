@@ -98,9 +98,9 @@ class ProjectScoreTests(APITestCase):
         
         # Check Per-Team Stats
         self.assertEqual(team_a['project_mean'], 90.0)
-        self.assertEqual(team_a['project_variance'], 0.0)
+        self.assertEqual(team_a['project_std_dev'], 0.0)
         self.assertEqual(team_a['quiz_mean'], 75.0) # (80+70)/2
-        self.assertEqual(team_a['quiz_variance'], 50.0) # Variance of [80, 70] is 50.0
+        self.assertEqual(team_a['quiz_std_dev'], 7.07) # Std Dev of [80, 70] is ~7.07
         
         # Check Global Stats
         stats = response.data['global_stats']

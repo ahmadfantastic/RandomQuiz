@@ -27,7 +27,7 @@ const TeamVarianceAnalysis = ({ data }) => {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Freeloader Detection (Intra-Group Variance)</CardTitle>
+                <CardTitle>Freeloader Detection (Intra-Group Standard Deviation)</CardTitle>
                 <CardDescription>
                     Analysis of individual Quiz Scores within Project Teams. Teams are sorted by Project Score.
                 </CardDescription>
@@ -44,7 +44,7 @@ const TeamVarianceAnalysis = ({ data }) => {
                                         <TableHead>Team</TableHead>
                                         <TableHead>Proj Mean</TableHead>
                                         <TableHead>Quiz Mean</TableHead>
-                                        <TableHead>Quiz Var</TableHead>
+                                        <TableHead>Quiz Std Dev</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -57,7 +57,7 @@ const TeamVarianceAnalysis = ({ data }) => {
                                             <TableCell className="font-medium">{team.team}</TableCell>
                                             <TableCell>{team.project_mean}</TableCell>
                                             <TableCell>{team.quiz_mean}</TableCell>
-                                            <TableCell>{team.quiz_variance}</TableCell>
+                                            <TableCell>{team.quiz_std_dev}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
