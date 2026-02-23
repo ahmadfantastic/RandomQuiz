@@ -896,7 +896,7 @@ const ProblemBankManager = () => {
         open={isImportModalOpen}
         onOpenChange={handleImportModalChange}
         title="Import from CSV"
-        description="Upload a CSV with 'order' and 'problem' columns to create a pre-filled bank."
+        description="Upload a CSV with 'statement' and 'answer' columns to create a pre-filled bank."
       >
         <form className="space-y-4" onSubmit={handleImportBank}>
           <div className="space-y-2">
@@ -924,7 +924,7 @@ const ProblemBankManager = () => {
                 setImportError('');
               }}
             />
-            <p className="text-xs text-muted-foreground">The CSV must have "order" and "problem" headers.</p>
+            <p className="text-xs text-muted-foreground">The CSV must have "statement" and "answer" headers.</p>
           </div>
           {importError && <p className="text-sm text-destructive">{importError}</p>}
           <div className="flex justify-end gap-2">

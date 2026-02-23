@@ -83,7 +83,7 @@ const ImportRatingsModal = ({ open, onOpenChange, bankId, onImportSuccess }) => 
                 }
             }}
             title="Import Ratings"
-            description="Upload a CSV file with 'order' and columns matching criterion IDs."
+            description="Upload a CSV file with a 'Problem' column, and other columns matching criterion IDs or names."
             className="max-w-3xl"
         >
             <div className="space-y-4">
@@ -101,7 +101,7 @@ const ImportRatingsModal = ({ open, onOpenChange, bankId, onImportSuccess }) => 
                             }}
                         />
                         <p className="text-xs text-muted-foreground">
-                            Columns: <code>order</code> or <code>Problem</code>, <code>[criterion_id]</code>...
+                            Columns: <code>Problem</code>, <code>[criterion_name_or_id]</code>...
                         </p>
                     </div>
                 ) : (
