@@ -56,19 +56,36 @@ def calculate_weighted_kappa(y1, y2, all_categories=None, label=None):
         
     return 1.0 - (numerator / denominator)
 
-def calculate_average_nearest(values, scale_values):
-    """
-    Aggregates ratings by taking the mean and mapping to the nearest valid scale value.
-    """
+def aggregate_ratings(values, scale_values, method='average_nearest'):
     from statistics import mean
     if not values:
         return None
-    
+        
+    if method == 'popular_vote':
+        from collections import Counter
+        c = Counter(values)
+        return c.most_common(1)[0][0]
+        
     avg = mean(values)
     
-    # Find scale value with minimum absolute difference from average
+    if method == 'average_floor':
+        valid_vals = [v for v in scale_values if v <= avg]
+        return max(valid_vals) if valid_vals else min(scale_values)
+        
+    if method == 'average_ceil':
+        valid_vals = [v for v in scale_values if v >= avg]
+        return min(valid_vals) if valid_vals else max(scale_values)
+        
+    # Default: average_nearest
     nearest = min(scale_values, key=lambda x: abs(x - avg))
     return nearest
+
+def calculate_average_nearest(values, scale_values):
+    """
+    Aggregates ratings by taking the mean and mapping to the nearest valid scale value.
+    Note: kept for backward compatibility, use aggregate_ratings directly for new features.
+    """
+    return aggregate_ratings(values, scale_values, method='average_nearest')
 
 def calculate_cohens_d(group1, group2):
     """

@@ -13,7 +13,7 @@ from quizzes.models import (
     Quiz, QuizAttempt, QuizSlot, QuizAttemptSlot, 
     QuizRatingCriterion, QuizRatingScaleOption
 )
-from ..utils import calculate_average_nearest, calculate_cohens_d_paired
+from ..utils import calculate_average_nearest, calculate_cohens_d_paired, aggregate_ratings
 from ..kappa import quadratic_weighted_kappa
 
 class GlobalAgreementAnalysisView(APIView):
@@ -22,6 +22,9 @@ class GlobalAgreementAnalysisView(APIView):
     def get(self, request):
         instructor = ensure_instructor(request.user)
         quizzes = Quiz.objects.filter(owner=instructor)
+
+        instructor_agg = request.query_params.get('instructor_agg', 'average_nearest')
+        student_agg = request.query_params.get('student_agg', 'average_nearest')
 
         # Accumulators
         agreement_data = [] # Summary rows
@@ -172,7 +175,7 @@ class GlobalAgreementAnalysisView(APIView):
                         # Student Aggregation: Average Raw -> Nearest Raw -> Map
                         s_raw_vals = [float(x['raw']) for x in s_vals_objs]
                         
-                        nearest_raw = calculate_average_nearest(s_raw_vals, valid_raw_values)
+                        nearest_raw = aggregate_ratings(s_raw_vals, valid_raw_values, method=student_agg)
                         s_median = scale_map.get(nearest_raw)
                         # retry float if missed
                         if s_median is None: s_median = scale_map.get(float(nearest_raw) if nearest_raw is not None else None)
@@ -180,7 +183,7 @@ class GlobalAgreementAnalysisView(APIView):
                         # Instructor Aggregation
                         i_vals = [x['value'] for x in i_vals_objs]
                         i_mean_val = mean(i_vals) if i_vals else 0
-                        i_median = calculate_average_nearest(i_vals, possible_ratings)
+                        i_median = aggregate_ratings(i_vals, possible_ratings, method=instructor_agg)
 
                         if s_median is not None and i_median is not None:
                             # Add to global accumulators

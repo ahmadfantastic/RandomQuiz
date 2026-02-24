@@ -35,6 +35,10 @@ const GlobalAnalysisPage = () => {
     const [correlationData, setCorrelationData] = useState(null);
     const [projectData, setProjectData] = useState(null);
 
+    // Aggregation Method States
+    const [instructorAggMethod, setInstructorAggMethod] = useState('average_nearest');
+    const [studentAggMethod, setStudentAggMethod] = useState('average_nearest');
+
     const [loading, setLoading] = useState({
         quizzes: true,
         instructor: false,
@@ -107,17 +111,31 @@ const GlobalAnalysisPage = () => {
         }
     };
 
-    const loadAgreementData = async () => {
-        if (agreementData) return;
+    const fetchAgreementData = async (iAgg, sAgg) => {
         setLoading(prev => ({ ...prev, agreement: true }));
         try {
-            const res = await api.get('/api/problem-banks/analysis/global/agreement/');
+            const res = await api.get(`/api/problem-banks/analysis/global/agreement/?instructor_agg=${iAgg}&student_agg=${sAgg}`);
             setAgreementData(res.data);
         } catch (err) {
             console.error(err);
             setError("Failed to load agreement data.");
         } finally {
             setLoading(prev => ({ ...prev, agreement: false }));
+        }
+    };
+
+    const loadAgreementData = async () => {
+        if (agreementData) return;
+        await fetchAgreementData(instructorAggMethod, studentAggMethod);
+    };
+
+    const handleAggregationChange = (type, value) => {
+        if (type === 'instructor') {
+            setInstructorAggMethod(value);
+            fetchAgreementData(value, studentAggMethod);
+        } else {
+            setStudentAggMethod(value);
+            fetchAgreementData(instructorAggMethod, value);
         }
     };
 
@@ -296,6 +314,9 @@ const GlobalAnalysisPage = () => {
                         ) : (
                             <InstructorVsStudentKappaTab
                                 data={agreementData || {}}
+                                instructorAggMethod={instructorAggMethod}
+                                studentAggMethod={studentAggMethod}
+                                onAggregationChange={handleAggregationChange}
                             />
                         )}
                     </TabsContent>
