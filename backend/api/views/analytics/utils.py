@@ -66,6 +66,24 @@ def aggregate_ratings(values, scale_values, method='average_nearest'):
         c = Counter(values)
         return c.most_common(1)[0][0]
         
+    if method == 'median':
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+        if n % 2 == 1:
+            med = sorted_vals[n // 2]
+            return min(scale_values, key=lambda x: abs(x - med))
+        else:
+            med = (sorted_vals[n // 2 - 1] + sorted_vals[n // 2]) / 2.0
+            return min(scale_values, key=lambda x: abs(x - med))
+            
+    if method == 'trimmed_mean':
+        if len(values) >= 3:
+            sorted_vals = sorted(values)
+            trimmed_vals = sorted_vals[1:-1]
+            avg = mean(trimmed_vals)
+            return min(scale_values, key=lambda x: abs(x - avg))
+        # If less than 3 values, fall through to regular mean
+        
     avg = mean(values)
     
     if method == 'average_floor':

@@ -16,6 +16,8 @@ const InstructorVsStudentKappaTab = ({ data, instructorAggMethod, studentAggMeth
                         <option value="average_nearest">Average (Nearest)</option>
                         <option value="average_floor">Average (Floor)</option>
                         <option value="average_ceil">Average (Ceil)</option>
+                        <option value="median">Median</option>
+                        <option value="trimmed_mean">Trimmed Mean</option>
                         <option value="popular_vote">Popular Vote</option>
                     </select>
                 </div>
@@ -29,6 +31,8 @@ const InstructorVsStudentKappaTab = ({ data, instructorAggMethod, studentAggMeth
                         <option value="average_nearest">Average (Nearest)</option>
                         <option value="average_floor">Average (Floor)</option>
                         <option value="average_ceil">Average (Ceil)</option>
+                        <option value="median">Median</option>
+                        <option value="trimmed_mean">Trimmed Mean</option>
                         <option value="popular_vote">Popular Vote</option>
                     </select>
                 </div>
