@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceLine, LabelList } from 'recharts';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
 
 const RatingChart = ({ data, dense = false }) => {
     const criteria = data?.criteria;
@@ -224,8 +226,48 @@ const RatingChart = ({ data, dense = false }) => {
         return t;
     }, [domain]);
 
+    const handleDownloadCSV = () => {
+        if (!criteria || criteria.length === 0) return;
+
+        // Extract scale labels from the first criterion's distribution
+        const sampleDist = [...criteria[0].distribution].sort((a, b) => a.value - b.value);
+        const headers = ['Criterion', ...sampleDist.map(d => d.label)];
+
+        let csvContent = headers.join(',') + '\n';
+
+        criteria.forEach(criterion => {
+            // Escape double quotes inside the criterion name
+            const criterionName = (criterion.name || criterion.id || '').replace(/"/g, '""');
+            const rowStart = `"${criterionName}"`;
+
+            const countsMap = {};
+            criterion.distribution.forEach(d => {
+                countsMap[d.label] = d.count;
+            });
+
+            const rowData = sampleDist.map(d => countsMap[d.label] || 0);
+
+            csvContent += [rowStart, ...rowData].join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'ratings_distribution.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     return (
-        <div style={{ height: height, width: '100%' }}>
+        <div className="relative" style={{ height: height, width: '100%' }}>
+            <div className="absolute top-0 right-0 z-10 flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleDownloadCSV} title="Download CSV">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export CSV
+                </Button>
+            </div>
             <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                     layout="vertical"
